@@ -36,3 +36,6 @@ edge_glass_modular/outputs/
 edge_glass_modular/notebooks/ddsp_scripts/outputs/
 edge_glass_modular/data/
 code_base/v2_code_base/artifacts/
+code_base/v2_code_base/data/
+
+Papers/.DS_Store
