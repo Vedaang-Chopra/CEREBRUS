@@ -29,7 +29,8 @@ from src.config import Config, load_config
 from src.decoders.qwen import QwenDecoder
 from src.encoders.vision import VisionEncoder
 from src.models.trm_qwen_vlm import QwenVLM, TRMConfig
-from src.data.pixmo_dataset import PixmoQADataset, get_image_transforms
+from src.data.dataset_builder import PixmoQADataset
+from src.data.transforms import get_image_transforms
 
 %matplotlib inline
 """))

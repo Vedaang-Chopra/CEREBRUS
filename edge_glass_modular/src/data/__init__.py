@@ -13,6 +13,11 @@ from .downloader import (
     build_instruction_corpus,
 )
 from .transforms import build_transforms, get_image_transforms
+from .parquet_builder import (
+    build_pixmocap_parquet,
+    build_pixmocap_offline_parquet,
+    split_parquet_train_val_test,
+)
 
 __all__ = [
     "MultimodalDataModule",
@@ -27,4 +32,7 @@ __all__ = [
     "build_instruction_corpus",
     "build_transforms",
     "get_image_transforms",
+    "build_pixmocap_parquet",
+    "build_pixmocap_offline_parquet",
+    "split_parquet_train_val_test",
 ]

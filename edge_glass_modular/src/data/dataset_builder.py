@@ -10,6 +10,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset
 from torchvision.io import read_image
+import torchvision.transforms as T
 from PIL import Image, ImageFile, UnidentifiedImageError
 import pandas as pd
 import warnings
@@ -99,41 +100,24 @@ class InstructionDataset(Dataset):
         return self.samples[idx]
 
 
-class PixmoParquetImageTextDataset(Dataset):
-    """Dataset for loading Pixmo parquet files with embedded image bytes.
+class _ParquetImageDataset(Dataset):
+    """Shared base for parquet datasets with embedded image bytes.
 
-    This dataset reads from parquet files that contain:
-    - image_bytes: Raw image bytes
-    - caption: Text caption for the image
-    - sample_id: Unique identifier
-    - image_url: Optional URL (not used for loading)
-
-    Args:
-        parquet_path: Path to the parquet file
-        image_transforms: Optional image transforms to apply
-        max_text_length: Maximum text length (characters)
-        text_dropout_prob: Probability of dropping text during training
+    Loads the parquet file, validates required columns, and pre-filters
+    rows whose image bytes cannot be opened/verified so the dataloader
+    will not crash on corrupt images.
     """
 
-    def __init__(
-        self,
-        parquet_path: str | Path,
-        image_transforms: Optional[Callable] = None,
-        max_text_length: Optional[int] = None,
-        text_dropout_prob: float = 0.0,
-    ):
-        self.parquet_path = Path(parquet_path)
-        self.image_transforms = image_transforms
-        self.max_text_length = max_text_length
-        self.text_dropout_prob = text_dropout_prob
+    required_columns: tuple = ("image_bytes",)
 
-        # Load parquet file
+    def __init__(self, parquet_path: str | Path):
+        self.parquet_path = Path(parquet_path)
         self.df = pd.read_parquet(self.parquet_path)
         self._drop_invalid_images()
+        self._validate_columns()
 
-        # Validate required columns
-        required_cols = ['image_bytes', 'caption', 'sample_id']
-        missing_cols = [col for col in required_cols if col not in self.df.columns]
+    def _validate_columns(self):
+        missing_cols = [col for col in self.required_columns if col not in self.df.columns]
         if missing_cols:
             raise ValueError(f"Missing required columns in parquet: {missing_cols}")
 
@@ -155,43 +139,64 @@ class PixmoParquetImageTextDataset(Dataset):
                 "Downstream loaders will skip them."
             )
 
+    def _load_image(self, idx: int, image_bytes) -> torch.Tensor:
+        """Decode embedded image bytes to a [0, 1] float tensor (CHW)."""
+        try:
+            image = Image.open(BytesIO(image_bytes)).convert("RGB")
+        except (UnidentifiedImageError, OSError) as e:
+            raise UnidentifiedImageError(
+                f"Failed to load image at idx {idx} from {self.parquet_path}: {e}"
+            ) from e
+        return T.ToTensor()(image)
+
+
+class PixmoParquetImageTextDataset(_ParquetImageDataset):
+    """Dataset for loading Pixmo parquet files with embedded image bytes.
+
+    This dataset reads from parquet files that contain:
+    - image_bytes: Raw image bytes
+    - caption: Text caption for the image
+    - sample_id: Unique identifier
+    - image_url: Optional URL (not used for loading)
+
+    Args:
+        parquet_path: Path to the parquet file
+        image_transforms: Optional image transforms to apply
+        max_text_length: Maximum text length (characters)
+        text_dropout_prob: Probability of dropping text during training
+    """
+
+    required_columns = ("image_bytes", "caption", "sample_id")
+
+    def __init__(
+        self,
+        parquet_path: str | Path,
+        image_transforms: Optional[Callable] = None,
+        max_text_length: Optional[int] = None,
+        text_dropout_prob: float = 0.0,
+    ):
+        self.image_transforms = image_transforms
+        self.max_text_length = max_text_length
+        self.text_dropout_prob = text_dropout_prob
+        super().__init__(parquet_path)
+
     def __len__(self):
         return len(self.df)
 
     def __getitem__(self, idx):
         row = self.df.iloc[idx]
-
-        # Decode image bytes to PIL Image
-        image_bytes = row['image_bytes']
-        try:
-            image = Image.open(BytesIO(image_bytes)).convert('RGB')
-        except (UnidentifiedImageError, OSError) as e:
-            raise UnidentifiedImageError(
-                f"Failed to load image at idx {idx} from {self.parquet_path}: {e}"
-            ) from e
-
-        # Convert to tensor [0, 1] range
-        import torchvision.transforms as T
-        to_tensor = T.ToTensor()
-        image_tensor = to_tensor(image)
-
-        # Apply transforms
+        image_tensor = self._load_image(idx, row["image_bytes"])
         if self.image_transforms:
             image_tensor = self.image_transforms(image_tensor)
-
-        # Get caption
-        caption = row['caption']
+        caption = row["caption"]
         if self.max_text_length is not None:
-            caption = caption[:self.max_text_length]
-
-        # Apply text dropout during training
+            caption = caption[: self.max_text_length]
         if self.text_dropout_prob > 0 and torch.rand(1).item() < self.text_dropout_prob:
             caption = ""  # Empty caption forces model to rely on image
-
         return {
             "image": image_tensor,
             "text": caption,
-            "sample_id": row['sample_id'],
+            "sample_id": row["sample_id"],
         }
 
 
@@ -265,7 +270,7 @@ def build_datasets(dataset_cfg, transforms) -> Dict[str, Dataset]:
     return datasets
 
 
-class PixmoQADataset(Dataset):
+class PixmoQADataset(_ParquetImageDataset):
     """Dataset for PixMo QA with question-answer pairs.
 
     Loads from parquet files with columns:
@@ -282,6 +287,8 @@ class PixmoQADataset(Dataset):
         max_answer_length: Maximum answer token length
     """
 
+    required_columns = ("image_bytes", "question", "answer")
+
     def __init__(
         self,
         parquet_path: str | Path,
@@ -290,61 +297,19 @@ class PixmoQADataset(Dataset):
         max_question_length: int = 128,
         max_answer_length: int = 256,
     ):
-        self.parquet_path = Path(parquet_path)
         self.tokenizer = tokenizer
         self.image_transforms = image_transforms
         self.max_question_length = max_question_length
         self.max_answer_length = max_answer_length
-
-        # Load parquet
-        self.df = pd.read_parquet(self.parquet_path)
-        self._drop_invalid_images()
-
-        # Validate columns
-        required_cols = ['image_bytes', 'question', 'answer']
-        missing_cols = [col for col in required_cols if col not in self.df.columns]
-        if missing_cols:
-            raise ValueError(f"Missing required columns: {missing_cols}")
-
+        super().__init__(parquet_path)
         print(f"Loaded {len(self.df)} samples from {self.parquet_path}")
-
-    def _drop_invalid_images(self):
-        """Remove rows with unreadable image bytes."""
-        bad_indices = []
-        for idx, image_bytes in enumerate(self.df["image_bytes"]):
-            try:
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", Image.DecompressionBombWarning)
-                    Image.open(BytesIO(image_bytes)).verify()
-            except Exception:
-                bad_indices.append(idx)
-
-        if bad_indices:
-            self.df = self.df.drop(index=bad_indices).reset_index(drop=True)
-            warnings.warn(
-                f"Removed {len(bad_indices)} invalid images from {self.parquet_path}"
-            )
 
     def __len__(self):
         return len(self.df)
 
     def __getitem__(self, idx):
         row = self.df.iloc[idx]
-
-        # Load image
-        image_bytes = row['image_bytes']
-        try:
-            image = Image.open(BytesIO(image_bytes)).convert('RGB')
-        except (UnidentifiedImageError, OSError) as e:
-            raise UnidentifiedImageError(
-                f"Failed to load image at idx {idx}: {e}"
-            ) from e
-
-        # Convert to tensor and apply transforms
-        import torchvision.transforms as T
-        to_tensor = T.ToTensor()
-        image_tensor = to_tensor(image)
-
+        image_tensor = self._load_image(idx, row["image_bytes"])
         if self.image_transforms:
             image_tensor = self.image_transforms(image_tensor)
 
