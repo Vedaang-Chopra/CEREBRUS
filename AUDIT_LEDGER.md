@@ -1778,3 +1778,31 @@ Training writes into `Path(config.trainer.output_dir)` (e.g. `outputs/<run>/`):
 
 ### Commit
 `435fb96` — new `src/models/checkpoint_loader.py`, `scripts/eval/inference_vlm.py` loader swap, new `tests/test_checkpoint_loader_regression.py`, plus this ledger entry.
+
+---
+
+## Checkpoint completeness enforcement — `checkpoint_best` adapter-only rejection + full-state best save (2026-09-20, executed)
+
+### Why historical `checkpoint_best/` is incomplete
+`train_vlm_accelerate.py` saved the best checkpoint as `unwrapped_model.save_pretrained(ckpt_dir, state_dict=accelerator.get_state_dict(model), safe_serialization=False)` where `unwrapped_model` is the **PEFT-wrapped** QwenVLM. PEFT's `save_pretrained` filters the provided state dict down to adapter keys only — **verified empirically against installed peft 0.17.1** (stub VLM with `qwen`(LoRA) + `vision_proj` + `trm` + `z_init`; `save_pretrained` emitted `adapter_model.safetensors` with 2 keys, all non-PEFT components absent even though they were set to marker values before the save). So `checkpoint_best/` = LoRA only; `vision_proj`, TRM/refinement layers, and `z_init` are **absent** and load at random init.
+
+### Why `strict=False` was unsafe here
+`load_vlm_checkpoint` loaded `adapter_model.bin` with `strict=False`, so the missing `vision_proj.*`/TRM/`z_init` keys were merely *logged* and the model proceeded to inference with those components randomly initialized — producing confidently wrong outputs from a checkpoint that looks valid. `strict=False` is appropriate for key-*renaming* differences; it is unsafe when entire trained modules are absent from the artifact. Inference is a *full-VLM* load: an adapter-only directory is an incomplete artifact for that purpose and must fail loudly, not partially load.
+
+### New loader behavior (historical compatibility)
+- Adapter-only directory (`adapter_model.bin`/`adapter_model.safetensors` present, no full-state weights) → **`ValueError`** naming the missing components (`vision_proj`, TRM/refinement, `z_init`) and pointing at the full-state alternatives (`checkpoint-epoch-N/`, `checkpoint-final/`, or re-run of the fixed training path). No fabricated state, no cross-checkpoint inference.
+- Full-state directories (incl. former epoch/final saves and future full-state `checkpoint_best/`) load exactly as before; loose `.pt`/`.bin` checkpoints and sharded safetensors support preserved unchanged.
+- Note: inference resolves `best` → `<output_dir>/checkpoint_best/` and `latest` → newest `checkpoint-epoch-N/` (fallback `checkpoint_best/`) — both now necessarily resolve to full-state directories or fail explicitly; `latest` behavior unchanged.
+- Incidental fix in the loader's non-accelerate fallback: it previously `torch.load`-ed `.safetensors` files (crash); now dispatches to the safetensors loader.
+
+### Future canonical best-checkpoint format (training fix)
+`train_vlm_accelerate.py` best-save now uses `accelerator.save_state(checkpoint_best/)` — the **same full-state Accelerate format as epoch checkpoints** (`model.safetensors` with LoRA + `vision_proj` + TRM + `z_init`; `checkpoint_best/` unambiguously means a complete, restorable VLM). The optional PEFT adapter-only export moves to a separate `checkpoint_best_adapter/` (non-fatal on failure), preserving LoRA-only use cases without corrupting the meaning of `checkpoint_best/`. No new checkpoint format invented; historical checkpoint files untouched.
+
+### Validation (executed)
+- PEFT adapter-only probe (above): 2 keys, no vision_proj/trm/z_init → confirms incompleteness claim against installed peft 0.17.1.
+- `tests/test_checkpoint_loader_regression.py` updated: full-state dir restore (vision_proj marker verified), **adapter-only dir rejected with clear error**, full-state `checkpoint_best/`-style dir loads, `.pt(model_state_dict)` path, old-loader failure proof, missing-path error — **ALL 6 PASSED** (user py3.9 env: torch 2.8.0, peft 0.17.1, accelerate 1.10.1, transformers 4.57.6; no Qwen downloads).
+- `tests/test_generation_regression.py`: **ALL PASSED** (no generation changes).
+- `python3 -m compileall -q src scripts tests` → COMPILE_OK; all 9 configs load (9/9).
+
+### Commit
+`fc299a7` — `src/models/checkpoint_loader.py` (adapter-only rejection + safetensors fallback fix), `scripts/train/train_vlm_accelerate.py` (full-state best save + separate adapter export), `tests/test_checkpoint_loader_regression.py`, this ledger entry.

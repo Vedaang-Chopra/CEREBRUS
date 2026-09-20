@@ -604,22 +604,31 @@ def main():
                 best_val_loss = avg_val_loss
                 ckpt_dir = Path(config.trainer.output_dir) / "checkpoint_best"
                 
-                logger.info(f"Starting lightweight checkpoint save to {ckpt_dir}...")
+                logger.info(f"Starting full-state checkpoint save to {ckpt_dir}...")
                 save_start_time = time.time()
                 
-                # Lightweight save: just model weights
+                # Full-state save: checkpoint_best must be a COMPLETE, restorable
+                # VLM checkpoint (LoRA + vision_proj + TRM + z_init). The old
+                # save_pretrained path was PEFT-filtered to adapter keys only and
+                # silently dropped all non-PEFT components. Use the same
+                # accelerator.save_state full-state format as epoch checkpoints.
+                # A PEFT adapter-only export is saved separately under
+                # checkpoint_best_adapter/ for LoRA-only use cases.
                 if accelerator.distributed_type == "DEEPSPEED":
                      # For DeepSpeed stage 2, this gathers weights to rank 0
                      accelerator.save_model(model, ckpt_dir, safe_serialization=False)
                 else:
-                     unwrapped_model = accelerator.unwrap_model(model)
-                     unwrapped_model.save_pretrained(
-                        ckpt_dir,
-                        is_main_process=accelerator.is_main_process,
-                        save_function=accelerator.save,
-                        state_dict=accelerator.get_state_dict(model),
-                        safe_serialization=False
-                     )
+                     accelerator.save_state(ckpt_dir)
+                if accelerator.is_main_process:
+                     try:
+                         unwrapped_model = accelerator.unwrap_model(model)
+                         unwrapped_model.save_pretrained(
+                            Path(config.trainer.output_dir) / "checkpoint_best_adapter",
+                            state_dict=accelerator.get_state_dict(model),
+                            safe_serialization=False
+                         )
+                     except Exception as e:
+                         logger.warning(f"PEFT adapter export (checkpoint_best_adapter/) failed: {e}")
                 
                 save_duration = time.time() - save_start_time
                 logger.info(f"New best checkpoint saved to {ckpt_dir} (Loss: {best_val_loss:.4f}). Time taken: {save_duration:.2f}s")

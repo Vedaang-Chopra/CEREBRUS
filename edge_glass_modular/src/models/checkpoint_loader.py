@@ -61,9 +61,11 @@ def load_vlm_checkpoint(model, checkpoint_path: str, strict: bool = False) -> Tu
          accelerate's ``load_checkpoint_in_model`` (handles shards/offload),
          falling back to a plain ``load_state_dict`` if accelerate is unavailable.
       2. Directory with ``adapter_model.bin`` / ``adapter_model.safetensors``
-         (PEFT weight-only save) — adapter keys loaded with ``strict=False``
-         (non-adapter keys such as ``vision_proj`` are absent by design of the
-         canonical save and are left at init; this is logged, not an error).
+         (PEFT weight-only save) — REJECTED when used as a full VLM checkpoint:
+         PEFT ``save_pretrained`` stores only LoRA adapter keys, so non-PEFT
+         QwenVLM components (``vision_proj``, TRM/refinement layers, ``z_init``)
+         are absent and would be left randomly initialized. Loading raises a
+         clear ``ValueError`` instead of silently proceeding.
       3. ``.pt`` file — unwrapped and applied with ``strict=False``.
 
     Args:
@@ -90,16 +92,30 @@ def load_vlm_checkpoint(model, checkpoint_path: str, strict: bool = False) -> Tu
                 # load_checkpoint_in_model does not return missing/unexpected; report via state_dict diff
                 return _diff_state_dict(model, str(path / weight_file)), f"dir:{weight_file}"
             except ImportError:
-                state_dict = _load_pt_state_dict(path / weight_file)[0]
+                if weight_file.endswith(".safetensors"):
+                    state_dict = _load_shard(path / weight_file)
+                else:
+                    state_dict = _load_pt_state_dict(path / weight_file)[0]
                 result = model.load_state_dict(state_dict, strict=strict)
                 return result, f"dir:{weight_file}"
 
-        # 2. PEFT adapter-only layout (checkpoint_best via save_pretrained)
+        # 2. PEFT adapter-only layout (historical checkpoint_best via save_pretrained)
+        # INCOMPLETE for full VLM restoration: PEFT filters the state dict to
+        # LoRA adapter keys, so vision_proj / TRM / z_init are missing and would
+        # stay randomly initialized. Fail loudly instead of silently proceeding.
         adapter_file = next((f for f in ADAPTER_FILES if (path / f).is_file()), None)
         if adapter_file is not None:
-            state_dict = _load_pt_state_dict(path / adapter_file)[0]
-            result = model.load_state_dict(state_dict, strict=strict)
-            return result, f"dir:{adapter_file}"
+            raise ValueError(
+                f"Checkpoint {path} contains only PEFT adapter weights "
+                f"({adapter_file}) and no full model state. It is INCOMPLETE for "
+                "full VLM restoration: non-PEFT components (vision_proj, "
+                "TRM/refinement layers, z_init) are absent and would be left "
+                "randomly initialized. Use a full-state checkpoint directory "
+                "instead (checkpoint-epoch-N/ or checkpoint-final/ containing "
+                "model.safetensors, written by accelerator.save_state), or "
+                "re-run training — the canonical training path now saves a "
+                "full-state checkpoint_best/."
+            )
 
         # 3. Sharded full-state layout (model.safetensors.index.json)
         shards = sorted(path.glob("*.safetensors"))

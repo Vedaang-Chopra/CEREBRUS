@@ -69,11 +69,12 @@ def test_loads_accelerate_full_state_dir():
     assert any("qwen.model." in k for k in unexpected) or unexpected == []
 
 
-def test_loads_peft_adapter_dir():
-    """checkpoint_best layout: dir with adapter_model.bin (LoRA keys only)."""
+def test_rejects_peft_adapter_only_dir():
+    """Historical checkpoint_best layout (adapter_model.bin only) must be REJECTED:
+    PEFT save_pretrained stores only LoRA keys, so vision_proj/TRM/z_init would
+    silently stay randomly initialized. Loader must raise a clear ValueError."""
     torch.manual_seed(0)
     model = _StubQwenVLM()
-    ref = _StubQwenVLM()
 
     adapter_sd = {
         "qwen.model.base_model.model.qwen_model.lora_A.weight": torch.ones(2, 4),
@@ -84,10 +85,34 @@ def test_loads_peft_adapter_dir():
     (Path(d) / "adapter_config.json").touch()
     (Path(d) / "README.md").touch()
 
+    try:
+        load_vlm_checkpoint(model, d, strict=False)
+        raise AssertionError("expected ValueError for adapter-only checkpoint")
+    except ValueError as e:
+        msg = str(e)
+        assert "INCOMPLETE" in msg or "incomplete" in msg.lower(), msg
+        assert "vision_proj" in msg, msg
+    # model weights untouched by the failed load
+    assert model.vision_proj.weight.std().item() > 0
+
+
+def test_checkpoint_best_resolution_prefers_full_state():
+    """'best' resolution in inference_vlm.py points at checkpoint_best/; after the
+    training fix that directory contains a full-state model.safetensors, which the
+    loader must accept. Simulate: same dir as epoch checkpoint."""
+    torch.manual_seed(0)
+    model = _StubQwenVLM()
+    ref = _StubQwenVLM()
+    with torch.no_grad():
+        ref.vision_proj.weight.fill_(7.0)
+    full_sd = {**ref.state_dict(), **{f"qwen.model.{k}": v.clone() for k, v in ref.state_dict().items() if k.startswith("qwen_model.")}}
+    d = tempfile.mkdtemp(prefix="checkpoint_best-")
+    from safetensors.torch import save_file
+    save_file(full_sd, str(Path(d) / "model.safetensors"))
+
     (missing, unexpected), how = load_vlm_checkpoint(model, d, strict=False)
-    assert how == "dir:adapter_model.bin", how
-    # strict=False: adapter keys not in stub model land in 'unexpected' without raising
-    assert len(unexpected) == 2, unexpected
+    assert how == "dir:model.safetensors", how
+    assert torch.allclose(model.vision_proj.weight, torch.full((4, 4), 7.0))
 
 
 def test_loads_pt_file_with_model_state_dict():
@@ -128,8 +153,10 @@ def test_missing_checkpoint_raises():
 if __name__ == "__main__":
     test_loads_accelerate_full_state_dir()
     print("PASS loads_accelerate_full_state_dir")
-    test_loads_peft_adapter_dir()
-    print("PASS loads_peft_adapter_dir")
+    test_rejects_peft_adapter_only_dir()
+    print("PASS rejects_peft_adapter_only_dir")
+    test_checkpoint_best_resolution_prefers_full_state()
+    print("PASS checkpoint_best_resolution_prefers_full_state")
     test_loads_pt_file_with_model_state_dict()
     print("PASS loads_pt_file_with_model_state_dict")
     test_directory_checkpoint_rejected_by_old_loader()
