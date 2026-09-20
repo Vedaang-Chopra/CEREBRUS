@@ -1153,3 +1153,28 @@ Verification pass only; **no file deleted** (previous "zero active consumers" fi
 ### Status
 
 - `simple_metrics.py` RETAINED unchanged; `metrics.py`/`qa_metrics.py` untouched. Compile checks unnecessary (no change made).
+
+## simple_metrics retirement — notebook 05 reconciled, file deleted (2026-09-20)
+
+### Notebook 05 metric usage (verified, not inferred)
+
+- Imported (cell 4, executed): `compute_bleu`, `compute_rouge_l`, `compute_perplexity` from `simple_metrics`.
+- Actually called: only `compute_bleu` + `compute_rouge_l` (cell 11, executed; cell 8's calls are fully commented out) and `compute_f1`/`compute_exact_match` — which were NEVER imported, causing the recorded `NameError: compute_f1 is not defined` in cell 11's output. Notebook metrics were never successfully produced.
+- `compute_perplexity`: imported but never called anywhere → unused import, removed rather than preserving a module for it.
+- Canonical mapping: `qa_metrics.py` provides all four (`compute_bleu`, `compute_rouge_l`, `compute_f1`, `compute_exact_match`), pure-stdlib, correct pred/target orientation. `metrics.py` (retrieval) supplies nothing notebook 05 needs.
+
+### Notebook repair (cells 4 and 11 only; nothing rewritten)
+
+- Cell 4 import → `from src.evaluation.qa_metrics import compute_bleu, compute_rouge_l, compute_f1, compute_exact_match` (drops unused compute_perplexity, adds the two symbols the metric code was already calling).
+- Cell 11 call sites: `compute_bleu(ground_truth, answer)`/`compute_rouge_l(ground_truth, answer)` swapped to canonical `(pred, target)` order — simple_metrics' `(reference, candidate)` param naming had been silently inverted; qa_metrics computes precision on arg1. Semantics now match the canonical orientation.
+- Executed outputs preserved as historical evidence; only source lines changed. No model/inference cells executed.
+
+### simple_metrics.py deleted
+
+- Post-repair scan (src, scripts, configs, retained notebooks, `__init__` exports): zero live references to `simple_metrics` or its symbols. `git rm` — content recoverable from the archive branch / history.
+
+### Validation
+
+- Notebook JSON re-parses (13 cells); no `simple_metrics` string remains in the notebook.
+- `qa_metrics` functions executed standalone (bypassing the sklearn-gated `evaluation/__init__`, pre-existing env gap): bleu/rouge/f1/em all return values; empty-input safe. Note: `compute_bleu` returns 0.0 when any n-gram precision is 0 (documented no-smoothing behavior).
+- `compileall src/evaluation scripts` → exit 0. `metrics.py`/`qa_metrics.py` untouched.
