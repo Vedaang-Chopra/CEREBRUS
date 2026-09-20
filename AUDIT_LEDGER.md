@@ -1105,3 +1105,31 @@ Artifact-organization-only commit. No source code, notebooks, historical code, o
 - Archive branch SHA verified `134539e…` (pre-retirement HEAD); `git ls-files older_code_base` on main → 0.
 - Local files intact (`find older_code_base -type f | wc -l` → 44,910); `git status --porcelain older_code_base` → empty (no pollution).
 - No active source/script/config imports historical code; `edge_glass_modular` untouched.
+
+## Legacy alignment CLI/trainer retirement (2026-09-20)
+
+### Dependency verification (re-verified this session, not inferred)
+
+- Full search (`MultimodalTrainer|training.trainer|training.callbacks|CheckpointCallback|save_checkpoint|latest_checkpoint|load_checkpoint|utils.checkpoint|train_alignment`) across src/, scripts/, configs/, notebooks (experiments + analysis + archive): the ONLY live references were the legacy family itself, the package `__init__` exports, and `scripts/train_alignment.py` importing `from src.training import MultimodalTrainer`.
+- `improved_trainer.py` imports only stdlib/torch/config/models/utils.{get_rank,init_distributed,setup_logger} — no dependency on trainer.py/callbacks.py/checkpoint.py. `scripts/experiments/train_perceiver.py` uses ImprovedMultimodalTrainer. `evaluate_vlm_accelerate.py` uses `accelerate.utils.load_checkpoint_in_model` (HF, unrelated). Notebook 01/02 use ImprovedMultimodalTrainer. `evaluate_freeze_align.py`/`inference_vlm.py` reference no utils.checkpoint symbols.
+- Vendored `utils` imports elsewhere (`train_perceiver.py`, `trainer.py` itself) use only distributed/logging helpers — unaffected.
+- No BLOCK; findings match prior audit (broken wiring: trainer.py calls `self.model(batch)` and indexes a dataclass as dict).
+
+### Deleted from main
+
+- `edge_glass_modular/scripts/train_alignment.py` (39 L)
+- `edge_glass_modular/src/training/trainer.py` (77 L)
+- `edge_glass_modular/src/training/callbacks.py` (17 L)
+- `edge_glass_modular/src/utils/checkpoint.py` (34 L)
+- Export updates: `src/training/__init__.py` rewritten (no MultimodalTrainer/CheckpointCallback; docstring points to ImprovedMultimodalTrainer); `src/utils/__init__.py` loses the 3 checkpoint imports/exports. No other file touched.
+
+### Canonical trainer retained (unmodified)
+
+- `src/training/improved_trainer.py` untouched; its imports remain valid; the notebook-01 execution path (ImprovedMultimodalTrainer + parquet datasets) remains representable by retained code.
+- A future canonical alignment CLI, if built, should wire around ImprovedMultimodalTrainer (spec derivable from notebook 01's cell wiring per ledger §5 of the notebooks audit).
+
+### Validation
+
+- `python3 -m compileall -q src src/training src/utils scripts` → OK (exit 0).
+- Post-deletion reference scan: zero live references to deleted symbols remain (only improved_trainer's own internal `_save_checkpoint`/`_load_latest_checkpoint` methods and the new `__init__` docstring mention).
+- Torch-venv check: `import utils` OK, checkpoint exports gone; `import training` OK. Full `from training.improved_trainer import ImprovedMultimodalTrainer` blocked by missing `sentence_transformers` in the v1 venv — pre-existing environment gap (previously recorded), unrelated to this deletion; compile + AST-level import chain verified instead.
