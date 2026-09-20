@@ -1866,4 +1866,4 @@ Batch-capable via a per-sequence `finished` bool tensor: a sequence finishes whe
 `return_stats` and `**kwargs` remain accepted-but-unused in `generate()` (pre-existing); temperature/top-p sampling behavior unchanged by design (explicitly out of scope).
 
 ### Commit
-`<eos-commit>` — `src/models/trm_qwen_vlm.py`, `tests/test_eos_stop.py`, this ledger entry.
+`be7562d` — `src/models/trm_qwen_vlm.py`, `tests/test_eos_stop.py`, this ledger entry.
