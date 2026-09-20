@@ -130,9 +130,6 @@ class DecoderConfig:
     trm_use_rope: bool = True
     trm_rope_theta: float = 10000.0
     num_layers_baseline: Optional[int] = None  # Kept for backward compatibility
-    num_layers_trm: Optional[int] = None  # Kept for backward compatibility
-    num_inner_steps: Optional[int] = None  # TRM recursion parameters (not currently used)
-    num_outer_steps: Optional[int] = None  # TRM recursion parameters (not currently used)
     use_learned_z_init: bool = False
 
     def __getitem__(self, key):
@@ -414,10 +411,6 @@ class ExperimentConfig:
                 for old_key, new_key in alias_map.items():
                     if old_key in decoder_cfg and new_key not in decoder_cfg:
                         decoder_cfg[new_key] = decoder_cfg.pop(old_key)
-
-                # Support num_layers_trm / num_layers_baseline naming
-                if "num_layers_trm" in decoder_cfg and "trm_num_layers" not in decoder_cfg:
-                    decoder_cfg["trm_num_layers"] = decoder_cfg.pop("num_layers_trm")
 
             decoder_cfg = _filter_fields(decoder_cfg, DecoderConfig)
             cfg["decoder"] = DecoderConfig(**decoder_cfg)

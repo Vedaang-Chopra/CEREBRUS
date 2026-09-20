@@ -1178,3 +1178,82 @@ Verification pass only; **no file deleted** (previous "zero active consumers" fi
 - Notebook JSON re-parses (13 cells); no `simple_metrics` string remains in the notebook.
 - `qa_metrics` functions executed standalone (bypassing the sklearn-gated `evaluation/__init__`, pre-existing env gap): bleu/rouge/f1/em all return values; empty-input safe. Note: `compute_bleu` returns 0.0 when any n-gram precision is 0 (documented no-smoothing behavior).
 - `compileall src/evaluation scripts` → exit 0. `metrics.py`/`qa_metrics.py` untouched.
+
+## Architecture reconciliation — dead-code classification (2026-09-20, audit-only, no code changed)
+
+Scope: `src/models/{fusion,projector,alignment,trm_qwen_vlm,losses}.py`, `src/encoders/{mrl,perceiver,pooling}.py`, `src/decoders/trm.py`, configs, retained notebooks. Every classification below is backed by a grep-verified consumer scan over `src/`, `scripts/`, `configs/`, and the 5 retained notebooks.
+
+### Material correction to earlier findings
+
+**Path C instantiation status corrected.** Prior ledger entries ("Never-executed hybrid path ... No script or config instantiates this combination") are wrong at the *construction* level: **all 9 retained configs define a `decoder:` block** (verified: `pixmo_alignment.yaml:37`, `perceiver_mrl_alignment.yaml:48`, all `trm_vlm_qa*.yaml`, `no_trm_*.yaml`), so `alignment.py:118-155` builds `QwenDecoder` + `MultimodalProjector` (`llm_projector`) in EVERY `MultimodalAlignmentModel(config)` constructed from a retained config — including notebook 01 (executed; its output repr shows `(llm_projector): MultimodalProjector(`) and notebook 07. What never executed is the path-C *forward* (`llm_projector(prefix_emb)` → 8-soft-token prefix, alignment.py:278/392). Consequence: `MultimodalProjector` cannot be deleted without changing retained model construction and state-dict keys (checkpoint compat).
+
+### Consumer-proof table
+
+| Symbol / file | All consumers (verified) | Classification |
+|---|---|---|
+| `models/losses.py: contrastive_loss` | `AlignmentLoss`, `TriModalAlignmentLoss` (same file); exported by `models/__init__` | **CANONICAL** |
+| `models/losses.py: mrl_loss` | `AlignmentLoss.forward`; exported by `models/__init__` | **CANONICAL** |
+| `models/losses.py: AlignmentLoss` | `alignment.py:13` (canonical alignment path, notebooks 01/07, `train_perceiver.py`) | **CANONICAL** |
+| `models/losses.py: TriModalAlignmentLoss` | `alignment.py:13,160` — fires only when `active_encoders==3`; **no retained config sets `audio_encoder`** (grep over all 9 YAMLs: zero hits) → unreachable from any retained config | **KEEP EXPERIMENTAL** (deferred research direction) |
+| `encoders/mrl.py: MatryoshkaProjection` | `vision.py`, `text.py`, `audio.py`, `encoders/__init__` | **CANONICAL** |
+| `encoders/mrl.py: matryoshka_loss` | **ZERO consumers.** `train_perceiver_v3.py:310` defines its OWN local `matryoshka_loss` (independent copy); nothing imports the encoders one | **SAFE SYMBOL DELETE** |
+| `encoders/pooling.py: SimpleAttentionPooling` | `vision.py:153` via `pooling_type: simple` (both pixmo configs) — artifact-backed | **CANONICAL** |
+| `encoders/pooling.py: AttentionPooling` (multihead) | `vision.py:146` — reachable via config `pooling_type: multihead` + `use_attention_pooling: true` + `use_perceiver: false`, but **no retained config sets it**; never trained (no artifact) | **KEEP EXPERIMENTAL** (config-reachable ablation; not provably dead) |
+| `encoders/perceiver.py: PerceiverResampler` (+layers) | `vision.py:9,123`, `audio.py:9,86`, `encoders/__init__`; instantiated whenever a config sets `use_perceiver: true` (7 of 9 configs do, incl. all QA configs) | **KEEP EXPERIMENTAL — DEFER** (not the executed V3 architecture; canonical-Perceiver choice is a research decision, per ledger §H) |
+| `models/projector.py: ProjectionHead` | `MultimodalProjector`, `VisionToLLMProjector` (same file) only; exported by `models/__init__` | **KEEP** (substrate of MultimodalProjector) |
+| `models/projector.py: MultimodalProjector` | `alignment.py:12,151` — constructed on every config-built model (see correction above); forward never executed | **KEEP** (path-C disposition is a Batch-B decision) |
+| `models/projector.py: VisionToLLMProjector` | **ZERO consumers** (grep across src/scripts/configs/notebooks: only its own definition; not even exported) | **SAFE DELETE** |
+| `models/fusion.py: MultimodalFusion` | `alignment.py:11,107` (gated on `config.fusion is not None` AND >1 encoder); `models/__init__` export; **all 9 configs set `fusion: null`** → never instantiated in any retained run | **DEFER — Batch B** (config-reachable ablation; removal requires alignment.py/__init__ edits; zero artifacts justify removal but it is an architecture decision) |
+| `models/alignment.py` decoder branch (path C) | Constructed per above; forward branches (`prefix_tokens = self.llm_projector(...)`) never executed by any retained script/notebook | **DEFER — RESEARCH DECISION REQUIRED** (pooled 8-token vs per-patch 577-token VLM design fork) |
+| `decoders/trm.py: TRMConfig` | `trm_qwen_vlm.py:6,25,47` (LIVE — QwenVLM TRM branch), `alignment.py:134`, `train_vlm_accelerate.py:47`, `decoders/__init__` | **CANONICAL** (via QwenVLM) |
+| `decoders/trm.py: TRMLayer` | `trm_qwen_vlm.py:6,66` — QwenVLM TRM recursion builds its layers from it (LIVE) | **CANONICAL** |
+| `decoders/trm.py: RMSNorm` | `trm_qwen_vlm.py:6,70` + TRMLayer/TRMDecoder internals | **CANONICAL** |
+| `decoders/trm.py: TRMAttention/TRMMLP/RotaryEmbedding` | TRMLayer internals (transitively live via QwenVLM); TRMDecoder internals | **CANONICAL** (as TRMLayer substrate) |
+| `decoders/trm.py: TRMDecoder` (class) | `alignment.py:9,147` only — fires when `decoder.type == "trm"`; **no retained config uses `type: trm`** (all 9 say `type: qwen`); config-reachable, never instantiated in any retained execution | **DEFER — RESEARCH DECISION REQUIRED** (rename/redesign deferred per task; QwenVLM's y/z recursion is fully independent of TRMDecoder — verified: `trm_qwen_vlm.py` never references TRMDecoder) |
+| `trm_qwen_vlm.py: trm_norm` | Created (line 70), moved (109, 200), **never called** — zero forward call sites | **REPAIR LATER** (dead trainable param in optimizer; removal changes state_dict keys — checkpoint-compat decision) |
+| `trm_qwen_vlm.py: confidence_threshold` | Stored (`trm_qwen_vlm.py:28,34`), **never read**; passed by `train_vlm_accelerate.py:292` and notebook 03 cell 16 (source only) | **REPAIR LATER** (stale; removal requires editing the two callers in the same commit) |
+| `config.py: DecoderConfig.num_inner_steps / num_outer_steps` | Defined (134–135, commented "not currently used"); grep: **zero consumers** anywhere | **SAFE SYMBOL DELETE** |
+| `config.py` `num_layers_trm` backward-compat alias mapping (418–420) | No retained config contains `num_layers_trm` | **SAFE SYMBOL DELETE** (minor) |
+| `config.py` `trm_*` decoder fields | Consumed by the `type: trm` alias path (`config.py:401–412`) feeding `TRMConfig` — config-reachable | **KEEP** while TRMDecoder decision is deferred |
+| `config.py: FusionConfig` + `fusion` field | All 9 configs: `fusion: null`; loader branch (`config.py:425–426`) inert but harmless | **DEFER — Batch B** (with fusion.py) |
+
+### Batch A — definitely safe cleanup (removal cannot alter any retained execution path)
+
+1. `encoders/mrl.py: matryoshka_loss` — zero consumers; the V3 script's same-named function is an independent local definition.
+2. `models/projector.py: VisionToLLMProjector` — zero consumers, not exported.
+3. `config.py: DecoderConfig.num_inner_steps` / `num_outer_steps` — zero consumers, self-documented as unused.
+4. `config.py` `num_layers_trm` alias mapping lines (418–420) — no retained config uses the alias.
+5. (Optional, same-commit caller edit) `confidence_threshold` param + storage in `trm_qwen_vlm.py` and its two explicit call sites (`train_vlm_accelerate.py:292`, notebook 03 cell 16 source). Included only because callers are enumerable; notebook edit touches executed-source of a retained notebook — split into its own commit if notebook edits are to be avoided.
+
+### Batch B — architecture decisions (NOT for the cleanup commit)
+
+- Canonical Perceiver choice (packaged `perceiver.py` vs v2-style vs notebook V3) — packaged module stays KEEP EXPERIMENTAL until decided.
+- `fusion.py` + `FusionConfig` + alignment.py fusion wiring removal (zero artifacts, config-gated dead, but an architecture surface).
+- Path C disposition: `MultimodalProjector` + alignment.py decoder/`llm_projector` branch (constructed-but-unused 8-soft-token design fork vs per-patch QwenVLM path).
+- `TRMDecoder` class fate (rename/redesign/retire) and the `decoder.type: trm` config family; `trm_norm` and `confidence_threshold` if handled with a redesign rather than a symbol delete.
+- `TriModalAlignmentLoss` + `AudioEncoder` wiring (no config ever enables audio; research-direction call).
+
+## Batch A dead-code removal — executed (2026-09-20, dead-code-only commit)
+
+Scope: exactly the four Batch A items. Deferred list untouched (verified post-hoc: `confidence_threshold`, `trm_norm`, `TRMDecoder`, `fusion.py`, `MultimodalProjector`, path C, `AttentionPooling`, perceiver, audio/tri-modal, QwenVLM `.to()` — all strings still present in their files).
+
+### Pre-deletion re-confirmation (fresh grep over src/scripts/configs/notebooks)
+- `matryoshka_loss` (encoders): only definition + `scripts/experiments/train_perceiver_v3.py` which defines its OWN local same-named function (independent; no import of the encoders symbol). Zero importers → deleted.
+- `VisionToLLMProjector`: only its own definition; no export anywhere → deleted.
+- `num_inner_steps` / `num_outer_steps`: only the DecoderConfig field definitions → deleted. (Only other repo hits: `notebooks/archive/03_trm_vlm_qa_training.ipynb` notebook-local class attribute — archived material, unrelated to config fields, untouched.)
+- `num_layers_trm`: field def + alias-mapping block in `config.py`; zero retained configs use the alias → both deleted. `num_layers_baseline` (sibling alias) deliberately kept — not in task scope.
+
+### Files changed (3, deletions only)
+1. `src/encoders/mrl.py` — removed `matryoshka_loss` (−40 L). `MatryoshkaProjection` untouched.
+2. `src/models/projector.py` — removed `VisionToLLMProjector` (−59 L). `ProjectionHead`/`MultimodalProjector` untouched.
+3. `src/config.py` — removed `num_layers_trm`/`num_inner_steps`/`num_outer_steps` from `DecoderConfig` (−3 L) and the `num_layers_trm → trm_num_layers` alias-mapping block (−4 L). Canonical `trm_*` fields and the `type == "trm"` alias path for canonical keys untouched; TRM recursion behavior unchanged (these fields never fed it).
+
+### Validation (torch 2.9.1 venv + compileall)
+- Residual-symbol grep over active tree: only remaining `matryoshka_loss` hits are `train_perceiver_v3.py`'s independent local definition (pre-existing, not the deleted symbol). All other removed strings: zero hits in src/scripts/configs.
+- `python -m compileall -q src scripts` → exit 0; `bash -n scripts/train/run_vlm_experiments.sh` → OK.
+- All 9 retained YAML configs load via `load_config`; no parsed `DecoderConfig` exposes any removed field; `num_layers_baseline` still present.
+- Runtime checks: `MultimodalProjector(4096→128×8)` forward returns (2,8,128) — path-C construction surface unchanged; `MatryoshkaProjection.get_embedding` slice+re-normalize unchanged; AST verification of `alignment.py` (decoder branch + `llm_projector` construction intact, zero removed-symbol references), `config.py` (canonical `trm_*` fields + trm-alias path intact), `trm_qwen_vlm.py` (TRMConfig/TRMLayer/RMSNorm/`trm_norm`/`confidence_threshold` all untouched).
+- Full `src.models.alignment` import remains blocked in the local venv by the pre-existing `sentence_transformers` env gap (recorded previously) — AST + module-level surface checks cover the changed code paths.
+
+### Not done (explicitly deferred, unchanged)
+Batch B list from the reconciliation audit stands as recorded.
