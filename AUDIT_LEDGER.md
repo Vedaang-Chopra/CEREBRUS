@@ -1805,4 +1805,4 @@ Training writes into `Path(config.trainer.output_dir)` (e.g. `outputs/<run>/`):
 - `python3 -m compileall -q src scripts tests` → COMPILE_OK; all 9 configs load (9/9).
 
 ### Commit
-`fc299a7` — `src/models/checkpoint_loader.py` (adapter-only rejection + safetensors fallback fix), `scripts/train/train_vlm_accelerate.py` (full-state best save + separate adapter export), `tests/test_checkpoint_loader_regression.py`, this ledger entry.
+`f37cc28` — `src/models/checkpoint_loader.py` (adapter-only rejection + safetensors fallback fix), `scripts/train/train_vlm_accelerate.py` (full-state best save + separate adapter export), `tests/test_checkpoint_loader_regression.py`, this ledger entry.
