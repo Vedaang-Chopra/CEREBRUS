@@ -1557,3 +1557,71 @@ Notebook 03 cell 16 (executed): removed `confidence_threshold=CONFIDENCE_THRESHO
 - `trm_qwen_vlm.py` module-level symbol/file rename (TRMLayer etc.) — explicitly out of scope.
 - Config YAML tag lists (`tags: [trm, recursive, …]`) — docs pass.
 - `decoder.type` Literal narrowing already applied; `type` field itself retained for Qwen.
+
+## Path C / `MultimodalProjector` audit (2026-09-20, audit-only, no code changed)
+
+### Module behavior (`src/models/projector.py:63-125`, post-`VisionToLLMProjector` removal)
+- `MultimodalProjector(input_dim, output_dim, num_tokens=8)` wraps a `ProjectionHead` MLP: LayerNorm(input_dim) → Linear(input_dim, output_dim×num_tokens) → GELU → Dropout → Linear(expanded, expanded) → Dropout. Input (B, input_dim) [or (B, S, input_dim)] → output (B, num_tokens, output_dim) [or (B, S, num_tokens, output_dim)]. It compresses a **single pooled vector** into `num_tokens` soft tokens by one wide linear + reshape — no cross-attention, no token mixing, no pooling inside the module (pooling happens upstream via `vision_output.pooled`).
+- Under retained configs: `num_tokens=8` hard-coded at `alignment.py:139`; `input_dim` = `fusion_dim` if fusion else `vision_encoder.projection_dim` (`alignment.py:135`). pixmo_alignment: 4096 → Qwen2.5-7B hidden 3584 × 8 = **~939.6M parameters** (4096×28672 + 28672×28672 + biases + LN). perceiver_mrl_alignment: 512 → same 7B hidden → ~211.2M params.
+
+### Construction evidence
+- Single construction site: `alignment.py:136` (`self.llm_projector`), inside `if config.decoder is not None:` (line 120). All 9 retained YAMLs define a `decoder:` block (prior correction entry, re-verified) → constructed in every `MultimodalAlignmentModel(config)` built from a retained config, including every notebook that constructs the model from config (01, 02, 03 family, 04s, 05, 07) and every script that builds it (`train_vlm_accelerate.py:199`, `evaluate_vlm_accelerate.py:96`, `debug_eval_repro.py:46`, `evaluate_freeze_align.py:46`, `improved_trainer.py` consumers).
+- Callers that null it: `train_vlm_accelerate.py:196`, `evaluate_vlm_accelerate.py:93`, `inference_vlm.py:55`, `debug_eval_repro.py:44`, `04_vlm_qa_evaluation.ipynb:144`, `05_vlm_qualitative_inference.ipynb:190` all set `alignment_config.decoder = None` before construction → no projector built there. In these scripts `MultimodalAlignmentModel` is used **only as a vision-encoder carrier** (`encode_images` helper at `train_vlm_accelerate.py:252-255`); the actual VLM is `QwenVLM` built separately (line 285).
+- Construction sites that DO build it (notebooks 01/02/03-family/04-alignment/05-alignment): the projector is instantiated and then never driven — every such notebook's training/eval loop either (a) trains alignment only (`model(images, texts)`, no `input_ids`, notebook 01 cells 19/26/27/32) or (b) extracts `vision_encoder` / per-patch tokens and forwards through a separately-built `QwenVLM` (03 family).
+
+### Execution evidence
+- Forward call sites of `llm_projector`: exactly two, both inside `MultimodalAlignmentModel` — `alignment.py:263` (needs `self.decoder is not None AND input_ids is not None`) and `alignment.py:377` (`generate()`).
+- No retained script or executed notebook ever satisfies that condition: grep for `llm_projector(` across `src/`, `scripts/`, all retained notebooks → only those two definitions-side hits. No executed notebook calls `MultimodalAlignmentModel` with `input_ids`; no executed notebook calls `aligned_model.generate(...)`; no executed notebook references `llm_projector` in *source* (only notebook 01 shows it in a **model-repr output**, cell 26, construction only).
+- Path-C forward: **zero executions** in the retained corpus.
+
+### Checkpoint evidence
+- Notebook 01 (`01_pixmo_vision_text_alignment.ipynb`, the pixmo_alignment training run) built the full model *with* decoder + `llm_projector` (repr in cell 26 output confirms construction), trained with `ImprovedMultimodalTrainer`, which puts **every `requires_grad` param into the optimizer** (`improved_trainer.py:98-101`) and saves the full `state_dict` (`checkpoint_best.pt`). Therefore `llm_projector.*` keys are present in `pixmo_alignment/checkpoint_best.pt`.
+- They were **serialized, not trained**: alignment forward (images+texts) never touches `llm_projector` → no autograd graph → `.grad` stays `None` → AdamW applies no update. The weights in that checkpoint are random init (notebook 01 does not null the decoder, unlike later scripts). Same story for the 7B Qwen LoRA adapter in that checkpoint: attached, optimizer-registered, never differentiated.
+- `strict=False` loads everywhere downstream (`train_vlm_accelerate.py:231`; notebooks 04/05/05-vlm with `strict=False`/the huge missing-key error output in `05_alignment_evaluation.ipynb`) means these dead keys are tolerated/ignored at load — no retained checkpoint depends on them for anything executed.
+- Checkpoint binaries are not present in this working tree (`find` for *.pt/*.safetensors across `edge_glass_modular/` and parent: zero hits; `notebooks/checkpoints/` and `outputs/` existed only on the training host per path strings in notebooks/scripts). Verification of key presence is inference-based (state_dict save path + repr), not direct binary inspection — flagged as such.
+
+### Relationship to the executed QwenVLM path — two separate architectures
+Yes, these are **two distinct decoder-conditioning designs**, sharing only the frozen vision encoder:
+- **Path A (executed)**: CLIP ViT-L/14-336 patch/latent tokens → `vision_output.sequence` (per-token, 577 or perceiver-latents) → `QwenVLM.vision_proj` (bare `nn.Linear`, `trm_qwen_vlm.py:111`) → per-token 577/latent visual prefix prepended in Qwen (`qwen.py:144`). Lives entirely outside `MultimodalAlignmentModel`'s decoder branch.
+- **Path C (never executed)**: pooled 4096-d alignment embedding (`vision_output.pooled`, the contrastive-alignment vector) → `MultimodalProjector` MLP → 8 soft tokens → Qwen prefix via `QwenDecoder.__init__`/`generate` (`qwen.py` prefix_embeds). Lives inside `MultimodalAlignmentModel`.
+- Common ancestry (prior ledger §423 holds): Path C descends from v2's pooled `VisionToLLMProjector` design (removed in the Batch A commit); Path A descends from the notebook-era per-patch injection. Historical results (alignment R@K, VLM QA EM/F1) are attributable **only to Path A + the frozen alignment encoders**; no retained result came from Path C's forward.
+
+### `decoders/__init__.py` export check (report-only, per task)
+- `TRMLayer` / `RMSNorm` / `TRMConfig` exported from the package (`decoders/__init__.py:4-6`) have **zero package-export consumers**: the only `from decoders import …` in the codebase is `alignment.py:9` (`QwenDecoder`). All real consumers import from the submodule directly: `trm_qwen_vlm.py:6` (`from src.decoders.trm import TRMConfig, TRMLayer`), notebooks 03 family (`from decoders.trm import TRMConfig, TRMLayer, RMSNorm`). The b6ec6ac export additions are unused re-export surface.
+
+### Classification
+`MultimodalProjector` + the alignment.py decoder/`llm_projector` branch = **dead-but-not-deletable**: an experimental architecture fork (pooled 8-token soft prefix) that was constructed in every alignment-training run, registered in optimizers, serialized into `pixmo_alignment/checkpoint_best.pt` (~0.9–1.0G of random-init keys), but **never forward-executed by any retained script, executed notebook, or checkpoint-consuming loader**. It is checkpoint-relevant only in the trivial sense that removing it changes `MultimodalAlignmentModel` state-dict keys (handled today by `strict=False`). Not canonical (Path A/QwenVLM is the executed decoder-conditioning design), not historical-attributable (no result ran through it).
+
+### Recommended single next action
+Decide path-C disposition as a Batch-B item **with checkpoint-compat framing**: either (a) retire `MultimodalProjector` + the alignment decoder branch in one commit whose only risk surface is the `strict=False` loaders (dead keys already ignored) and archived checkpoints, or (b) keep it frozen with a one-line comment marking it non-executed. No result, metric, or executed run changes under either choice.
+
+## Path C retirement — executed (2026-09-20, focused cleanup commit)
+
+Implements the Path C audit's recommended action (a): retire `MultimodalProjector` + the alignment decoder branch. No config, checkpoint, result, notebook-output, QwenVLM/Path-A, fusion, perceiver, audio, or TRM computation touched. `DecoderConfig` untouched (QwenVLM still consumes decoder config independently).
+
+### Pre-change re-verification
+1. Active checkpoint loads into `MultimodalAlignmentModel` all tolerant: `improved_trainer.py:269`, `train_vlm_accelerate.py:231`, `evaluate_vlm_accelerate.py:117`, `inference_vlm.py:64`, `debug_eval_repro.py:59`, notebooks 04/05/05-vlm/07 — all `strict=False`. Strict loads exist only in archive notebooks (03 family, 01 cell 26) pointing at training-host checkpoint paths not present in this tree.
+2. `MultimodalProjector` consumers: `alignment.py` (Path C) + `models/__init__` re-export only. No other consumer.
+3. `ProjectionHead` consumers: only `MultimodalProjector` + `models/__init__` re-export → `projector.py` had no independent live consumer → entire file deleted.
+
+### Changes
+- `src/models/projector.py`: **deleted** (both `ProjectionHead` and `MultimodalProjector`; −125 L).
+- `src/models/alignment.py` (−217 L net): removed `QwenDecoder`/`MultimodalProjector` imports; the decoder+`llm_projector` construction branch; the path-C forward block (prefix selection → `llm_projector` → decoder forward, both Qwen and TRM-decoder sub-branches); the `generate()` method; the `.to()` quantized-decoder skip override (existed only to protect `self.decoder`); the decoder block in `print_parameter_counts`; `lm_loss`/`logits` fields from `AlignmentModelOutput`; dead `input_ids`/`attention_mask`/`labels` forward params; the commented-out lm-loss combine block; updated class docstring.
+- `src/models/__init__.py`: removed `ProjectionHead`/`MultimodalProjector` from imports and `__all__`.
+- `src/decoders/__init__.py`: reverted the b6ec6ac public-API expansion — `TRMLayer`, `RMSNorm`, `TRMConfig` exports removed (zero package-level consumers verified in audit; all consumers import `from decoders.trm import ...` directly).
+
+### Checkpoint compatibility
+Synthetic validation (torch 2.8.0 CPU, transformers 4.57.6): `MultimodalAlignmentModel(pixmo_alignment.yaml, decoder=None, text_encoder=None)` constructed; forward `images=(2,3,336,336)` returns `vision_emb (2,4096)`, loss None — works. A synthetic legacy state dict containing extra `llm_projector.*` (28672×4096 + 28672×28672 blocks, matching the ~939.6M Path-C shape) and a `decoder.*` key loads with `strict=False`: **missing=0, unexpected=3, all unexpected keys prefixed `llm_projector.`/`decoder.`** — matching the active-loader behavior in `train_vlm_accelerate.py:231`. No compatibility shim added (not needed).
+
+### Validation
+- `python3 -m compileall src scripts` → exit 0.
+- All 9 retained YAML configs parse (`yaml.safe_load`).
+- Notebook import style resolution: `config`, `encoders.vision`, `decoders.qwen`, `decoders.trm`, `models.alignment`, `models` all import OK; `models.MultimodalProjector` gone; `decoders.TRMLayer/RMSNorm/TRMConfig` gone.
+- Zero references to `MultimodalProjector` / `llm_projector` / `from .projector` in `src/`, `scripts/`, `debug_eval_repro.py`.
+
+### Newly exposed dead surface (report only)
+- `config.py:334` — `if not any(encoders) and self.decoder is None:` validation still references `self.decoder` on `ExperimentConfig` (config-level, unrelated to the removed module attribute; harmless, left for config-cleanup task).
+- The `decoder:` block in all 9 YAMLs is now consumed only via config passthrough to QwenVLM scripts (`config.decoder.model_name` etc. read by `train_vlm_accelerate.py`/`inference_vlm.py` directly), not by the alignment model — YAML values untouched per task scope.
+- Notebook 01 cell 26's executed output still shows the old `(llm_projector): MultimodalProjector(` model repr — historical output, intentionally untouched.
+
+Commit: (filled below)

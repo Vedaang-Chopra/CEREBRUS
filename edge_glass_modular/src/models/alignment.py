@@ -6,10 +6,8 @@ from typing import Optional, Dict, Any
 from dataclasses import dataclass
 
 from encoders import VisionEncoder, AudioEncoder, TextEncoder
-from decoders import QwenDecoder
 from config import ExperimentConfig
 from .fusion import MultimodalFusion
-from .projector import MultimodalProjector
 from .losses import AlignmentLoss, TriModalAlignmentLoss
 
 
@@ -23,17 +21,14 @@ class AlignmentModelOutput:
     audio_emb: Optional[torch.Tensor] = None
     text_emb: Optional[torch.Tensor] = None
     fused_emb: Optional[torch.Tensor] = None
-    lm_loss: Optional[torch.Tensor] = None
-    logits: Optional[torch.Tensor] = None
 
 
 class MultimodalAlignmentModel(nn.Module):
-    """Multimodal alignment model with optional instruction tuning.
+    """Multimodal alignment model.
 
     This is the main model class that combines:
     - Encoders (vision, audio, text)
     - Optional fusion module
-    - Optional decoder for instruction tuning
     - Alignment losses
 
     Args:
@@ -113,32 +108,6 @@ class MultimodalAlignmentModel(nn.Module):
                 dropout=config.fusion.dropout,
             )
 
-        # Initialize decoder if needed
-        self.decoder = None
-        self.llm_projector = None
-
-        if config.decoder is not None:
-            if config.decoder.type == "qwen":
-                self.decoder = QwenDecoder(
-                    model_name=config.decoder.model_name,
-                    load_in_8bit=config.decoder.load_in_8bit,
-                    load_in_4bit=config.decoder.load_in_4bit,
-                    use_lora=config.decoder.use_lora,
-                    lora_r=config.decoder.lora_r,
-                    lora_alpha=config.decoder.lora_alpha,
-                    lora_dropout=config.decoder.lora_dropout,
-                    lora_target_modules=config.decoder.lora_target_modules,
-                    device_map=config.decoder.device_map,
-                )
-
-            # Create projector to LLM space
-            input_dim = config.fusion.fusion_dim if self.fusion is not None else config.vision_encoder.projection_dim
-            self.llm_projector = MultimodalProjector(
-                input_dim=input_dim,
-                output_dim=self.decoder.hidden_dim,
-                num_tokens=8,
-            )
-
         # Initialize loss functions
         if active_encoders == 3:
             # Tri-modal loss
@@ -162,9 +131,6 @@ class MultimodalAlignmentModel(nn.Module):
         images: Optional[torch.Tensor] = None,
         audio_features: Optional[torch.Tensor] = None,
         texts: Optional[Any] = None,
-        input_ids: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        labels: Optional[torch.Tensor] = None,
         return_embeddings: bool = False,
     ) -> AlignmentModelOutput:
         """Forward pass through alignment model.
@@ -173,9 +139,6 @@ class MultimodalAlignmentModel(nn.Module):
             images: Input images (batch_size, 3, H, W)
             audio_features: Input audio features (batch_size, n_mels, time)
             texts: Text strings or embeddings
-            input_ids: Token IDs for decoder (batch_size, seq_len)
-            attention_mask: Attention mask for decoder
-            labels: Labels for language modeling
             return_embeddings: Whether to return intermediate embeddings
 
         Returns:
@@ -244,70 +207,10 @@ class MultimodalAlignmentModel(nn.Module):
             if len(modality_embeddings) > 1:
                 fused_emb = self.fusion(modality_embeddings)
 
-        # Decoder forward pass if needed
-        lm_loss = None
-        logits = None
-        if self.decoder is not None and input_ids is not None:
-            # Use fused embedding or single modality
-            if fused_emb is not None:
-                prefix_emb = fused_emb
-            elif vision_emb is not None:
-                prefix_emb = vision_emb
-            elif audio_emb is not None:
-                prefix_emb = audio_emb
-            else:
-                prefix_emb = None
-
-            # Project to LLM space
-            if prefix_emb is not None:
-                prefix_tokens = self.llm_projector(prefix_emb)
-            else:
-                prefix_tokens = None
-
-            # Forward through decoder
-            if hasattr(self.decoder, "model"):
-                # Qwen decoder
-                decoder_output = self.decoder(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                    prefix_embeds=prefix_tokens,
-                    labels=labels,
-                )
-                lm_loss = decoder_output.loss if hasattr(decoder_output, "loss") else None
-                logits = decoder_output.logits if hasattr(decoder_output, "logits") else None
-            else:
-                # TRM decoder
-                decoder_output = self.decoder(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                    prefix_embeds=prefix_tokens,
-                    labels=labels,
-                )
-                lm_loss = decoder_output.get("loss")
-                logits = decoder_output.get("logits")
-
         # Combine losses
-        # total_loss = None
-        # if self.training:
-        #     if alignment_losses is not None:
-        #         total_loss = alignment_losses.get("total_loss", 0)
-
-        #     if lm_loss is not None:
-        #         lm_weight = self.config.optimization.lm_loss_weight
-        #         if total_loss is not None:
-        #             total_loss = total_loss + lm_weight * lm_loss
-        #         else:
-        #             total_loss = lm_weight * lm_loss
         total_loss = None
         if alignment_losses is not None:
             total_loss = alignment_losses.get("total_loss", 0)
-
-        if lm_loss is not None:
-            lm_weight = self.config.optimization.lm_loss_weight
-            if total_loss is not None:
-                total_loss = total_loss + lm_weight * lm_loss
-            else:
-                total_loss = lm_weight * lm_loss
 
 
         return AlignmentModelOutput(
@@ -317,90 +220,7 @@ class MultimodalAlignmentModel(nn.Module):
             audio_emb=audio_emb if return_embeddings else None,
             text_emb=text_emb if return_embeddings else None,
             fused_emb=fused_emb if return_embeddings else None,
-            lm_loss=lm_loss,
-            logits=logits,
         )
-
-    @torch.no_grad()
-    def generate(
-        self,
-        images: Optional[torch.Tensor] = None,
-        audio_features: Optional[torch.Tensor] = None,
-        prompt: Optional[str] = None,
-        max_new_tokens: int = 256,
-        **generation_kwargs,
-    ):
-        """Generate text from multimodal inputs.
-
-        Args:
-            images: Input images
-            audio_features: Input audio
-            prompt: Text prompt
-            max_new_tokens: Maximum tokens to generate
-            **generation_kwargs: Additional generation parameters
-
-        Returns:
-            Generated text
-        """
-        if self.decoder is None:
-            raise ValueError("Decoder not initialized. Cannot generate.")
-
-        # Encode modalities
-        vision_emb = None
-        audio_emb = None
-
-        if images is not None and self.vision_encoder is not None:
-            vision_output = self.vision_encoder(images)
-            vision_emb = vision_output.pooled
-
-        if audio_features is not None and self.audio_encoder is not None:
-            audio_output = self.audio_encoder(audio_features)
-            audio_emb = audio_output.pooled
-
-        # Fuse if needed
-        if self.fusion is not None:
-            modality_embeddings = {}
-            if vision_emb is not None:
-                modality_embeddings["vision"] = vision_emb
-            if audio_emb is not None:
-                modality_embeddings["audio"] = audio_emb
-
-            if len(modality_embeddings) > 1:
-                prefix_emb = self.fusion(modality_embeddings)
-            else:
-                prefix_emb = vision_emb if vision_emb is not None else audio_emb
-        else:
-            prefix_emb = vision_emb if vision_emb is not None else audio_emb
-
-        # Project to LLM space
-        if prefix_emb is not None:
-            prefix_tokens = self.llm_projector(prefix_emb)
-        else:
-            prefix_tokens = None
-
-        # Encode prompt
-        input_ids = None
-        if prompt is not None and hasattr(self.decoder, "encode_text"):
-            encoded = self.decoder.encode_text([prompt])
-            input_ids = encoded["input_ids"].to(prefix_tokens.device if prefix_tokens is not None else "cuda")
-
-        # Generate
-        if hasattr(self.decoder, "generate"):
-            output_ids = self.decoder.generate(
-                input_ids=input_ids,
-                prefix_embeds=prefix_tokens,
-                max_new_tokens=max_new_tokens,
-                **generation_kwargs,
-            )
-
-            # Decode
-            if hasattr(self.decoder, "tokenizer"):
-                generated_text = self.decoder.tokenizer.batch_decode(
-                    output_ids, skip_special_tokens=True
-                )
-                return generated_text
-
-        return output_ids
 
     @property
     def num_trainable_parameters(self) -> int:
@@ -434,40 +254,5 @@ class MultimodalAlignmentModel(nn.Module):
             fusion_total = sum(p.numel() for p in self.fusion.parameters())
             print(f"{'Fusion':<30} {fusion_trainable:>15,} {fusion_total:>15,}")
 
-        if self.decoder is not None:
-            decoder_trainable = sum(p.numel() for p in self.decoder.parameters() if p.requires_grad)
-            decoder_total = sum(p.numel() for p in self.decoder.parameters())
-            print(f"{'Decoder':<30} {decoder_trainable:>15,} {decoder_total:>15,}")
-
         print("-" * 60)
         print(f"{'TOTAL':<30} {self.num_trainable_parameters:>15,} {self.num_total_parameters:>15,}")
-
-    def to(self, *args, **kwargs):
-        """Safely move modules to a device/dtype.
-
-        Quantized decoders (8/4-bit with device_map) cannot be moved with the
-        standard ``nn.Module.to`` because their parameters live on meta tensors
-        during dispatch. We temporarily drop the decoder from the module tree
-        so encoders/fusion/projector can move while leaving the decoder on its
-        configured devices.
-        """
-        decoder = self.decoder
-
-        should_skip_decoder = False
-        if decoder is not None:
-            decoder_model = getattr(decoder, "model", None)
-            if decoder_model is not None:
-                should_skip_decoder = any([
-                    getattr(decoder_model, "is_loaded_in_8bit", False),
-                    getattr(decoder_model, "is_loaded_in_4bit", False),
-                    getattr(decoder_model, "hf_device_map", None) is not None,
-                    getattr(decoder_model, "device_map", None) is not None,
-                ])
-
-        if should_skip_decoder:
-            self.decoder = None
-            output = super(MultimodalAlignmentModel, self).to(*args, **kwargs)
-            self.decoder = decoder
-            return output
-
-        return super(MultimodalAlignmentModel, self).to(*args, **kwargs)
