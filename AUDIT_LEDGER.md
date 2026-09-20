@@ -1624,4 +1624,4 @@ Synthetic validation (torch 2.8.0 CPU, transformers 4.57.6): `MultimodalAlignmen
 - The `decoder:` block in all 9 YAMLs is now consumed only via config passthrough to QwenVLM scripts (`config.decoder.model_name` etc. read by `train_vlm_accelerate.py`/`inference_vlm.py` directly), not by the alignment model — YAML values untouched per task scope.
 - Notebook 01 cell 26's executed output still shows the old `(llm_projector): MultimodalProjector(` model repr — historical output, intentionally untouched.
 
-Commit: (filled below)
+Commit: `2e729de425e9586fed326c7191481781f69c82ea` (main, working tree clean after commit).
