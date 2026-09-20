@@ -1832,4 +1832,4 @@ Training writes into `Path(config.trainer.output_dir)` (e.g. `outputs/<run>/`):
 - `tests/test_generation_regression.py` (4/4) and `tests/test_checkpoint_loader_regression.py` (6/6) still pass; `compileall src scripts tests` OK; all 9 configs load (9/9).
 
 ### Commit
-`<device-commit>` — `src/models/trm_qwen_vlm.py`, `scripts/eval/inference_vlm.py`, `scripts/train/train_vlm_accelerate.py`, `scripts/eval/evaluate_vlm_accelerate.py`, `tests/test_device_placement.py`, this ledger entry.
+`305a38e` — `src/models/trm_qwen_vlm.py`, `scripts/eval/inference_vlm.py`, `scripts/train/train_vlm_accelerate.py`, `scripts/eval/evaluate_vlm_accelerate.py`, `tests/test_device_placement.py`, this ledger entry.
