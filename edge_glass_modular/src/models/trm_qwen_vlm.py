@@ -393,16 +393,39 @@ class QwenVLM(nn.Module):
         else:
             # TRM mode: autoregressive with recursion
             # Re-implementation of the loop ensuring TRM is applied at each step
+            # EOS semantics (see AUDIT_LEDGER.md, refinement-EOS audit):
+            # - EOS token id comes from self.qwen.tokenizer.eos_token_id.
+            # - EOS is RETAINED in the returned token IDs for the sequence that
+            #   generated it (conventional generation semantics; all retained
+            #   callers decode with skip_special_tokens=True, which removes it).
+            # - Once a sequence has generated EOS it is FINISHED: subsequent
+            #   steps append pad tokens (not model content) for that sequence,
+            #   so a finished sequence never accumulates meaningful new tokens.
+            # - The loop exits early once EVERY sequence is finished; if no EOS
+            #   is ever generated it produces exactly max_new_tokens per
+            #   sequence (unchanged).
             batch_size = vision_tokens.shape[0]
             generated_ids_list = []
-            
-            # Helper to pad answer_ids for first step
+
+            eos_token_id = self.qwen.tokenizer.eos_token_id
             pad_token_id = self.qwen.tokenizer.pad_token_id
-            
+            if eos_token_id is None:
+                # No EOS available from the tokenizer: preserve the historical
+                # fixed-length behavior exactly (no stopping possible).
+                eos_token_id = -1
+            if pad_token_id is None:
+                pad_token_id = eos_token_id if eos_token_id >= 0 else 0
+
+            # per-sequence finished flags (finished == generated EOS)
+            finished = torch.zeros(batch_size, dtype=torch.bool, device=question_ids.device)
+            all_done = False
+
             # Initialize current attention mask with question mask
             current_attention_mask = attention_mask
-            
+
             for step in range(max_new_tokens):
+                if all_done:
+                    break
                 # Construct current answer sequence
                 if len(generated_ids_list) == 0:
                      # FIRST STEP: Just use the question (and vision prefix)
@@ -413,11 +436,11 @@ class QwenVLM(nn.Module):
                     # Ensure answer_ids is on the same device as question_ids
                     if answer_ids.device != question_ids.device:
                         answer_ids = answer_ids.to(question_ids.device)
-                    
+
                     current_input_ids = torch.cat([question_ids, answer_ids], dim=1)
-                    
+
                     # Update mask for the new token (valid)
-                    # We need to extend mask by 1 for each step. 
+                    # We need to extend mask by 1 for each step.
                     # Optimization: Extend just once per step
                     # current_attention_mask was for previous step?
                     # No, let's just rebuild/extend it.
@@ -433,19 +456,32 @@ class QwenVLM(nn.Module):
                     attention_mask=current_attention_mask,
                     prefix_embeds=vision_emb
                 )
-                
+
                 # logits = out.logits
                 logits = out['logits'][:, -1, :]  # Last position
-                
+
                 if temperature > 0:
                     logits = logits / temperature
                     probs = torch.softmax(logits, dim=-1)
                     next_token = torch.multinomial(probs, num_samples=1).squeeze(1)
                 else:
                     next_token = torch.argmax(logits, dim=-1)
-                
-                # Stop if EOS
-                # But we have batch.
+
+                # Per-sequence EOS stop (batch-capable):
+                # - a sequence that generates EOS is FINISHED and RETAINS the
+                #   EOS in its returned IDs (callers decode with
+                #   skip_special_tokens=True);
+                # - sequences already finished before this step emit pad tokens
+                #   (never new model content).
+                newly_done = (~finished) & (next_token == eos_token_id)
+                finished = finished | newly_done
+                next_token = torch.where(
+                    finished & ~newly_done,
+                    torch.full_like(next_token, pad_token_id),
+                    next_token,
+                )
                 generated_ids_list.append(next_token)
-                
+
+                all_done = bool(finished.all())
+
             return torch.stack(generated_ids_list, dim=1)

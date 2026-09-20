@@ -1833,3 +1833,37 @@ Training writes into `Path(config.trainer.output_dir)` (e.g. `outputs/<run>/`):
 
 ### Commit
 `305a38e` — `src/models/trm_qwen_vlm.py`, `scripts/eval/inference_vlm.py`, `scripts/train/train_vlm_accelerate.py`, `scripts/eval/evaluate_vlm_accelerate.py`, `tests/test_device_placement.py`, this ledger entry.
+
+---
+
+## Refinement generation EOS stopping (2026-09-20, executed)
+
+### Previous behavior (exact failure mode)
+The manual TRM refinement loop (`QwenVLM.generate`, TRM branch) ran **exactly `max_new_tokens` iterations unconditionally** — the source contained a `# Stop if EOS  # But we have batch.` comment but **no stop logic was ever implemented**. Consequences: (1) EOS generated on step 1 still ran all remaining steps and accumulated `max_new_tokens - 1` further model tokens after EOS; (2) in a batch, per-sequence EOS was ignored — finished sequences kept producing meaningful content; (3) the output was always `(B, max_new_tokens)`. Because all retained callers decode with `skip_special_tokens=True` (`inference_vlm.py:202`, `evaluate_vlm_accelerate.py:284`, `train_vlm_accelerate.py:564`), the post-EOS hallucinated content silently polluted every decoded answer. The baseline HF path (`qwen.generate`) already handled EOS correctly via `eos_token_id` — unaffected.
+
+### Audit findings (before fix)
+- Token selection: greedy `argmax` when `temperature == 0`; `multinomial(softmax(logits/temperature))` otherwise (unchanged).
+- Append: per-step `(B,)` token stacked into `(B, steps)` at return.
+- EOS source: `self.qwen.tokenizer.eos_token_id` only (config EOS not plumbed); pad from `self.qwen.tokenizer.pad_token_id`.
+- Batch: loop was batch-shaped but assumed all sequences run to `max_new_tokens`.
+
+### New EOS semantics
+- EOS id: `qwen.tokenizer.eos_token_id`. If it is `None`, behavior is exactly the historical fixed-length loop (no stopping possible) — documented, not heuristic.
+- **EOS is RETAINED** in the returned IDs of the sequence that generated it (conventional generation semantics; `skip_special_tokens=True` decoding removes it).
+- A sequence that finished on an earlier step emits **pad tokens** (`qwen.tokenizer.pad_token_id`, falling back to EOS/0 if unset) for remaining steps — never new model content.
+- The loop **exits early once ALL sequences are finished**; sequences finishing mid-run do not trigger forward calls for later unnecessary steps.
+- No EOS ever → exactly `max_new_tokens` per sequence (unchanged). Returned shape stays `(B, <= max_new_tokens)` with the same stack semantics callers already consume.
+
+### Batch behavior
+Batch-capable via a per-sequence `finished` bool tensor: a sequence finishes when it generates EOS; finished sequences are pad-filled by `torch.where` (never model content); the loop breaks when `finished.all()`. One sequence finishing before another is handled (tested): early finishers pad out, later ones continue until their own EOS or the step cap.
+
+### Validation (executed)
+- New `tests/test_eos_stop.py` (7 deterministic mocked tests, no downloads): EOS-first stops at 1 forward; EOS-after-N returns N tokens **including** EOS with no further forwards; no-EOS gives exact length; batch early-finisher pads while the other continues and the loop stops at 4/10 steps; no content after EOS; baseline branch delegates EOS to HF unchanged; old behavior provably fails these assertions. **ALL 7 PASSED.**
+- `test_generation_regression.py` 4/4, `test_checkpoint_loader_regression.py` 6/6, `test_device_placement.py` 5/5 all still pass; `compileall src scripts tests` OK; 9/9 configs load.
+- Scan for other manual generation loops: `for step in range(max_new_tokens...)` exists only in this fixed loop; `improved_trainer.py`/other sources contain no manual token-generation loops.
+
+### Remaining limitation
+`return_stats` and `**kwargs` remain accepted-but-unused in `generate()` (pre-existing); temperature/top-p sampling behavior unchanged by design (explicitly out of scope).
+
+### Commit
+`<eos-commit>` — `src/models/trm_qwen_vlm.py`, `tests/test_eos_stop.py`, this ledger entry.
