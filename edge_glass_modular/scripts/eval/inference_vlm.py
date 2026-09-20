@@ -146,10 +146,14 @@ def main():
               pass # Let the loader fail or handle it
 
     print(f"Loading checkpoint from {checkpoint_path}")
-    state_dict = torch.load(checkpoint_path, map_location='cpu')
-    if 'model_state_dict' in state_dict:
-        state_dict = state_dict['model_state_dict']
-    model.load_state_dict(state_dict, strict=False)
+    from models.checkpoint_loader import load_vlm_checkpoint
+    (missing_keys, unexpected_keys), how = load_vlm_checkpoint(model, checkpoint_path, strict=False)
+    print(f"Checkpoint loaded via {how}: {len(missing_keys)} missing keys (left at init), "
+          f"{len(unexpected_keys)} unexpected keys (ignored)")
+    if missing_keys:
+        print(f"  missing (first 10): {missing_keys[:10]}")
+    if unexpected_keys:
+        print(f"  unexpected (first 10): {unexpected_keys[:10]}")
     model.eval()
     
     # 3. Process Input

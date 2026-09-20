@@ -1747,3 +1747,34 @@ Audio support REMAINS in the repository (`AudioEncoder`, audio config fields, au
 
 ### Commit
 `c52964c` (3 files: ledger +11, trm_qwen_vlm.py −9/+20 net fix, new test +139).
+
+---
+
+## Checkpoint loading repair — `scripts/eval/inference_vlm.py` (2026-09-20, executed)
+
+### Canonical checkpoint layout (from `scripts/train/train_vlm_accelerate.py`, verified empirically against installed accelerate 1.10.1 + peft)
+Training writes into `Path(config.trainer.output_dir)` (e.g. `outputs/<run>/`):
+1. `checkpoint_best/` — weight-only save: `unwrapped_model.save_pretrained(ckpt_dir, state_dict=accelerator.get_state_dict(model), safe_serialization=False)`. Because the model is PEFT-wrapped (LoRA on Qwen q/k/v/o), **PEFT filters the state dict to adapter keys**: the directory contains `adapter_model.bin` + `adapter_config.json` (+ README.md). Plain non-LoRA-target modules (`vision_proj`, TRM layers, `z_init`) are **absent** from this layout — a canonical artifact limitation: `checkpoint_best` alone cannot fully restore a QwenVLM.
+2. `checkpoint-epoch-N/`, `checkpoint-final/`, `checkpoint-debug/` — full-state saves via `accelerator.save_state(ckpt_dir)`. Non-DeepSpeed layout (verified by running accelerate locally): `model.safetensors` containing the **full wrapped state dict** (keys `vision_proj.*`, `qwen.model.base_model.model.*` — LoRA base + adapters + vision_proj/TRM all present), plus `optimizer.bin`, `scheduler.bin`, `random_states_0.pkl`.
+3. Alignment checkpoints (separate path, e.g. `notebooks/checkpoints/pixmo_alignment/checkpoint_best.pt`) are `.pt` dicts with a `model_state_dict` key.
+
+### Previous loader assumption & exact root cause
+`inference_vlm.py:149` did `torch.load(checkpoint_path)` directly. `torch.load` on a **directory** raises `IsADirectoryError` — and the canonical training path only ever produces directories for VLM checkpoints (`checkpoint_best/`, `checkpoint-epoch-N/`, `checkpoint-final/`). Therefore every auto-resolved `'latest'`/`'best'` load failed; only an ad-hoc loose `.pt` (which training never produces) could have worked. **Inference could not load anything the training pipeline saved.** (Matches the earlier ledger §Inference finding "BROKEN"; now repaired.)
+
+### New behavior
+- New tiny shared helper `src/models/checkpoint_loader.py::load_vlm_checkpoint(model, path, strict=False)` recognizing, in order: (1) dir with `pytorch_model.bin`/`model.safetensors` (full-state; loaded via accelerate's `load_checkpoint_in_model`, with a plain-`load_state_dict` fallback if accelerate is absent); (2) dir with `adapter_model.bin`/`adapter_model.safetensors` (PEFT weight-only; adapter keys applied `strict=False`); (3) sharded `*.safetensors` + `.index.json`; (4) loose `.pt`/`.bin`/`.safetensors` files with `model_state_dict` unwrapping.
+- `inference_vlm.py` now calls the helper and prints missing/unexpected key counts (strict=False semantics explicit; expected missing keys when loading `checkpoint_best`: `vision_proj.*`, TRM keys, non-adapter Qwen keys — left at init by design of the canonical save; expected unexpected keys: none for full-state saves).
+- `evaluate_vlm_accelerate.py` **already handles all three layouts correctly** (dir-with-weights via `load_checkpoint_in_model`, dir-without via `accelerator.load_state`, loose `.pt` via unwrap+strict=False) — no change needed. `debug_eval_repro.py` has its own tolerant directory logic (`pytorch_model.bin` probe + `accelerator.load_state` fallback) — adequate for its debug role; not unified (the two scripts' logic differs in error handling, so extraction would not remove proven duplication beyond the helper itself).
+- The helper **is** the extracted shared loading logic; `evaluate_vlm_accelerate.py`'s inline branch is left as-is (not identical to the helper's flow because it integrates with a live accelerator/DeepSpeed context).
+
+### Compatibility
+- Full-state epoch/final/debug checkpoints: fully restored (all weights incl. LoRA + vision_proj + TRM).
+- `checkpoint_best`: adapter-only weights restored; vision_proj/TRM left at init (logged as missing keys). This is a faithful property of the canonical artifact, not a loader bug — noted for research awareness.
+
+### Validation
+- New regression test `tests/test_checkpoint_loader_regression.py` (synthetic checkpoints, mocked weights, no Qwen downloads): full-state safetensors dir restored (vision_proj 3.0 marker verified), PEFT adapter dir loads with strict=False, `.pt`/`model_state_dict` unwrapped, old `torch.load(dir)` provably fails, missing path raises. **ALL 5 PASSED.**
+- `python3 -m compileall -q src scripts tests` → COMPILE_OK; generation regression tests still pass; all 9 configs still load.
+- Repo scan for other broken-loader copies: `evaluate_vlm_accelerate.py` and `debug_eval_repro.py` are directory-aware; `train_vlm_accelerate.py:226` and `improved_trainer.py:257` load alignment-style `.pt` files whose producers actually emit `.pt` — no mismatch there.
+
+### Commit
+`435fb96` — new `src/models/checkpoint_loader.py`, `scripts/eval/inference_vlm.py` loader swap, new `tests/test_checkpoint_loader_regression.py`, plus this ledger entry.
