@@ -320,15 +320,17 @@ class QwenVLM(nn.Module):
                 eos_token_id=self.qwen.tokenizer.eos_token_id,
             )
             
-            # Extract only generated part
-            # Qwen.generate returns [input + generated] usually
-            prompt_len = question_ids.shape[1] 
-            # Note: prefix_embeds are handled internally, input_ids length is just text prompt
-            # But wait, QwenDecoder.generate builds input_ids internally?
-            # No, QwenDecoder.generate takes input_ids.
-            # outputs shape: (B, Seq)
-            generated_ids = outputs[:, prompt_len:]
-            
+            # Extract only generated part.
+            # QwenDecoder.generate passes ONLY `inputs_embeds` (no `input_ids` kwarg) to
+            # HF `model.generate()`. In transformers >= 4.x (verified empirically on the
+            # installed 4.57.6), `_prepare_model_inputs` initializes input_ids as a
+            # zero-length tensor (torch.ones((B, 0))) when only inputs_embeds are given,
+            # so the returned sequences contain ONLY the newly generated tokens — the
+            # prompt/prefix tokens are not echoed as token IDs. Slicing
+            # `outputs[:, prompt_len:]` here therefore double-stripped and discarded the
+            # generated answer. Return the output unchanged.
+            generated_ids = outputs
+
             return generated_ids
         
         else:

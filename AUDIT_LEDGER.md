@@ -1707,3 +1707,14 @@ Audio support REMAINS in the repository (`AudioEncoder`, audio config fields, au
 
 ### Classification
 **Retired.** Fusion subsystem removed from the active tree; audio/tri-modal surface (Batch B) untouched and remains the open research decision.
+
+---
+
+## Audio / tri-modal audit — factual summary (2026-09-20, audit-only, no code changed)
+
+- `AudioEncoder` (`src/encoders/audio.py`, Whisper encoder backbone): **retained experimental** — no retained config or run executes it (zero `audio_encoder` blocks in all 9 YAMLs; trainer never passes `audio_features`).
+- `TriModalAlignmentLoss` (`src/models/losses.py`): **retained experimental** — zero execution, zero result attribution; dispatch reachable only with three non-None encoder inputs.
+- Audio data path (`AudioTextDataset`, `TriModalDataset`, `transforms.audio_*`, datamodule audio collate, `scripts/data/download_pixmo_audio.py`): **historical/inactive** — metadata-driven path unreachable from all retained configs (live path is parquet-based and bypasses it).
+- Checkpoint/result provenance: no retained checkpoint or metric is attributable to audio training; v1 `librispeech/features/*.pt` blobs show a historical feature-extraction stage only. No retained checkpoint/metric may be claimed as audio-trained.
+- Known latent issues (all unreachable from retained configs; none active): (1) `audio.py` computes MRL from un-normalized pooled vector — order inverted vs `vision.py`/`text.py`; (2) torchaudio mel-spectrogram dataset features vs Whisper feature-extractor preprocessing domain mismatch in `AudioEncoder`; (3) `improved_trainer.py` never reads `batch["audio"]` / never passes `audio_features`; (4) `TriModalDataset` pairs vision/audio metadata by raw index with no ID matching.
+- Decision: **no audio source changes until audio is intentionally revived** (Batch-B research decision); if revived, the torchaudio-mel vs Whisper-extractor choice determines which latent fixes are needed.
