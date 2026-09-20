@@ -598,3 +598,67 @@ Full-module import in the v1 venv is blocked by missing `sentence_transformers`/
 - Broken legacy CLI (`trainer.py`/`train_alignment.py`/`callbacks.py`).
 - Evaluation behavior (incl. the 5-batch BLEU/ROUGE subset and swallowed exceptions).
 - Notebook load sites (07) — not scripts; untouched.
+
+## Evaluation / inference subsystem audit (2026-09-19)
+
+Scope: `src/evaluation/{metrics,benchmark,qa_metrics,simple_metrics,zero_shot,templates,explainability,__init__}.py`, `scripts/{evaluate_vlm_accelerate,evaluate_freeze_align,inference_vlm}.py`, notebook 07 (final results) + 05 (executed inference). Audit only — no code changed.
+
+### 1. Alignment evaluation
+
+Three separate retrieval-metric implementations exist:
+
+| Implementation | Where | Math | Used for |
+|---|---|---|---|
+| Notebook 07 `compute_metrics` (cell 6, self-contained) | final CSV producer | per-dim truncate → F.normalize → sim → argsort → ranks (1-indexed) → R@1/5/10, MRR, MedR; i2t via `sim`, t2i via `sim.T`; diagonal targets | **THE final artifact** (`alignment_metrics_all_models.csv` + derived tables) |
+| `src/evaluation/metrics.py:compute_retrieval_metrics` | module | normalize inside → sort → `ranks = (indices == targets).nonzero()` → R@K×100, mean/median rank, mAP@K, NDCG@K | `AlignmentBenchmark` / `evaluate_freeze_align.py` / `__init__` exports |
+| `improved_trainer.validate` inline | training loop | matmul → argsort → R@1/5/10 (I2T only) | training-time val logging |
+
+All three share the same semantics: cosine on L2-normalized embeddings, **diagonal-only ground truth** (paired protocol), i2t and t2i by transposing the similarity matrix. Correct but triplicated. `metrics.py` extras (mAP/NDCG) are computed but no artifact uses them.
+
+Chain of trust (attention arm): notebook 01 checkpoint → notebook 07 attention eval under `pixmo_alignment_1.yaml` (byte-identical to `pixmo_alignment.yaml`, verified in training audit) → final CSV. **Trustworthy as paired-retrieval numbers**, same qualification as before (cluster-absolute paths, val split, N≈2984 inferred, no persisted N/provenance). Note notebook 07 embeddings ARE re-saved (`embeddings_val_attention.pt` etc. — cell 8), but those artifacts are also not in-repo.
+
+`scripts/evaluate_freeze_align.py`: loads `checkpoint_best.pt` with **strict=True** (line 53 — the only strict load in the repo; would raise on any key mismatch), then `AlignmentBenchmark.run_full_evaluation` (retrieval + MRL dims — but `AlignmentBenchmark(model, device=device)` is constructed **without `mrl_dims`**, so the MRL branch silently never runs) + zero-shot CIFAR10/100 with try/except skip. Whole PixMo section wrapped in try/except that prints and continues. Config hard-coded to `pixmo_alignment.yaml`; checkpoint fallback `notebooks/checkpoints/...` → `outputs/pixmo_alignment/...`. Usable but never produced a retained artifact.
+
+`zero_shot.py`/`templates.py`/`explainability.py`: no persisted result artifact found for any zero-shot or explainability run in-repo; CIFAR evaluation existed as notebook cells (07 cell 16) but outputs only transient. EXPERIMENTAL.
+
+### 2. VLM / QA evaluation
+
+`scripts/evaluate_vlm_accelerate.py` (the only batch QA evaluator):
+1. **Calls `QwenVLM.generate`** with `--use_trm` **defaulting to False** → runs the **baseline branch** → **directly hits the confirmed double-strip bug** (`outputs[:, prompt_len:]` vs HF inputs_embeds-only-generated-ids). Any prediction would lose its first `prompt_len` (~577) tokens — i.e. essentially every answer truncated to garbage. The evaluator as written cannot produce meaningful EM/F1 with default flags. REPAIR required before any result from it can be trusted.
+2. TRM path (`--use_trm`) would use the working TRM branch (returns generated-only ids), but with `confidence_threshold` ignored and O(T²) per-token recursion.
+3. **Full val set** by default (`--max_test_samples` optional Subset of the first N — the *first* N, not random); greedy T=0.0, max_new_tokens=128; per-process predictions then `gather_object` (guarded by hasattr) → metrics on main process only. Saved to `--output_file` (default `eval_results.json`). **No such JSON exists in-repo** → no persisted VLM/QA eval result was ever produced/retained through this script.
+4. No swallowed exceptions in the eval loop itself (unlike training-time val BLEU/ROUGE which keeps `except: pass` and only 5 batches — that remains a WEAK in-training signal, recorded previously).
+5. Prompt handling: raw question text re-tokenized with the Qwen tokenizer (left-padded) — no chat template is applied anywhere (train or eval): questions are fed as raw token sequences. Consistent train/eval, but means the model was never trained with any instruct/chat formatting.
+6. Metrics: `qa_metrics.py` EM/F1 correct (normalized, SQuAD-style); BLEU-4 crude-but-sane (no smoothing → 0 when any n-gram precision is 0); ROUGE-L F1 correct LCS. `simple_metrics.py` is a near-duplicate with **precision/recall orientation swapped** (ref/cand reversed vs qa_metrics; F1 value unaffected, p/r reported values would differ).
+
+### 3. Inference (`scripts/inference_vlm.py`)
+
+1. Model construction path is coherent with training (alignment config default → vision-only load, QwenDecoder + QwenVLM, same `get_image_transforms(is_training=False)` preprocessing — train/eval preprocessing consistent; tokenizer identical).
+2. **Checkpoint format mismatch breaks it**: training saves `checkpoint_best` / `checkpoint-epoch-N` as **directories** (`save_pretrained` / `accelerator.save_state`), but inference does `torch.load(checkpoint_path)` (line 149) — `torch.load` on a directory raises IsADirectoryError. Auto-resolved 'latest'/'best' therefore always fail; only an ad-hoc `.pt` file would work, and training never produces one. Inference cannot load anything the training pipeline saved. BROKEN.
+3. `model.to(model_device)` (line 115) on QwenVLM containing a 4-bit/`device_map="auto"` decoder — QwenVLM has **no** quantization-safe `.to()` override (only `MultimodalAlignmentModel` does) → would attempt to move quantized/meta params. Risk of crash or silent corruption with the default configs (`load_in_4bit: true`).
+4. Minor: duplicate `transform = get_image_transforms(...)` lines (158-159); default config `trm_vlm_qa_qwen1.5.yaml` while production used 2.5-3b; `num_key_value_heads`/`intermediate_size` kwargs forced into QwenDecoder's config-override hack; generation temperature 0.2 sampling (vs eval greedy).
+5. Notebook 05 remains the only executed inference evidence (TRM branch, degenerate outputs — previously recorded).
+
+### 4. Classification
+
+| Component | Classification |
+|---|---|
+| `metrics.py` (`compute_retrieval_metrics` + MRL perf + sim stats) | **KEEP** (canonical module; retire duplicates into it later) |
+| Notebook 07 self-contained metrics | **HISTORICAL** (artifact producer; do not reuse as code) |
+| `improved_trainer.validate` inline retrieval | **MERGE LATER** (third duplicate; keep only logging behavior) |
+| `benchmark.py` (`AlignmentBenchmark`) | **CLEAN LATER** (works; default `mrl_dims=[]` silently disables MRL; embedding collection solid) |
+| `evaluate_freeze_align.py` | **CLEAN LATER** (strict=True load inconsistency; broad try/except; no artifact) |
+| `qa_metrics.py` | **KEEP** (correct EM/F1/BLEU/ROUGE; BLEU lacks smoothing — acceptable, document) |
+| `simple_metrics.py` | **REMOVE LATER** (duplicate; swapped p/r orientation) |
+| `zero_shot.py` / `templates.py` / `explainability.py` | **EXPERIMENTAL** (no retained result artifacts) |
+| `evaluate_vlm_accelerate.py` | **REPAIR LATER** (baseline-generate double-strip on default path; otherwise sound loop) |
+| `inference_vlm.py` | **REPAIR LATER** (checkpoint-format mismatch; unguarded `.to()` on quantized decoder) |
+| Training-time val BLEU/ROUGE (5 batches, except-pass) | **REPAIR LATER** (already recorded; confirm here) |
+
+### 5. Unresolved questions
+
+1. Did any `evaluate_vlm_accelerate.py` run ever complete off-cluster and write an `eval_results.json` not present in the repo? If so, its default-flags baseline predictions would be double-strip-corrupted — such numbers should be discarded if they ever surface.
+2. Is the intended QA eval protocol with-chat-template (Qwen2.5 instruct) or raw-question? Current code trains and evaluates raw — but instruct models typically need templates; intent cannot be recovered from the repo.
+
+### Recommended next step
+Repair the two broken QA-facing entry points as one commit: fix the double-strip in `QwenVLM.generate` baseline branch (making `evaluate_vlm_accelerate.py` trustworthy), and give `inference_vlm.py` a directory-aware checkpoint loader plus a quantization-safe `.to()` path (or reuse pattern from `MultimodalAlignmentModel.to`).
