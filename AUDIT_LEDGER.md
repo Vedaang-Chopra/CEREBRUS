@@ -1718,3 +1718,32 @@ Audio support REMAINS in the repository (`AudioEncoder`, audio config fields, au
 - Checkpoint/result provenance: no retained checkpoint or metric is attributable to audio training; v1 `librispeech/features/*.pt` blobs show a historical feature-extraction stage only. No retained checkpoint/metric may be claimed as audio-trained.
 - Known latent issues (all unreachable from retained configs; none active): (1) `audio.py` computes MRL from un-normalized pooled vector — order inverted vs `vision.py`/`text.py`; (2) torchaudio mel-spectrogram dataset features vs Whisper feature-extractor preprocessing domain mismatch in `AudioEncoder`; (3) `improved_trainer.py` never reads `batch["audio"]` / never passes `audio_features`; (4) `TriModalDataset` pairs vision/audio metadata by raw index with no ID matching.
 - Decision: **no audio source changes until audio is intentionally revived** (Batch-B research decision); if revived, the torchaudio-mel vs Whisper-extractor choice determines which latent fixes are needed.
+
+---
+
+## Baseline generation double-strip bug — root cause & fix (2026-09-20, executed)
+
+### Root cause (exact)
+`QwenVLM.generate` baseline branch (`src/models/trm_qwen_vlm.py`, `use_trm_recursion=False`) sliced `outputs[:, prompt_len:]` assuming HF `generate()` echoes the prompt. But `QwenDecoder.generate` (`src/decoders/qwen.py:237-247`) calls `self.model.generate(inputs_embeds=...)` with **no `input_ids` kwarg**. Verified against the **installed transformers 4.57.6** (source + empirical tiny-GPT2 run): `_prepare_model_inputs` initializes `input_ids` as `torch.ones((B, 0))` when only `inputs_embeds` are passed (`generation/utils.py:772-773`), and `_sample` grows sequences from that empty tensor — so `generate(inputs_embeds=...)` returns **only the newly generated tokens** `(B, max_new_tokens)`; the prompt/prefix is never echoed as token IDs. The slice therefore stripped `prompt_len` tokens from an answer that already contained zero prompt tokens, discarding the entire (or tail of the) generated answer. Empirical contrast on 4.57.6: `generate(input_ids=...)` returns `[prompt + generated]` (prompt IS included); `generate(inputs_embeds=...)` returns generated-only.
+
+### Flow audit
+- **Baseline path** (`use_trm_recursion=False`): `QwenVLM.generate` → `QwenDecoder.generate(input_ids=question_ids, prefix_embeds=vision_emb)` → builds `inputs_embeds = [prefix ; text]`, calls HF `generate(inputs_embeds=..., attention_mask=...)` → returns generated-only token IDs. **Was double-stripped here — this was the bug.**
+- **Refinement path** (`use_trm_recursion=True`): manual per-token loop calling `QwenVLM.forward` and appending argmax/sampled tokens; output built directly from the loop, **no slicing** — unaffected, verified unchanged.
+- **Path handling differs**: yes, and correctly so post-fix — baseline returns HF output directly; refinement self-accumulates.
+
+### Change (smallest safe fix)
+`src/models/trm_qwen_vlm.py` baseline branch: `generated_ids = outputs` (return unchanged) replacing `outputs[:, prompt_len:]`; explanatory comment pins the verified 4.57.6 semantics. No changes to training forward, hidden-state computation, refinement computation, iteration counts, gradients, prefix construction, LoRA, Qwen config, or checkpoint format.
+
+### Validation
+- New regression test `edge_glass_modular/tests/test_generation_regression.py` (mocked `QwenDecoder.generate`, **no weight downloads**): (1) baseline returns mocked generated tokens intact; (2) old slicing provably returns an empty answer on the same mock; (3) prompt token IDs never leak into the answer; (4) refinement path (per-token loop) returns identical stacked output, forward called once per token. **ALL PASSED.**
+- `python3 -m compileall -q src scripts tests` → COMPILE_OK.
+- Repo scan for stale duplicate prompt-length slicing: only the new explanatory comment matches; no other `outputs[:, prompt_len:]`-style logic anywhere in src/scripts.
+- Empirical HF-semantics probe (tiny random GPT-2, no downloads): `input_ids` path shape (1,9) for 5-prompt+4-new; `inputs_embeds` path shape (1,4) — generated-only. Encoded against actual runtime behavior.
+
+### Remaining generation/inference issues noted (not fixed here)
+- Baseline path samples with `do_sample=temperature>0` but passes `temperature=max(temperature, 0.01) if temperature > 0 else 1.0` — the `else 1.0` branch is dead when `do_sample=False` (harmless), but `top_p=0.9`-style default sampling kwargs are not surfaced; behavior unchanged by this fix.
+- `QwenDecoder.generate` synthesizes a dummy 1-token `input_ids` when `input_ids=None and prefix_embeds is not None` (qwen.py:200-205) but then still passes only `inputs_embeds` — that dummy is unused; latent, harmless on 4.57.6, would matter if callers rely on it.
+- The refinement loop never stops on EOS mid-way (runs all `max_new_tokens` steps); pre-existing behavior, untouched.
+
+### Commit
+`c52964c` (3 files: ledger +11, trm_qwen_vlm.py −9/+20 net fix, new test +139).
