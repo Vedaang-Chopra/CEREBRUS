@@ -383,3 +383,77 @@ Additional loss findings:
 
 ### Recommended next step
 Fix the mechanical model/loss defects before any training repair: (a) `losses.py:171` `mrl_losses` NameError, (b) QwenVLM TRM-generate object-vs-dict indexing, (c) QA configs' vision-encoder/checkpoint mismatch. Behavior-preserving except where current code cannot execute at all.
+
+## Decoder subsystem audit (2026-09-19)
+
+Scope: `edge_glass_modular/src/decoders/{qwen,trm,__init__}.py` + `src/models/trm_qwen_vlm.py` as consumer/interface. Audit only — no code changed. Corrects one finding from the 2026-09-19 core-model pass (see §4.1).
+
+### 1. Qwen audit (`decoders/qwen.py`)
+
+1. **Wrapped class**: `AutoModelForCausalLM.from_pretrained` (Qwen2.5 family per configs: 1.5B/1.8B/3B/7B-Instruct; final QA config `Qwen/Qwen2.5-3B-Instruct`), `dtype=bfloat16`, optional BitsAndBytes 8-bit/4-bit-nf4, optional PEFT LoRA (r=64, α=128, dropout 0.2 on q/k/v/o_proj in the regularized config). Tokenizer loaded with `padding_side="left"`, pad=eos fallback.
+2. **Dimensions**: `hidden_dim` = HF `config.hidden_size` (Qwen2.5-3B: 2048); `vocab_size` from config. Visual input expected as `prefix_embeds (B, num_prefix, hidden_dim)` — any upstream projection must produce hidden_dim. `QwenVLM.vision_proj` (4096→2048 per patch token) provides this.
+3. **Insertion mechanism**: **projected patch embeddings as a soft prefix prepended to `inputs_embeds`** — NOT token replacement, NOT 8 pooled soft tokens (that is the unused path-C design). Concat order: `[prefix_embeds, text_embeds]`.
+4. **Construction**: `inputs_embeds = get_input_embeddings()(input_ids)` then prefix cat; attention mask extended with a ones-block of `num_prefix` on the left; labels extended with −100 over the prefix positions so the HF-internal shifted CE ignores prefix logits. All three extensions are correct and mutually consistent (prefix count matches in mask, labels, and embeds).
+5. **Frozen/trainable**: backbone frozen except LoRA adapters when `use_lora`; embedding table and lm_head untouched (frozen unless LoRA targets them — it does not). No explicit `requires_grad` audit of quantized weights; BitsAndBytes freezes quantized weights by default.
+6. **Weight tying**: never touched by the wrapper — HF's own tie (Qwen2.5 ties `lm_head` to `embed_tokens`) is preserved. Nothing in QwenDecoder or QwenVLM breaks it. (Contrast: `TRMDecoder` ties manually, `trm.py:248`.)
+7. **Generation vs training**: training forward uses `inputs_embeds` path; `generate()` also builds `inputs_embeds` (with a dummy pad token if no input_ids) and calls HF `.generate(inputs_embeds=…)`. **Consequence: HF returns only the NEWLY generated ids when given `inputs_embeds` (no prompt-echo)**. `QwenVLM.generate` baseline branch then does `outputs[:, prompt_len:]` (trm_qwen_vlm.py:314) — this slices `prompt_len` tokens off a tensor that contains only generated tokens, silently truncating/wrecking the answer. Confirmed code-level bug in the non-TRM baseline branch; unexercised there (notebook 05 ran with `use_trm=True`).
+8. **Interface compatibility with `trm_qwen_vlm.py`**: compatible — QwenVLM calls `self.qwen(input_ids, attention_mask, prefix_embeds, labels, output_hidden_states=True, return_dict=True)` and reads `.hidden_states[-1]`, `.loss`, `.logits`, `model.lm_head`; `hidden_dim`/`vocab_size`/`tokenizer`/`encode_text` all exposed. QwenDecoder passes `**kwargs` straight to the HF model, so `output_hidden_states` flows through. Note `labels` passed twice effectively (inside kwargs and explicit) — fine, explicit wins.
+9. **dtype/device/mutation**: QwenDecoder itself is clean (casts prefix embeds to embed dtype/device before cat). Debug `print` calls with forced config overrides (`num_key_value_heads` etc., qwen.py:64-71) are leftover debugging — harmless but ugly. The mutation problems live in the consumer (see §4.2).
+10. **Runtime evidence**: notebooks 03_FIXED (18 executed cells, 2 errors — later load failures), 04 (missing checkpoint error), 05 (10 cells, 0 errors, real generation ran). QwenDecoder is exercised; its forward/generate are the proven surface.
+
+### 2. TRM audit (`decoders/trm.py` — `TRMDecoder`)
+
+**What it actually is: a plain small causal transformer decoder — there is NO recursion in it at all.** Components: token embedding → N× pre-LN RMSNorm transformer blocks (self-attn with optional RoPE, GELU MLP) → final RMSNorm → lm_head **tied** to the embedding. No y/z states, no iterative update, no deep supervision, no halt head, no carry. The "TRM" recursion exists only in the consumer `trm_qwen_vlm.py`.
+
+1. **Provenance verdict**: `TRMDecoder` is **materially different from and loosely inspired by** TRM — it is a standard LLM with an TRM-branded name. The vendored original (`older_code_base/additional_code/other_repo/TinyRecursiveModels/models/recursive_reasoning/trm.py`) has: ACT halt head (`q_head`), puzzle embeddings, inner/outer carry with **detached carries between steps**, deep supervision, single-network dual-latent (z_H/z_L) recursion. The current module preserves **none** of that machinery.
+2. **What v2 preserved/removed**: v2 `imports/trm_vlm_helper.py:TRMDecoderLLM` is a genuine TRM adaptation: x-embedding input, y init = x clone, z from learnable `z_init`, per-cycle n_recursions with **input injection (x+y added to z)**, y soft-updated via `probs @ token_embedding.weight`, deep-supervision CE averaged over `t_cycles` logits, **grad only on the last cycle** (`set_grad_enabled(t == last)` + detach between cycles). The current `decoders/trm.py` keeps only the layer primitives (RMSNorm/RoPE/attention) and drops input injection, soft y-update, deep supervision, and last-cycle-only grad. `QwenVLM`'s recursion re-invents a *different* variant (see §3).
+3. **`confidence_threshold`**: stale configuration. Defined in QwenVLM ctor and in notebooks (`CONFIDENCE_THRESHOLD = 0.75`) but never read by any code path — no adaptive halting was ever implemented anywhere in the repo. The name implies intended ACT-style halting that was never built.
+4. **Fixed 4-step recursion**: hard-coded at the call sites (`NUM_RECURSION_STEPS=4` in notebooks; `num_recursion_steps=4` in `train_vlm_accelerate.py:281`); QwenVLM accepts it as a ctor arg but no YAML config carries it. Config-controlled only via Python defaults.
+5. **Gradients**: QwenVLM's recursion propagates through **all** 4 steps (no detach, no last-cycle-only) — gradient flow is correct but memory-heavy; this differs from both v2 (last-cycle-only) and the vendored original (detached carries). Training==generation computation in QwenVLM's TRM branch: generation re-runs the identical full forward per token (no KV cache), so yes, same computation — O(T²) cost.
+6. **`TRMDecoder`-specific bugs**: (a) `TRMAttention` else-branch does `attn_weights + attention_mask` (trm.py:153) assuming an **additive** mask, but every caller pattern (alignment.py path C passes a 0/1 mask) supplies a multiplicative 0/1 mask → adding 1 everywhere is wrong (no masking + logits offset). Latent: path C never runs. (b) `generate()` drops `prefix_embeds` after the first iteration (trm.py:405) while recomputing the whole sequence each step without cache — prefix conditioning silently vanishes after token 1. (c) RoPE applied to query/key of dim `head_dim` with cached tables sized to `max_seq_len=2048`; `RotaryEmbedding.forward` silently truncates beyond that (no error).
+
+### 3. The actual recursion in `trm_qwen_vlm.py` (QwenVLM TRM branch)
+
+Input = Qwen's **final-layer hidden states** `qwen_hidden (B, L+P, H)` (language embeddings over image-prefix+text, NOT visual latents, NOT logits). Algorithm: `x = down_proj(qwen_hidden)`; learnable `z_init (1,1,trm_dim)` expanded to (B,L,trm_dim); `y = x`; loop 4×: `combined = cat([y, z], dim=1)` (sequence concat, doubling length) → N TRMLayer blocks → chunk back into y,z. After loop: `y_up = up_proj(y)`; **`final_hidden = qwen_hidden + y_up`** (residual against the original Qwen states); `logits = lm_head(final_hidden)`; manual shifted CE on answer tokens with prefix logits sliced off. Trainable: down/up_proj, TRM layers, trm_norm (present but **never applied** — `self.trm_norm` created and moved around but no call site uses it), z_init, vision_proj; Qwen otherwise LoRA/frozen. This is a *different* algorithm from v2's helper (no input injection, no soft y-update, no deep supervision, no last-cycle grad) — a third, previously undocumented variant.
+
+### 4. Resolution of prior findings
+
+1. **`out['logits']` on `CausalLMOutputWithPast` — NOT a bug (prior finding corrected).** HF `ModelOutput.__getitem__` supports string keys, so `out['logits']` is valid. Runtime-confirmed: notebook 05 executed the TRM generate path end-to-end without error. Downgrade to harmless style inconsistency (dict access on an object).
+2. **In-place module `.to()` during forward (trm_qwen_vlm.py:104-113, 177-183)** — confirmed anti-pattern. Works in single-device/notebook contexts (evidence: notebook 05), but re-assigning `self.vision_proj`/`self.down_proj` per forward mutates the module tree, breaks DDP/Accelerate parameter registration, and forces host-side device/dtype churn every step. Requires training-context evidence for whether it ever corrupted a DDP run; structurally it must be removed before any distributed rerun.
+3. **Two VLM projection/injection strategies** — confirmed and now fully characterized: (A) per-patch 577-token prefix via `QwenVLM.vision_proj` (the executed one) vs (B) pooled 8-soft-token prefix via `alignment.py` path C / `MultimodalProjector` (zero execution evidence). v2's `VisionToLLMProjector` (num_tokens pooled prefix) is the historical ancestor of B; the executed design A descends from notebook-era per-patch injection. Not a bug — an unresolved design fork.
+4. **`confidence_threshold` unused** — confirmed stale configuration (see §2.3); no halting implementation exists anywhere in repo history except the vendored original's ACT head.
+5. **New confirmed bug (from this audit)**: QwenVLM baseline-branch `outputs[:, prompt_len:]` double-strips against HF's inputs_embeds-only-generated-ids behavior (§1.7). And the previously recorded QA-config perceiver/checkpoint mismatch stands (use_perceiver:true, latent 1024 vs attention checkpoint, strict=False).
+
+### 5. Historical comparison summary
+
+| Implementation | Recursion | Halt/ACT | Deep supervision | Injection | Grad control | Status |
+|---|---|---|---|---|---|---|
+| Vendored TinyRecursiveModels `trm.py` | z_H/z_L dual, T/N loops | q_head ACT halt | yes | input concat | detached carries | reference only, never imported |
+| v2 `trm_vlm_helper.TRMDecoderLLM` | y/z, n_recursions + t_cycles | no | yes (avg over cycles) | x+y added to z | last-cycle only | standalone LM; superseded |
+| v1 `04_decoder_poc/` notebooks | — | — | — | prefix finetuning PoC | — | exploratory |
+| v0 `text_decoder.DecoderLLM` | — | — | — | task-prompt wrapper | — | prompt-engineering era |
+| **current `decoders/trm.py`** | **none** | no | no | prefix concat | n/a (plain LM) | misnamed plain decoder |
+| **current QwenVLM TRM branch** | y/z seq-concat ×4 | no | no | residual add to Qwen hidden | all steps | executed (degenerate output) |
+
+Lost functionality worth noting: v2's deep supervision + last-cycle-only grad (memory/perf discipline), the vendored ACT halt (the only real "recursive reasoning with halting" in the repo), and v2's input-injection design. Runtime evidence for QwenVLM+TRM generation exists but the outputs were degenerate ("It is a picture of a picture." loops) — consistent with the unaligned vision features concern from the core-model pass.
+
+### 6. Classification
+
+| Component | Classification | Rationale |
+|---|---|---|
+| `qwen.py` — QwenDecoder | **KEEP** | Correct prefix injection, mask/label handling; proven surface. Clean debug prints + config-override hack later. |
+| `qwen.py` — `generate()` inputs_embeds interaction | **REPAIR LATER** (in consumer) | The double-strip bug is in QwenVLM, not here; document the generated-ids-only contract. |
+| `trm.py` — `TRMDecoder` | **REFACTOR LATER / rename** | Not recursive despite the name; additive-mask bug latent in path C; generate drops prefix after step 1. Salvageable as a plain small LM. |
+| `trm.py` — RMSNorm/RoPE/attention primitives | **KEEP** | Sound primitives shared with any future real TRM port. |
+| `trm_qwen_vlm.py` — QwenVLM TRM branch | **REPAIR LATER** | Executed but a third undocumented variant; missing v2's deep supervision/grad discipline; `trm_norm` dead; `.to()` mutation; memory-heavy. |
+| `trm_qwen_vlm.py` — baseline generate `outputs[:, prompt_len:]` | **REPAIR LATER** | Confirmed double-strip bug vs HF inputs_embeds semantics. |
+| `confidence_threshold` plumbing | **HISTORICAL** (stale) | Never implemented anywhere. |
+| Vendored TinyRecursiveModels | **HISTORICAL** (reference) | The only true TRM; import-reference for any future real port. |
+| v2 `trm_vlm_helper.TRMDecoderLLM` | **HISTORICAL** (salvage patterns) | Deep supervision + last-cycle grad + input injection worth porting if TRM work resumes. |
+| `__init__.py` exports | **KEEP** | Minimal, correct. |
+
+### 7. Unresolved questions
+
+1. Did any actual distributed/accelerate training run execute with the `.to()`-mutation code (i.e. did it ever corrupt optimizer state), or were all runs single-process notebooks/scripts? Determines urgency of the refactor.
+2. Was the baseline (non-TRM) generate path ever used for evaluation? The double-strip bug would have silently truncated all baseline answers — if `04_vlm_qa_evaluation` ever produced numbers through that branch they are suspect (it errored on missing checkpoint, so likely no).
+3. Should a real TRM (vendored ACT machinery or v2-style deep supervision) ever be ported, or is the current "hidden-state refiner" framing the intended final design? No artifact answers intent.
