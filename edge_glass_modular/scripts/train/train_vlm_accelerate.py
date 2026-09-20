@@ -44,7 +44,6 @@ try:
     from models.alignment import MultimodalAlignmentModel
     from models.trm_qwen_vlm import QwenVLM
     from decoders.qwen import QwenDecoder
-    from decoders.trm import TRMConfig
     from data.dataset_builder import PixmoQADataset
     from data.transforms import get_image_transforms
     from evaluation.qa_metrics import compute_bleu, compute_rouge_l, normalize_answer
@@ -289,7 +288,6 @@ def main():
         use_trm_recursion=use_trm,
         num_trm_layers=4, # Configurable?
         num_recursion_steps=4,
-        confidence_threshold=0.75
     )
     
     # Enable gradient checkpointing if available/needed

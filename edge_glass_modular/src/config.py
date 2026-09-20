@@ -95,7 +95,7 @@ class EncoderConfig:
 class DecoderConfig:
     """Configuration for decoder LLM."""
 
-    type: Literal["qwen", "trm"] = "qwen"
+    type: Literal["qwen"] = "qwen"
     model_name: str = "Qwen/Qwen2.5-7B-Instruct"
     freeze: bool = False
 
@@ -118,17 +118,6 @@ class DecoderConfig:
     num_key_value_heads: Optional[int] = None
     intermediate_size: Optional[int] = None
 
-    # TRM specific
-    trm_vocab_size: int = 32000
-    trm_hidden_dim: int = 512
-    trm_num_layers: int = 6
-    trm_num_heads: int = 8
-    trm_max_seq_len: int = 2048
-    trm_dropout: float = 0.1
-    trm_intermediate_dim: int = 2048
-    trm_layer_norm_eps: float = 1e-6
-    trm_use_rope: bool = True
-    trm_rope_theta: float = 10000.0
     num_layers_baseline: Optional[int] = None  # Kept for backward compatibility
     use_learned_z_init: bool = False
 
@@ -393,24 +382,6 @@ class ExperimentConfig:
             cfg["text_encoder"] = EncoderConfig(**_filter_fields(cfg["text_encoder"], EncoderConfig))
         if "decoder" in cfg and cfg["decoder"] is not None:
             decoder_cfg = dict(cfg["decoder"])
-
-            # Map common TRM-style keys to internal names for backward compatibility
-            if decoder_cfg.get("type") == "trm":
-                alias_map = {
-                    "vocab_size": "trm_vocab_size",
-                    "hidden_dim": "trm_hidden_dim",
-                    "num_layers": "trm_num_layers",
-                    "num_heads": "trm_num_heads",
-                    "max_seq_len": "trm_max_seq_len",
-                    "dropout": "trm_dropout",
-                    "intermediate_dim": "trm_intermediate_dim",
-                    "layer_norm_eps": "trm_layer_norm_eps",
-                    "use_rope": "trm_use_rope",
-                    "rope_theta": "trm_rope_theta",
-                }
-                for old_key, new_key in alias_map.items():
-                    if old_key in decoder_cfg and new_key not in decoder_cfg:
-                        decoder_cfg[new_key] = decoder_cfg.pop(old_key)
 
             decoder_cfg = _filter_fields(decoder_cfg, DecoderConfig)
             cfg["decoder"] = DecoderConfig(**decoder_cfg)

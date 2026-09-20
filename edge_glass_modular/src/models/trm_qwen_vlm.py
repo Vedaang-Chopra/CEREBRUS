@@ -3,19 +3,22 @@ import torch
 import torch.nn as nn
 from typing import Optional, Tuple, List, Union
 from src.decoders.qwen import QwenDecoder
-from src.decoders.trm import TRMConfig, TRMLayer, RMSNorm
+from src.decoders.trm import TRMConfig, TRMLayer
 
 class QwenVLM(nn.Module):
     """
-    Qwen-based VLM with optional TRM latent recursion.
-    
+    Qwen-based VLM with TRM-inspired iterative latent refinement.
+
     Architecture:
     1. Input (Image + Text) -> Aligned Embeddings
     2. Qwen Backbone (Pretrained) -> Hidden States
-    3. TRM Recursion (on Hidden States) -> Refined States
+    3. TRM-inspired iterative refinement (on Hidden States) -> Refined States
     4. LM Head -> Logits
-    
-    This fixes the issue where Qwen layers were bypassed.
+
+    Note: the refinement step is inspired by TinyRecursiveModels (weight-shared
+    blocks applied over a fixed number of steps with a y/z state motif) but is
+    NOT the TRM architecture itself — it has no halting, deep supervision,
+    input injection, or carry detach (see AUDIT_LEDGER.md, TRM reconciliation).
     """
     def __init__(
         self,
@@ -25,13 +28,11 @@ class QwenVLM(nn.Module):
         trm_config: Optional[TRMConfig] = None,
         num_trm_layers: int = 2,
         num_recursion_steps: int = 4,
-        confidence_threshold: float = 0.75,
     ):
         super().__init__()
         self.qwen = qwen_decoder
         self.use_trm_recursion = use_trm_recursion
         self.num_recursion_steps = num_recursion_steps
-        self.confidence_threshold = confidence_threshold
         
         # Get dimensions from Qwen
         self.hidden_dim = self.qwen.hidden_dim
@@ -65,14 +66,11 @@ class QwenVLM(nn.Module):
             self.trm_layers = nn.ModuleList([
                 TRMLayer(trm_config) for _ in range(trm_config.num_layers)
             ])
-            
-            # Norms
-            self.trm_norm = RMSNorm(self.trm_hidden_dim)
-            
+
             # Latent token initialization (learnable)
             # z is the "reasoning state"
             self.z_init = nn.Parameter(torch.randn(1, 1, self.trm_hidden_dim) * 0.02)
-            
+
     def forward(
         self,
         # Notebook-style arguments
@@ -106,7 +104,6 @@ class QwenVLM(nn.Module):
                 
             if self.use_trm_recursion:
                 self.trm_layers.to(device=device, dtype=qwen_dtype)
-                self.trm_norm.to(device=device, dtype=qwen_dtype)
                 if self.z_init.device != device or self.z_init.dtype != qwen_dtype:
                     self.z_init.data = self.z_init.data.to(device=device, dtype=qwen_dtype)
 
@@ -197,7 +194,6 @@ class QwenVLM(nn.Module):
         if hasattr(self.up_proj, 'weight'):
             self.up_proj = self.up_proj.to(device=target_device, dtype=target_dtype)
         self.trm_layers.to(device=target_device, dtype=target_dtype)
-        self.trm_norm.to(device=target_device, dtype=target_dtype)
         if self.z_init.device != target_device or self.z_init.dtype != target_dtype:
             self.z_init.data = self.z_init.data.to(device=target_device, dtype=target_dtype)
 
@@ -282,7 +278,7 @@ class QwenVLM(nn.Module):
         return_stats: bool = False,
         **kwargs,
     ):
-        """Generate answers with optional TRM recursion."""
+        """Generate answers with TRM-inspired iterative refinement."""
         # Project vision
         # Keep everything on the text/question device to avoid cross-GPU issues
         device = question_ids.device if question_ids is not None else vision_tokens.device

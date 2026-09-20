@@ -1525,3 +1525,35 @@ Perceiver checkpoint recovery is already recorded as unresolved-provenance item 
 3. Remove dead `confidence_threshold` param + storage from `QwenVLM` and its 3 call sites (script:292, notebooks 03 cell 16 / 05 cell 5 — notebook source-line edits only).
 4. Remove or apply `trm_norm` (dead trainable in optimizer/state-dict) — removal changes state-dict keys, so tie it to a checkpoint-compat decision; recommend REMOVAL since no retained checkpoint contains it.
 5. Rewrite naming: QwenVLM docstring + config tags (`tags: [trm, recursive, …]`) → "TRM-inspired iterative refinement"; defer full docs pass.
+
+## TRM dead-path cleanup — executed (2026-09-20, per Option A decision)
+
+Single focused commit on `main` implementing the safe cleanup implied by the TRM reconciliation. The y/z recursion, hard-coded 4 steps/4 layers, gradient behavior, Qwen/LoRA setup, prefix handling, MultimodalProjector/path C, fusion, Perceiver, audio, and all result artifacts untouched.
+
+### Removed (verified zero consumers beforehand, per audit consumer table)
+1. **`TRMDecoder` class** deleted from `src/decoders/trm.py` (−199 L: class + `_init_weights` + forward + generate + properties). All live primitives preserved: `TRMConfig`, `RMSNorm`, `RotaryEmbedding`, `apply_rotary_emb`, `TRMAttention`, `TRMMLP`, `TRMLayer`. Module docstring rewritten to "TRM-inspired primitive layer implementations" with a retirement note.
+2. **`decoder.type: "trm"` path removed**: alignment.py import `TRMDecoder` + the entire `elif config.decoder.type == "trm"` construction branch (14 L). QwenDecoder + `MultimodalProjector` path untouched.
+3. **Standalone-TRM config surface removed** from `DecoderConfig`: `trm_vocab_size/hidden_dim/num_layers/num_heads/max_seq_len/dropout/intermediate_dim/layer_norm_eps/use_rope/rope_theta` (10 fields); `type: Literal["qwen","trm"]` → `Literal["qwen"]`; the `type == "trm"` alias mapping in `load_config` (18 L). Pre-deletion re-scan confirmed none of the 10 fields appears in any retained YAML; `num_layers_baseline`/`use_learned_z_init` retained (sibling compat fields, not standalone-TRM-only).
+4. **`confidence_threshold` removed**: ctor param + stored attr from QwenVLM; caller pass in `train_vlm_accelerate.py` (kept `num_trm_layers=4`/`num_recursion_steps=4` hard-codes untouched — behavior preserved); caller pass in notebook 03 cell 16 (executed source; mechanical constructor edit only, executed outputs preserved) + the never-read `CONFIDENCE_THRESHOLD = 0.75` constant line. Notebook 05 has no confidence mention (verified).
+5. **`trm_norm` removed**: module creation + both `.to()` alignment calls + now-unused `RMSNorm` import in QwenVLM. Pre-verified: zero forward calls, no retained checkpoint contains the key (all QA checkpoints cluster-only, never in-repo).
+6. **Dead import** `from decoders.trm import TRMConfig` removed from `train_vlm_accelerate.py` (was imported, never used).
+
+### Naming integrity edits (source-level only, no symbol renames)
+- QwenVLM class docstring: "TRM-inspired iterative latent refinement" + explicit note that it is NOT the TRM architecture (no halting/deep supervision/input injection/carry detach) pointing at the ledger.
+- `generate()` docstring: "TRM-inspired iterative refinement".
+- `decoders/__init__.py` exports updated: `TRMDecoder` out; `TRMLayer`/`RMSNorm` now exported (they are the live QwenVLM substrate).
+
+### Validation (all passed)
+1. Residual symbol scan over src/scripts/configs/notebooks (active tree): `TRMDecoder`, `trm_*` config fields, `confidence_threshold`, `trm_norm`, `type: trm` → zero hits (remaining `trm_hidden_dim` hits are QwenVLM's own live attribute; `TRMDecoder` mention is only the trm.py retirement note).
+2. `python -m compileall -q src scripts` → exit 0; `bash -n scripts/train/run_vlm_experiments.sh` → OK.
+3. All 9 retained YAML configs load via `load_config`; parsed `DecoderConfig` exposes no `trm_*` fields and `type == "qwen"` for every config.
+4. Synthetic (torch 2.8.0 CPU, no model downloads): `trm.py` imports standalone without `TRMDecoder`; `TRMLayer` forward `(2,10,64)→(2,10,64)` + backward gives 10/10 params nonzero grads.
+5. AST-level QwenVLM verification: `forward` retains `num_recursion_steps` loop, `cat([y, z], dim=1)`, `chunk(2, dim=1)`, `qwen_hidden + y_up` — recursion computation byte-equivalent intent, only dead state removed; `__init__` retains `trm_layers` + `z_init`, no `trm_norm`/`confidence_threshold`.
+
+### Notebook edit scope
+Notebook 03 cell 16 (executed): removed `confidence_threshold=CONFIDENCE_THRESHOLD,` constructor line + the constant definition line. No output cells touched; execution counts preserved. Notebook 05: no edits needed (no confidence references). All other notebooks untouched.
+
+### Not done (deferred)
+- `trm_qwen_vlm.py` module-level symbol/file rename (TRMLayer etc.) — explicitly out of scope.
+- Config YAML tag lists (`tags: [trm, recursive, …]`) — docs pass.
+- `decoder.type` Literal narrowing already applied; `type` field itself retained for Qwen.

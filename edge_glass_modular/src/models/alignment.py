@@ -6,7 +6,7 @@ from typing import Optional, Dict, Any
 from dataclasses import dataclass
 
 from encoders import VisionEncoder, AudioEncoder, TextEncoder
-from decoders import QwenDecoder, TRMDecoder
+from decoders import QwenDecoder
 from config import ExperimentConfig
 from .fusion import MultimodalFusion
 from .projector import MultimodalProjector
@@ -130,21 +130,6 @@ class MultimodalAlignmentModel(nn.Module):
                     lora_target_modules=config.decoder.lora_target_modules,
                     device_map=config.decoder.device_map,
                 )
-            elif config.decoder.type == "trm":
-                from decoders.trm import TRMConfig
-                trm_config = TRMConfig(
-                    vocab_size=config.decoder.trm_vocab_size,
-                    hidden_dim=config.decoder.trm_hidden_dim,
-                    num_layers=config.decoder.trm_num_layers,
-                    num_heads=config.decoder.trm_num_heads,
-                    intermediate_dim=config.decoder.trm_intermediate_dim,
-                    max_seq_len=config.decoder.trm_max_seq_len,
-                    dropout=config.decoder.trm_dropout,
-                    layer_norm_eps=config.decoder.trm_layer_norm_eps,
-                    use_rope=config.decoder.trm_use_rope,
-                    rope_theta=config.decoder.trm_rope_theta,
-                )
-                self.decoder = TRMDecoder(trm_config)
 
             # Create projector to LLM space
             input_dim = config.fusion.fusion_dim if self.fusion is not None else config.vision_encoder.projection_dim
