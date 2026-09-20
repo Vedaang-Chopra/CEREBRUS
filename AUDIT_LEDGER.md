@@ -896,3 +896,44 @@ Edge Assistant/
 1. `train_alignment.py` CLI: repair to use `ImprovedMultimodalTrainer` (notebook-01 wiring) or retire the `MultimodalTrainer` family (`trainer.py`, `callbacks.py`, `utils/checkpoint.py`) outright? Affects whether those files stay in `src/training/`.
 2. `older_code_base/`: delete from main (git-history recoverable) vs keep as untracked local-only? Default: delete tracked remnants, keep untracked parts local.
 3. Confirm notebook-generation/debug script family is deleted (not archived) — they are recoverable in Git history either way.
+
+## Structural move batch 1 — retained scripts (2026-09-20)
+
+Structural-only commit. Notebooks, src/, configs, historical code, and debug/generated scripts untouched (one comment-path fix in src is the only non-script edit, see below).
+
+### Moves performed (all `git mv`, 10 files)
+
+| From | To |
+|---|---|
+| `scripts/train_vlm_accelerate.py` | `scripts/train/train_vlm_accelerate.py` |
+| `scripts/run_vlm_experiments.sh` | `scripts/train/run_vlm_experiments.sh` |
+| `scripts/evaluate_vlm_accelerate.py` | `scripts/eval/evaluate_vlm_accelerate.py` |
+| `scripts/evaluate_freeze_align.py` | `scripts/eval/evaluate_freeze_align.py` |
+| `scripts/inference_vlm.py` | `scripts/eval/inference_vlm.py` |
+| `scripts/download_datasets.py` | `scripts/data/download_datasets.py` |
+| `scripts/download_pixmo_audio.py` | `scripts/data/download_pixmo_audio.py` |
+| `notebooks/ddsp_scripts/train_perceiver.py` | `scripts/experiments/train_perceiver.py` |
+| `notebooks/ddsp_scripts/train_perceiver_v3.py` | `scripts/experiments/train_perceiver_v3.py` |
+| `notebooks/ddsp_scripts/train_pixmo_alignment.py` | `scripts/experiments/train_pixmo_alignment.py` |
+
+`train_alignment.py` deliberately NOT moved (broken legacy CLI, pending retirement/replacement). `debug_gradients.py` and empty `train_perceiver_v2.py` deliberately left in `notebooks/ddsp_scripts/` (pending cleanup batch). Contents of moved files otherwise preserved — no internals refactored, no bug repairs, no semantics changes.
+
+### Mechanical reference changes (path-depth only)
+
+1. Project-root depth corrected in 8 moved Python scripts (+1 parent level): `train_vlm_accelerate.py`, `evaluate_vlm_accelerate.py`, `inference_vlm.py` (`current_dir.parent` → `.parent.parent`); `download_datasets.py` (`parent.parent` → `.resolve().parent.parent.parent`); `download_pixmo_audio.py` (`parents[1]` → `parents[2]`); `train_perceiver.py`, `train_pixmo_alignment.py` (`.parent×3` → `.parent×4`); `train_perceiver_v3.py` (`SCRIPT_DIR.parent.parent` → `.parent.parent.parent`).
+2. `run_vlm_experiments.sh`: 3 embedded invocation paths updated (`scripts/train_vlm_accelerate.py` → `scripts/train/…`, `scripts/evaluate_vlm_accelerate.py` → `scripts/eval/…`).
+3. `evaluate_freeze_align.py`: cwd-detection branch extended — `scripts/eval` chdirs two levels up (package root); legacy `scripts` one-level branch retained. This is the only control-flow-adjacent change; purely mechanical cwd handling.
+4. Comment-only path fix: `src/models/trm_qwen_vlm.py:122` comment referenced `scripts/train_vlm_accelerate.py` → updated to `scripts/train/…` (no code change).
+
+### Validation
+
+- `python3 -m py_compile` on all 9 moved `.py` scripts — OK.
+- `bash -n scripts/train/run_vlm_experiments.sh` — OK.
+- Path-resolution check (torch venv): all 8 root-path computations now resolve to `edge_glass_modular/` and `src/` exists at each target. Import sanity in torch venv: `config`, `data.dataset_builder`, `data.transforms`, `data.downloader` import OK from `src`; `models.*` / `evaluation.*` blocked only by missing `sentence_transformers`/`sklearn` in that venv (pre-existing env gap, not move-related).
+- Repo search for old paths (`scripts/train_vlm_accelerate`, `scripts/evaluate_*`, `scripts/inference_vlm`, `scripts/download_*`, `scripts/run_vlm_experiments`, `ddsp_scripts/train_perceiver|pixmo`) across src/scripts/configs/notebooks: zero live references remain.
+
+### Not validated / left stale deliberately
+
+- Docs with old script paths NOT updated (descriptive, not run-required; docs pass will rewrite them anyway): `README.md:83`, `reports/README.md:83`, `reports/SETUP_AND_RUN.md:30,201,215`, `reports/implementation_report.md:43`.
+- `run_vlm_experiments.sh` uses repo-root-relative `edge_glass_modular/...` paths — unchanged (invoked from repo root, as before).
+- No script was executed end-to-end (would require models/checkpoints/datasets) — per task constraints.

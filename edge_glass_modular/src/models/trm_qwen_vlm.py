@@ -119,7 +119,7 @@ class QwenVLM(nn.Module):
             input_ids = torch.cat([question_ids, answer_ids], dim=1)
             
             # Build the text attention mask from the question/answer masks.
-            # answer_mask semantics (from scripts/train_vlm_accelerate.py:collate_fn):
+            # answer_mask semantics (from scripts/train/train_vlm_accelerate.py:collate_fn):
             #   1 = real answer token, 0 = answer padding. It is a padding mask, NOT
             #   a loss mask — loss masking is handled separately via labels below.
             # If a caller passed no answer_mask, treat every answer token as valid.

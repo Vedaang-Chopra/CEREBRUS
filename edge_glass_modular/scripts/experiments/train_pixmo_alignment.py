@@ -49,7 +49,7 @@ warnings.filterwarnings("ignore")
 
 # Add src to path
 current_file = Path(__file__).resolve()
-project_root = current_file.parent.parent.parent
+project_root = current_file.parent.parent.parent.parent
 src_path = project_root / "src"
 sys.path.insert(0, str(src_path))
 sys.path.insert(0, str(project_root))

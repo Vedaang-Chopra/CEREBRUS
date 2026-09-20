@@ -18,7 +18,7 @@ except:
 
 # Add src to path
 current_dir = Path(__file__).resolve().parent
-project_root = current_dir.parent
+project_root = current_dir.parent.parent
 src_path = project_root / "src"
 sys.path.insert(0, str(src_path))
 sys.path.insert(0, str(project_root))

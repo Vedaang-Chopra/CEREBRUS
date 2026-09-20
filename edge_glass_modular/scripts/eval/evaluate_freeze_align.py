@@ -8,7 +8,11 @@ from tqdm import tqdm
 
 # Add src to path
 current_dir = Path.cwd()
-if str(current_dir).endswith("scripts"):
+if str(current_dir).endswith(os.path.join("scripts", "eval")):
+    root_dir = current_dir.parent.parent
+    os.chdir(root_dir)
+    sys.path.insert(0, str(root_dir))
+elif str(current_dir).endswith("scripts"):
     root_dir = current_dir.parent
     os.chdir(root_dir)
     sys.path.insert(0, str(root_dir))
