@@ -1024,3 +1024,20 @@ The package `outputs/` (19 tracked files, gitignored but pre-tracked) holds the 
 ### Recommended next cleanup batch
 
 `git rm -r --cached` (delete from main, keep local copies) root `wandb/` + `notebooks/wandb/` (341 tracked files, ~21 MB), verify `*wandb*` then ignores them; keep `eda_outputs/`; defer `notebooks/outputs/` relocation to the artifacts-consolidation pass that also sorts `edge_glass_modular/outputs/`.
+
+## W&B untrack batch (2026-09-20)
+
+Artifact-cleanup-only commit. Removed W&B run state from Git tracking while preserving local copies. No files deleted, moved, or modified; `notebooks/outputs/`, `notebooks/eda_outputs/`, `edge_glass_modular/outputs/`, src/, notebooks, historical code untouched.
+
+### Actions
+
+- Pre-verified both dirs contain only W&B-generated state (run dirs, `debug*.log`, `latest-run` symlink; one stray `wandb/.DS_Store`); no other tracked paths anywhere in the repo match `wandb`.
+- `git rm -r --cached wandb edge_glass_modular/notebooks/wandb` — 343 tracked paths removed from the index; local copies intact (338 files, ~21 MB: 14 MB root + 6.9 MB notebooks).
+- `.gitignore` unchanged: existing line 30 `*wandb*` now takes effect and `git check-ignore -v` confirms both paths ignored. Rule is broad but functional; smallest sufficient change was no change.
+
+### Validation
+
+- Local preservation confirmed: `find wandb notebooks/wandb -type f | wc -l` → 338 files, sizes unchanged (14M / 6.9M).
+- Staged diff contains 343 deletions, zero of which are non-wandb paths.
+- `git check-ignore -v wandb/debug.log edge_glass_modular/notebooks/wandb/debug.log` → both matched by `.gitignore:30` (`*wandb*`).
+- Git history retains all prior versions (index-only removal; no history rewrite).
