@@ -204,3 +204,182 @@ Not copied: `build_musiccaps_parquet` (no MusicCaps consumer in current configs)
 - v2 `build_musiccaps_parquet` / `build_musiccaps_waveform_parquet` (no current consumer).
 - v2 QA streaming loaders + `PixmoQAMixConfig` (QA parquet build stays notebook-only; only the generic split logic was salvaged).
 - `.pt + index JSON` feature pipeline (per prior decision).
+
+## Encoder / representation subsystem audit (2026-09-19)
+
+Scope: `edge_glass_modular/src/encoders/{vision,text,audio,pooling,perceiver,mrl,__init__}.py` + driving config fields. Audit only — no code changed.
+
+### Current implementation inventory
+
+| File | Classes | Backbone | Input → Output | Token/pooled | Internal projection | Trainable | Consumers |
+|---|---|---|---|---|---|---|---|
+| `vision.py` | `VisionEncoder`, `MLPAdapter`, `VisionEncoderOutput` | `CLIPVisionModel` (frozen; final config `clip-vit-large-patch14-336`, hidden 1024) | `(B,3,336,336)` float tensor → pooled `(B, projection_dim)` normalized | token-level inside, pooled out | perceiver path: `MLPAdapter`(1024→512) → Perceiver → mean-pool → `LayerNorm+Linear`(512→4096/512); direct path: `Linear`(1024→4096) | projector/pooling/perceiver trainable; CLIP frozen (`requires_grad=False`) but **no `no_grad`/`eval()` in forward** — autograd still traverses the frozen backbone | `models/alignment.py:54` |
+| `text.py` | `TextEncoder` | dual backend: `SentenceTransformer` (MPNet in final config) or `CLIPTextModel` if "clip" in name | list[str] or tokenized dict → pooled `(B, projection_dim)` normalized | pooled only (ST) | `Linear(hidden→projection)` | projector trainable; backbone frozen; ST path guarded by `no_grad` (inference mode) + `.clone()` | `models/alignment.py` |
+| `audio.py` | `AudioEncoder` | `WhisperModel.encoder` (frozen) | mel features `(B, n_mels, T)` → pooled `(B, projection_dim)` normalized | token-level inside, pooled out | `Linear(d_model→projection)` or perceiver path | projector/perceiver trainable; backbone frozen | `models/alignment.py:68` (no active config) |
+| `pooling.py` | `AttentionPooling` (multihead), `SimpleAttentionPooling` | n/a | `(B,L,D)[+mask]` → `(B,D)` | pooled | none | fully trainable | `vision.py` (`Simple` used by final config; `AttentionPooling` **never referenced by any config — dead option**) |
+| `perceiver.py` | `PerceiverResampler`, `PerceiverResamplerLayer`, `PerceiverAttention`, `FeedForward` | n/a | `(B,T,dim)` → `(B,num_latents,dim)` | token-level | none (dim-preserving) | fully trainable | `vision.py`, `audio.py` |
+| `mrl.py` | `MatryoshkaProjection`, `matryoshka_loss` | n/a | `(B,input_dim)` → `{dim: (B,dim) normalized}` | pooled | **none — pure prefix slicing + re-L2-normalize; zero parameters** | n/a (no params) | `vision.py`, `text.py`, `audio.py`; losses in `models/losses.py` |
+
+Config dependencies: `configs/pixmo_alignment.yaml` = attention path (proj 4096, `SimpleAttentionPooling`, MRL [2048…128]) — **artifact-backed final path**. `configs/perceiver_mrl_alignment.yaml` = perceiver path (proj 512, latent_dim 512, 64 latents, 4 layers, 8 heads, MRL [256,128,64], attention pooling off).
+
+### Component-by-component historical comparison
+
+**Vision.** V0 `architecture/image_encoder.py`: generic `AutoModel` wrapper, `feature_strategy` (auto/image_embeds/layers_concat) + pool (mean/cls/none), `@torch.no_grad()`, fp16, device self-managed. V1 `imports/encoders.py`: DINOv2-style **two-layer concat** (`hidden_states[1]` + `[-2]`, CLS removed) → `(B,T,2D)` patch features + mask; careful MPS/fp16 fallback + device-sync logic. V2: notebook-era CLIP patch tokens → MLPAdapter → Perceiver → `AlignmentProjector` (mean pool → LN+Linear). Modular `vision.py` = V2 lineage folded into one class, with attention pooling added. **Lost in migration:** V1's multi-layer feature concat + mask, V0's feature-strategy flexibility, and the disciplined device/dtype/no_grad handling.
+
+**Text.** V0: AutoModel mean/CLS pool, batched, frozen. V1 `align_training/text_encoder.py`: HFTextEncoder, CLS pool, fp32, frozen. Modular: adds MPNet `SentenceTransformer` backend (final-config backbone) + projection + MRL + L2 normalize. Modular is the only version with a projection head; closest to final experiments. `SequenceTransformer` sequence output unsupported (documented).
+
+**Audio.** V0/V1: Whisper wrappers with strategy/pooling options and device handling. Modular: mean-pool (mask-aware) or Perceiver; MRL option. **Bug:** `audio.py:161-167` computes `mrl_embeddings` from the **un-normalized** pooled vector, then L2-normalizes `pooled` afterwards — order inverted vs. `vision.py`/`text.py` (which normalize before MRL). Not exercised by any current config.
+
+**Pooling.** No historical standalone equivalent (V2 `AlignmentProjector` had inline mean/first/linear-attention options). Modular `SimpleAttentionPooling` (learnable scalar-attention query, LN, weighted sum) is the **artifact-backed** pooling of the final 77.7%/77.5% R@5 result. `AttentionPooling` (multihead, `nn.MultiheadAttention`) is unused by any config.
+
+**Perceiver — three distinct designs exist:**
+1. **v1 `imports/perceiver.py` (`PerceiverLatentEncoder`)**: latents 64×512; per block: cross-attn (with `enc_proj` input projection + KV mask) → **self-attn** → FFN(mlp_ratio 4), all pre-LN + residual; d_input explicit; dropout param; explicit input-dim assert.
+2. **v2 `imports/multimodal_alignment_perceiver.py` (`PerceiverResampler`)**: 64×512, 4 layers, pre-LN **inside** attention (ln_q/ln_kv), **self-attn present**, KV mask support, latent init `randn*dim**-0.5`, `ln_out` final norm; MLPAdapter upstream; `AlignmentProjector` (mean pool + LN+Linear) downstream. This is the design the packaged lineage imitates.
+3. **Modular `perceiver.py`**: cross-attn (single shared `norm1` module applied to both x and latents) → FFN. **No self-attention block, no mask support, dropout defaults 0.0** (configs pass nothing for dropout → 0), final `norm` present.
+4. **Notebook-final `PerceiverV3Model`** (`07_alignment_final_report.ipynb` cell 4): self-contained — perceiver **with self-attention** and pre-LN in attention, LN+Linear adapters, `d_vision=1024, d_text=384, d_model=512, d_out=512`, mean pool over latents, then LN+Linear projection. **This is the implementation that produced the failed Perceiver arm (0.20%/0.17% R@5) — not the packaged module.** Note its `d_text=384` implies MiniLM text features, not the MPNet backbone in `perceiver_mrl_alignment.yaml`.
+
+**MRL.** Modular `MatryoshkaProjection` = **prefix slicing + re-L2-normalization only** — no learned projection, no separate nested heads, no internal loss; supervision lives in `models/losses.py:mrl_loss` (reuses the same `contrastive_loss` at sampled dims, `sample_single_dim=True` per final config). This matches the final multiscale **evaluation** semantics (`evaluation/metrics.py` re-slices and re-normalizes the same learned 4096-d vector) and the resume-context claim ("normalized prefix-slicing, not a learned cascade"). v1 `matryoshka_contrastive_loss` differs: averages symmetric loss over **all** radii and validates finiteness; modular samples **one** dim per batch. v2 config `mrl_dims=(64,128,256,512)` over a 512-d align space (fractional prefixes), vs modular's [2048…128] over 4096-d. `mrl.py:matryoshka_loss` is a duplicate of `models/losses.mrl_loss` with no current consumer.
+
+### Architecture-boundary findings (flagged, not fixed)
+
+1. **`vision.py` orchestrates everything**: encoder + projection + perceiver + pooling + normalization + MRL in one forward. Projection arguably belongs in a head module (v2 kept them separate). The two paths even differ in *where* projection happens: direct path projects before pooling; perceiver path projects after mean-pooling.
+2. **Perceiver path bypasses the attention-pooling module entirely** (`use_attention_pooling and not use_perceiver`) — mean-pooling hard-coded for latents; config `pooling_type` is silently ignored in perceiver mode.
+3. **`audio.py` normalize/MRL ordering bug** (above).
+4. **`mrl.py` contains a loss function** (`matryoshka_loss`) — loss logic belongs with `models/losses.py`; it's dead code duplicating `mrl_loss`.
+5. **No `no_grad`/`eval()` on frozen backbones in `vision.py`/`audio.py`** — frozen CLIP/Whisper forward runs inside the autograd graph every step (only weights are `requires_grad=False`); wasteful and inconsistent with `text.py`.
+6. **`VisionEncoder` keeps `output_hidden_states=True`** on every forward but never uses `hidden_states` — wasted compute.
+7. **`AttentionPooling` (multihead) is dead** — no config or code path selects it.
+8. **Perceiver layer reuses one `norm1` module** for both input and latents (works, but weights are shared where v1/v2 use separate norms; also pre-norms the *input* on every layer repeatedly).
+
+### Code-quality classification
+
+| Component | Classification | Rationale |
+|---|---|---|
+| `pooling.py` (Simple) | **KEEP** | Artifact-backed; clean; single responsibility. |
+| `text.py` | **KEEP** | Canonical MPNet path; sound; only minor cleanup (ST inference-mode/clone workaround). |
+| `mrl.py` (`MatryoshkaProjection`) | **KEEP** | Matches research experiment exactly; parameter-free. |
+| `mrl.py` (`matryoshka_loss`) | **HISTORICAL** (dead duplicate) | Superseded by `models/losses.mrl_loss`. |
+| `vision.py` | **CLEAN LATER** | Structurally sound and artifact-backed on the direct path, but boundary violations + no_grad/hidden_states waste. |
+| `audio.py` | **REPAIR LATER** | Normalize/MRL ordering bug; no active consumer to validate against. |
+| `pooling.py` (`AttentionPooling`) | **EXPERIMENTAL** | Unexercised multihead variant; keep or delete in a later pass. |
+| `perceiver.py` | **MERGE WITH OLDER IMPLEMENTATION** | Missing self-attention + mask support that v1/v2 AND the notebook-final V3 all have; if perceiver work resumes, base it on v2 `multimodal_alignment_perceiver.py` (the design family the final experiment actually used), not the current reduced module. Do **not** simply import the notebook V3 (unproven, failed, but architecturally closest). |
+| V0 wrappers (`image/text/audio_encoder.py`) | **HISTORICAL** | Feature-strategy flexibility + device/dtype discipline worth borrowing, not restoring wholesale. |
+| V1 `encoders.py` | **HISTORICAL** (salvage: multi-layer concat + MPS/device handling) | Superseded by parquet/CLIP flow. |
+
+### Worth salvaging if encoders are touched later
+- V1's device/dtype discipline (MPS fp16 fallback, model-device-vs-input sync) — current modules have none.
+- v2 `PerceiverLayer` self-attention + mask support + per-attention pre-LN — required to make the packaged Perceiver comparable to the notebook V3 that was actually evaluated.
+- V0 `feature_strategy`/`layers_concat` flexibility if multi-layer features are ever revisited.
+
+### Unresolved questions
+1. Which Perceiver is "the" canonical target: packaged v2-style (with self-attn) vs notebook V3 (which produced the recorded negative result)? Any future Perceiver rerun must pick one and reconcile the dimension labeling (512-d actual vs 4096-d table labels).
+2. Notebook V3 used MiniLM (384-d) text features; `perceiver_mrl_alignment.yaml` specifies MPNet. The final Perceiver-vs-Attention comparison is therefore also a text-backbone confound — cannot be resolved from repo evidence.
+3. Was `AttentionPooling` (multihead) ever trained anywhere? No checkpoint artifact or config reference was found.
+
+### Decision
+Modular encoders remain canonical (`vision.py` direct path + `pooling.py` + `mrl.py` = artifact-backed). No restructure performed in this pass.
+
+## Core model + loss subsystem audit (2026-09-19)
+
+Scope: `edge_glass_modular/src/models/{alignment,projector,fusion,losses,trm_qwen_vlm,__init__}.py` + decoder/config interfaces. Audit only — no code changed.
+
+### 1. Reconstructed current forward graph
+
+**A. Artifact-backed alignment path** (`configs/pixmo_alignment.yaml` — the 77.7/77.5% R@5 result):
+
+```
+images (B,3,336,336)
+  → VisionEncoder: frozen CLIP ViT-L/14-336 → patch tokens (B,577,1024)
+  → Linear proj 1024→4096  (projection happens BEFORE pooling)
+  → SimpleAttentionPooling (B,4096)
+  → L2 normalize (vision.py:224)
+  → MatryoshkaProjection prefix-slice+re-normalize → {2048: (B,2048) … 128: (B,128)}
+texts (list[str])
+  → TextEncoder: frozen MPNet → (B,384) → Linear 384→4096 → L2 normalize → MRL slice
+→ AlignmentLoss: 1.0×contrastive (InfoNCE, T=0.07, re-normalizes inside) + 0.5×mrl_loss(sampled single dim)
+```
+No fusion (every config sets `fusion: null`), no decoder in alignment configs. `MultimodalAlignmentModel.forward` wires this exactly; consumers: `improved_trainer.py:315` (`self.model(images=…, texts=…)`), `scripts/evaluate_freeze_align.py`, notebook 07, `generate_eval_notebooks.py`. Gradients flow through both modalities (symmetric CE).
+
+**B. VLM/QA path actually executed** (`scripts/train_vlm_accelerate.py` + notebooks 03/05):
+
+```
+frozen aligned vision encoder → return_sequence=True → sequence (B,577,4096)
+  → QwenVLM.vision_proj Linear 4096→hidden (per-token projection, NOT MultimodalProjector)
+  → prefix_embeds prepended inside QwenDecoder.forward (inputs_embeds concat, mask extended, labels -100-padded)
+  → Qwen backbone (Qwen2.5, LoRA r=64 on q/k/v/o_proj, 4-bit nf4) → last_hidden (B, L+prefix, H)
+  → [if TRM] down_proj H→trm_dim → y/z dual-latent recursion (num_recursion_steps=4, cat along seq dim)
+    → up_proj → residual add onto qwen_hidden → lm_head → manual shifted CE (prefix logits sliced off)
+```
+Labels: question tokens −100, answer tokens supervised. Trainable: LoRA + vision_proj + TRM layers/norms/z_init; vision encoder frozen. Note: **QA configs configure `use_perceiver: true` (latent_dim 1024)** for the vision encoder while the loaded checkpoint (`pixmo_alignment/checkpoint_best.pt`, strict=False) is the attention-pooling model — perceiver weights don't exist in the checkpoint and attention-pool weights are silently dropped (strict=False), i.e. the "aligned" vision features in the QA path are likely not aligned at all. See §5.
+
+**C. Never-executed hybrid path** (`MultimodalAlignmentModel` + decoder, alignment.py:120–155): `llm_projector = MultimodalProjector(proj_dim→hidden×8, num_tokens=8)` producing 8 soft prompt tokens from a *pooled* embedding. No script or config instantiates this combination (QA path uses QwenVLM instead; the known-broken `scripts/train_alignment.py` uses no decoder). Text is never offered as a decoder prefix — `prefix_emb` selection is fused→vision→audio only (alignment.py:267–274).
+
+### 2. Model-component findings
+
+1. **`fusion.py` is dead in practice**: all 9 configs set `fusion: null`; it only instantiates when >1 encoder AND fusion set; no artifact, no notebook, no experiment ever exercised it. `CrossModalAttentionLayer` is actually *self*-attention over modality tokens (mislabeled). Not necessary for the final VLM path.
+2. **`projector.py` duplication**: `MultimodalProjector` (path C) and `VisionToLLMProjector` (v2 `llm_integration.py:159` equivalent, no consumer in current code) vs the QA path's bare `nn.Linear` in `trm_qwen_vlm.py:41`. Three projection-to-LLM designs; only the bare Linear runs.
+3. **`alignment.py` decoder-branch fragility**: `hasattr(self.decoder, "model")` to distinguish Qwen vs TRM; TRM branch reads `decoder_output.get("loss"/"logits")` — depends on TRMDecoder return type (verify in decoder task). Dead commented-out loss block (lines 304–315) duplicated by the live one (316–325). Custom `.to()` override for quantized decoders (drops decoder during move) is sound.
+4. **Perceiver plumbing**: `alignment.py` passes perceiver params straight from config to `VisionEncoder`/`AudioEncoder`; the expected Perceiver interface is the packaged `perceiver.py` `PerceiverResampler: (B,T,dim) → (B,num_latents,dim)` — alignment.py itself is agnostic; the contract lives inside the encoders.
+5. **Silently ignored config/args**: `confidence_threshold` (QwenVLM ctor arg, default 0.75) is **stored and never read** — no adaptive halting exists despite TRM framing; `num_trm_layers=4`/`num_recursion_steps=4` hard-coded in `train_vlm_accelerate.py:280` ("Configurable?"), not read from config; `pooling_type` ignored in perceiver mode (encoder-level, recorded earlier).
+6. **`trm_qwen_vlm.py` runtime anti-patterns**: modules re-assigned in place during forward (`self.vision_proj = self.vision_proj.to(...)`, lines 104–113 and 177–183) — mutates the module tree per step, incompatible with DDP static graphs/Accelerate prepare assumptions. **`generate()` TRM branch does `out['logits']` (line 363) but `forward` returns a `CausalLMOutputWithPast` object in both branches → TypeError on the first generated token** (TRM generate cannot execute). TRM generate also applies fixed 4-step recursion of the full prefix+context sequence per token (no halting, O(T²)-ish cost) and ignores `confidence_threshold`.
+7. **TRM's actual role**: recursive refinement of Qwen's final hidden states (dual y/z latents, sequence-dim concat, residual add) — NOT a standalone decoder, NOT a per-layer adapter, NOT the paper TRM (no deep supervision, no halt head). `z_init` is a single learnable row expanded across all positions.
+8. **Loss-path divergence in QwenVLM**: non-TRM branch delegates loss to Qwen internals (prefix labels padded to −100 inside QwenDecoder); TRM branch recomputes shifted CE manually after slicing prefix logits. Likely equivalent but untested and structurally divergent.
+9. **Two VLM compositions coexist** (B and C) with different token-injection designs (8 pooled soft tokens vs per-patch 577-token prefix). Only B has execution evidence (notebook traces; no verified result).
+10. **alignment.py:318**: `alignment_losses.get("total_loss", 0)` silently yields int 0 when the tri-modal branch conditions miss (e.g. TriModal loss attached but only 2 modalities passed) — crashes later at `loss.item()` with a misleading error.
+
+### 3. Loss audit (`models/losses.py`)
+
+| Loss | Purpose | Shapes | Normalization | Temp | Pos/neg | Both sides? | Called by |
+|---|---|---|---|---|---|---|---|
+| `contrastive_loss` | symmetric InfoNCE/CLIP | (B,d)×(B,d)→scalar | F.normalize inside (idempotent; inputs already normalized upstream) | 0.07 | diagonal=positive, in-batch negatives | yes (a→b, b→a averaged) | `AlignmentLoss`, `TriModalAlignmentLoss` |
+| `mrl_loss` | nested-prefix supervision | Dict[dim→(B,dim)] | inputs already prefix-normalized by `MatryoshkaProjection` | 0.07 | same, per sampled dim | yes | `AlignmentLoss.forward` — **canonical** |
+| `AlignmentLoss` | weighted combo | — | — | 0.07 | — | — | `MultimodalAlignmentModel` (bimodal); trainer logs `loss_clip`/`loss_mrl` |
+| `TriModalAlignmentLoss` | pairwise tri-modal | — | — | 0.07 | — | yes | 3-encoder case only; **no artifact-backed run** |
+| `encoders/mrl.py:matryoshka_loss` | duplicate MRL | — | re-normalizes inside | 0.07 | — | yes | **NO CONSUMER** — dead duplicate |
+
+**Duplication resolution:** `models/losses.py:mrl_loss` is canonical (consumed via `AlignmentLoss`; matches final config `sample_single_mrl_dim: true` + weights). `encoders/mrl.py:matryoshka_loss` differs materially (computes ALL dims every call, no sampling, no weights) and has no caller in src/scripts/notebooks → HISTORICAL. Confirms the encoder-audit classification.
+
+Additional loss findings:
+1. **NameError bug, losses.py:171**: `if mrl_losses:` executes unconditionally at the end of `AlignmentLoss.forward`, but `mrl_losses` is only bound inside `if embeddings_a_mrl is not None and …` — with MRL dicts omitted (`use_mrl: false`), forward raises NameError instead of returning contrastive-only losses. Latent today (both live alignment configs set `use_mrl: true`).
+2. **Temperature hard-coded 0.07** at `alignment.py:165,172`, not plumbed from config (no temperature field exists in `optimization`). `AlignmentLoss.__init__` default `contrastive_weight=0.25` with stale "# Updated: clip_weight = 0.25" comment contradicts both live configs (pixmo 1.0, perceiver 0.25); config wins, defaults are misleading.
+3. **Historical v1 `matryoshka_contrastive_loss`** (`v1 align_training/losses.py:94`): averages symmetric loss over ALL radii + finite validation — the only materially different MRL-loss implementation anywhere; unused. v1 `clip_contrastive_loss` is the same math family as current `contrastive_loss` (explicit cosine matrix / T).
+4. No other loss implementations exist in v0/v2/training/notebooks; notebook 07 re-implements only evaluation-side prefix re-normalization, not a loss.
+5. Gradient flow verified correct on the canonical path: encoders trainable (projector/pooling), losses symmetric, MRL prefixes carry gradient into the same 4096-d projection.
+
+### 4. Alignment model vs experiments
+
+- Current `MultimodalAlignmentModel` (attention path) **matches** the successful direct-alignment experiment (notebook 07 instantiates it and loads `checkpoint_best.pt`; config values match). ✔
+- The Perceiver branch of `VisionEncoder` (MLPAdapter→packaged PerceiverResampler→mean-pool→LN+Linear) **matches nothing ever run**: the failed experiment used notebook-local `PerceiverV3Model` (self-contained, self-attention, d_text=384 MiniLM, d_out=512), while `perceiver_mrl_alignment.yaml` targets the packaged module with different dims (proj 512, latent 512). No artifact exists for a packaged-perceiver run.
+- Text/vision symmetry: both end Linear→L2-norm; vision uniquely has attention pooling, and in perceiver mode projection placement flips (after mean-pool vs before pooling) — asymmetric, but that asymmetry is covered by the artifacts.
+- Trainable set: projector/pooling/perceiver/MRL(no-op) trainable; frozen backbones still traverse autograd (no `no_grad`, recorded earlier).
+
+### 5. Perceiver evidence summary (unresolved choice)
+
+- `alignment.py` expects the packaged `PerceiverResampler` interface, only indirectly through `VisionEncoder`/`AudioEncoder` ctor args. Replacing the packaged module with v1 `PerceiverLatentEncoder` or v2 `PerceiverResampler` is **interface-compatible** (same (B,T,dim)→(B,latents,dim) contract); only constructor wiring in the encoders changes — no model-interface change required.
+- Experiments: successful runs never instantiated any Perceiver; the failed run instantiated notebook V3. QA configs (`trm_vlm_qa*`) nominally select the packaged perceiver with **`perceiver_latent_dim: 1024`** — matching no other config (perceiver_mrl uses 512) and incompatible with the attention-path checkpoint they load with `strict=False`. Evidence the QA-path configs were never validated as written.
+- No repository evidence makes the canonical choice unequivocal; v2-style (with self-attention) remains the design family closest to what was actually evaluated. No change made.
+
+### 6. Classification
+
+| Component | Classification | Rationale |
+|---|---|---|
+| `losses.py` — `contrastive_loss`, `mrl_loss`, `AlignmentLoss` | **KEEP** | Artifact-backed; canonical. Fix NameError + config-plumb temperature later. |
+| `losses.py` — `TriModalAlignmentLoss` | **EXPERIMENTAL** | Wired for 3-encoder case; no artifact-backed run; hard-coded weights. |
+| `encoders/mrl.py:matryoshka_loss` | **HISTORICAL** (duplicate) | Dead; superseded by `models/losses.mrl_loss`. |
+| `alignment.py` — model class + canonical graph | **CLEAN LATER** | Correct on path A; dead commented block, hard-coded temperature, fragile decoder dispatch, silent `0` fallback. |
+| `alignment.py` — decoder/`llm_projector` branch (path C) | **EXPERIMENTAL** | Never executed by any script/config; superseded in practice by QwenVLM. |
+| `fusion.py` | **EXPERIMENTAL** (near-dead) | Zero consumers, zero artifacts; not necessary for the final VLM path. |
+| `projector.py` — `MultimodalProjector` | **CLEAN LATER** | Used only by dead path C; keep/retire with path C decision. |
+| `projector.py` — `VisionToLLMProjector` | **HISTORICAL** | Mirror of v2 `llm_integration.py:159`; no current consumer. |
+| `trm_qwen_vlm.py` — QwenVLM | **REFACTOR LATER** | The actually-executed VLM composition, but TRM-generate cannot run, in-place module mutation, unused `confidence_threshold`, hard-coded knobs, divergent loss paths. TRM role = hidden-state refiner. |
+| `decoders/qwen.py` / `trm.py` | Deferred (interfaces only) | QwenDecoder prefix-injection correct; TRM internals deferred to decoder task. |
+| Path A end-to-end | **KEEP** | Matches the successful direct-alignment experiment. |
+
+### 7. Unresolved questions (repository evidence cannot resolve)
+
+1. Was the VLM/QA path ever trained with a checkpoint-matching vision encoder (attention config), or always with the mismatched perceiver config + `strict=False`? Determines whether the QA direction is salvageable as-is or the configs must be rewritten before any rerun.
+2. Is path C (pooled 8-token soft-prefix via `MultimodalProjector`) an intentional future design or abandoned after the QwenVLM per-patch-prefix path won? Decides KEEP vs MERGE for `MultimodalProjector` + the alignment.py decoder branch.
+3. Should adaptive halting (`confidence_threshold`) be implemented for TRM (the name implies intent), or is fixed 4-step recursion the actual design? No artifact answers this.
+
+### Recommended next step
+Fix the mechanical model/loss defects before any training repair: (a) `losses.py:171` `mrl_losses` NameError, (b) QwenVLM TRM-generate object-vs-dict indexing, (c) QA configs' vision-encoder/checkpoint mismatch. Behavior-preserving except where current code cannot execute at all.
