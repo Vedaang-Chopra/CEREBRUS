@@ -1041,3 +1041,40 @@ Artifact-cleanup-only commit. Removed W&B run state from Git tracking while pres
 - Staged diff contains 343 deletions, zero of which are non-wandb paths.
 - `git check-ignore -v wandb/debug.log edge_glass_modular/notebooks/wandb/debug.log` → both matched by `.gitignore:30` (`*wandb*`).
 - Git history retains all prior versions (index-only removal; no history rewrite).
+
+## Curated-results reorganization (2026-09-20)
+
+Artifact-organization-only commit. No source code, notebooks, historical code, or model architecture touched.
+
+### Moves (31 files, all `git mv` — content preserved exactly)
+
+| From | To |
+|---|---|
+| `edge_glass_modular/outputs/alignment_eval_final/*` (9: final CSVs, .tex tables, 3 PNGs) | `edge_glass_modular/results/alignment/alignment_eval_final/` |
+| `edge_glass_modular/outputs/pixmo_alignment_eval/visualizations/*` (9 PNGs + explainability_report.json) | `edge_glass_modular/results/alignment/pixmo_alignment_eval/visualizations/` |
+| `edge_glass_modular/outputs/mrl_curve.png` | `edge_glass_modular/results/alignment/mrl_curve.png` |
+| `edge_glass_modular/notebooks/outputs/pixmo_alignment/*` (7: training curves, loss components, lr schedule, metrics.csv, mrl_dim_accuracy, similarity, embedding) | `edge_glass_modular/results/train_history/pixmo_alignment/` |
+| `edge_glass_modular/notebooks/outputs/perceiver_mrl_alignment/*` (3 curve PNGs) | `edge_glass_modular/results/train_history/perceiver_mrl_alignment/` |
+| `edge_glass_modular/notebooks/eda_outputs/*` (2 PNGs) | `edge_glass_modular/results/eda/` |
+
+### Deletion (junk reported, not moved)
+
+- `edge_glass_modular/outputs/alignment_evaluation_results.csv` — `git rm` (tracked file DELETED from index; local copy also removed as untracked-in-prior-config). Previously audited as non-resume-safe/conflicting with the final table and lacking provenance; `PROJECT_RESUME_CONTEXT.md` §5 explicitly says do not cite it. If a local copy is wanted, recover via Git history (path `edge_glass_modular/outputs/alignment_evaluation_results.csv`).
+- `edge_glass_modular/outputs/` directory now empty → removed. `notebooks/outputs/`, `notebooks/eda_outputs/` also removed (emptied by moves).
+
+### Reference repair
+
+- Live-code references checked: notebook 01 saves via `config.trainer.output_dir` (`./outputs/pixmo_alignment` — runtime path, regenerable, still covered by gitignore; the moved files are historical copies, not written/read by live paths). Notebook 07 writes fresh eval runs to `outputs/alignment_eval_final` (regenerable runtime output; the curated copy in `results/` is the retained evidence). `evaluate_freeze_align.py:52` references a runtime `outputs/pixmo_alignment/checkpoint_best.pt` fallback — runtime path, untouched.
+- Cluster-absolute paths inside notebook 07 outputs (`/storage/ice1/...`) left unchanged — recorded for the later notebook/docs cleanup.
+- `.gitignore` unchanged: `edge_glass_modular/outputs/` rule no longer shadows anything tracked; `results/` was never matched by any ignore rule (verified: no `results` pattern in .gitignore).
+
+### Validation
+
+- `git status`: 31 renames (R) + 1 tracked-file deletion; `git diff --cached -M` shows renames detected.
+- Counts verified: alignment = 19 (9 final + 9 visualizations + mrl_curve), train_history = 10 (7 pixmo + 3 perceiver), eda = 2. Total artifacts exist exactly once under `results/`.
+- No live notebook/script reads any moved path (search over src/, scripts/, notebooks/, configs/ found only runtime output_dir references and historical archive/docs mentions).
+- `notebooks/eda_outputs` PNGs remain tracked under `results/eda/` (no `git rm --cached` on any curated artifact).
+
+### Issue
+
+- `edge_glass_modular/outputs/alignment_evaluation_results.csv` was deleted rather than moved — flagged here explicitly: it is the conflicting, non-authoritative metrics table. Git-history recoverable if the user disagrees.
