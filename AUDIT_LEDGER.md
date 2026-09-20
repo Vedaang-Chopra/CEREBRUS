@@ -1398,3 +1398,130 @@ The V3 script's cross-attention mask path contains a **latent broadcasting bug**
 - All retained results (final CSVs, tables, plots, training-history PNGs) untouched — the historical Perceiver result remains evidence from a compromised train/eval provenance chain.
 - **This canonicalization does NOT validate the old result.** The audit's silent-load hypothesis (§5 of the provenance audit) and at-chance finding stand: a controlled rerun — key-verified checkpoint loading, resolved text-backbone choice — is required before any Perceiver performance interpretation.
 - Notebook 07's `PerceiverV3Model` stays as-is (eval-time provenance; deliberately NOT the source for this port).
+
+## TRM reconciliation audit (2026-09-20, provenance/architecture — no source code changed)
+
+Resolves the Batch-B deferred item "TRM redesign/naming". Scope: `src/decoders/trm.py`, `src/models/trm_qwen_vlm.py`, `scripts/train/{train_vlm_accelerate.py,run_vlm_experiments.sh}`, `scripts/eval/evaluate_vlm_accelerate.py`, notebooks 03_FIXED/05, all 9 configs, vendored `TinyRecursiveModels` (local-only, untracked) and historical v2 `trm_vlm_helper.py` (archive branch, read-only). Every claim below is code-verified, not name-inferred.
+
+### 1. Executed TRM graph (training = `train_vlm_accelerate.py`, default TRM-ON; notebook 03_FIXED identical wiring)
+
+```
+images → frozen aligned VisionEncoder (checkpoint_best.pt, strict=False; use_perceiver=FALSE enforced by script via pixmo_alignment.yaml)
+       → encode_images(return_sequence=True) → (B,577,4096)  [no_grad]
+       → QwenVLM.forward(images=…, question_ids, answer_ids, answer_mask)
+          → vision_proj Linear 4096→2048 → prefix_embeds (B,577,2048)
+          → input_ids = cat(question, answer); attention_mask = cat(ones, answer_keep);
+            labels = cat(-100·question, answer_ids masked_fill(pad→-100))   [post-fix masking]
+          → QwenDecoder(Qwen2.5-3B-Instruct, nf4-4bit, LoRA r=64) forward with output_hidden_states
+          → qwen_hidden = hidden_states[-1]  (B, 577+L, 2048)
+          → TRM RECURSION STARTS HERE, on Qwen's final hidden states:
+              x = down_proj(qwen_hidden)          # Identity (trm_dim==hidden_dim==2048 in executed runs)
+              y = x                               # y = current answer/sequence state (starts as Qwen hidden)
+              z = z_init.expand(B,Seq,-1)         # z = learnable "reasoning" state, ONE row broadcast to all positions
+              for _ in range(4):                  # num_recursion_steps=4, HARD-CODED at call sites
+                  combined = cat([y, z], dim=1)   # sequence-concat → (B, 2·Seq, 2048)
+                  hidden = TRMLayer_0..3(combined) # 4 layers (num_trm_layers=4, hard-coded), causal attention
+                  y, z = hidden.chunk(2, dim=1)   # update y and z in place
+              y_up = up_proj(y)                   # Identity
+              final_hidden = qwen_hidden + y_up   # RESIDUAL against original Qwen hidden
+              logits = lm_head(final_hidden)
+              loss = manual shifted CE, prefix region labels forced −100
+```
+
+Verified properties:
+- **Iterations**: exactly `num_recursion_steps=4`; hard-coded (`train_vlm_accelerate.py:291`, notebook 03 `NUM_RECURSION_STEPS=4`, notebook 05 `num_recursion_steps=4`). No config field exists for it.
+- **Weight sharing**: the SAME 4 `TRMLayer`s are re-applied every iteration — shared across steps (this is the one genuine TRM-family trait retained).
+- **Gradients flow through ALL 4 iterations** — no `detach`, no `torch.no_grad`, no last-cycle-only control. Memory-heavier but gradient-correct; differs from both v2 helper (last-cycle-only) and vendored TRM (detached carries).
+- **`y` semantics**: starts as the down-projected Qwen hidden (NOT a fresh embedding); refined residual-style. **`z` semantics**: a single learnable row `z_init` broadcast across all sequence positions, updated via the second half of the concatenated sequence.
+- **No input injection**: unlike both v2 (`z = reasoning(z, x+y)`) and vendored TRM (`z_H + input_embeddings`), the combined sequence is `cat([y,z])` with NO additive injection of x into z.
+- **Halting/confidence: NONE.** `confidence_threshold` is stored (trm_qwen_vlm.py:34) and never read — anywhere. Fixed 4 iterations always run.
+- **Trainable set** (executed runs): vision_proj, TRMLayer×4, down/up_proj (Identity → zero params), z_init. `trm_norm` trainable-but-dead (see §5). Qwen base frozen (4-bit), LoRA adapters trainable. Optimizer correctly filtered by `requires_grad` (train_vlm_accelerate.py:339-340).
+
+### 2. `src/decoders/trm.py` symbol → consumer → runtime role
+
+| Symbol | Consumers (verified) | Runtime role |
+|---|---|---|
+| `TRMConfig` | `trm_qwen_vlm.py:6,25,47` (LIVE — builds the refinement layers); `alignment.py:134` (decoder branch); `train_vlm_accelerate.py:47` (imported, **unused** — dead import) | LIVE (config dataclass reused by QwenVLM) |
+| `RMSNorm` | `trm_qwen_vlm.py:6,70` (`trm_norm` — dead module, §5); TRMLayer internals | LIVE (as substrate); the QwenVLM-level instance is dead |
+| `TRMLayer` | `trm_qwen_vlm.py:6,66` — **the actual executed recursion blocks** | **CANONICAL EXECUTED PRIMITIVE** |
+| `TRMAttention` | TRMLayer/TRMDecoder internals only | Transitive-live via TRMLayer |
+| `TRMMLP` | TRMLayer internals only | Transitive-live |
+| `RotaryEmbedding` / `apply_rotary_emb` | TRMAttention internals | Transitive-live (executed inside TRMLayer) |
+| `TRMDecoder` (class) | `alignment.py:9,147` — constructed ONLY when `config.decoder.type == "trm"`; **zero retained configs use it** (grep: 0 hits across 9 YAMLs) | **CONFIG-REACHABLE, NEVER INSTANTIATED in any retained execution** |
+| `TRMDecoder.forward` / `.generate` | only via TRMDecoder | **NO execution evidence anywhere** (notebooks/scripts/configs all use QwenVLM) |
+
+Key facts: `TRMDecoder` is a plain causal transformer LM (embeddings → N pre-LN transformer layers → norm → tied lm_head). It contains **no recursion, no y/z states, no halting** — despite the docstring "recursive reasoning". Its `generate()` also **drops `prefix_embeds` after the first token** (trm.py:405) and applies a fixed additive-mask assumption (`attn_weights + attention_mask`, trm.py:153) inconsistent with callers passing multiplicative masks. It is misnamed and unexecuted; its *layer primitives* are the executed TRM substrate.
+
+### 3. Comparison vs vendored `TinyRecursiveModels` (`older_code_base/additional_code/other_repo/.../trm.py`, untracked local) and v2 `trm_vlm_helper.TRMDecoderLLM` (archive)
+
+| TRM idea | Vendored original | v2 helper | Current QwenVLM | `TRMDecoder` |
+|---|---|---|---|---|
+| Dual latent carry | z_H / z_L buffers, carry across ACT outer steps | y / z with z_init | y / z (y from x, z = single broadcast row) | none |
+| Input injection | z_L updated with z_H + input_embeddings | x+y added to z | **NONE** (sequence concat only) | none |
+| Weight-shared recurrent blocks | yes (L_level reused every cycle) | yes | **yes (4 layers × 4 steps)** | n/a (no recursion) |
+| Deep supervision | implicit via ACT outer loop | **yes** (CE averaged over t_cycles logits) | **no** (single final loss) | no |
+| Grad control | H_cycles−1 under `no_grad`; carry detached | last-cycle-only (`set_grad_enabled`) | **all steps with grad** | n/a |
+| Halt/ACT | q_head (2 logits), ACT halting, exploration | none | **none** (`confidence_threshold` never read) | none |
+| Output head | lm_head on z_H | soft y-update via `probs @ embed.weight` | lm_head on (qwen_hidden + up_proj(y)) | tied lm_head |
+| Recursion schedule | H_cycles × L_cycles two-level | n_recursions × t_cycles | **flat 4 steps** | n/a |
+
+Retained TRM ideas honestly: **(1) weight-shared iterative refinement blocks, (2) a y/z dual-state motif, (3) recursion applied repeatedly over a fixed number of steps.** Not retained: ACT halting, deep supervision, carry detach/last-cycle gradients, input injection, puzzle embeddings, two-level H/L schedule. `TRMDecoder` retains none of them at all.
+
+### 4. Config/runtime field classification
+
+| Field | Where | Classification |
+|---|---|---|
+| `use_trm` (CLI) / `use_trm_recursion` | train script flag (default **True** — help text "overrides default True" is inverted; the effective default is TRM-ON); `--disable_trm` sets False | **LIVE** |
+| `num_trm_layers` | hard-coded `4` at both call sites (script:290, notebook 03); QwenVLM ctor default 2 never used | **DEAD as config** (hard-coded value LIVE) |
+| `num_recursion_steps` | hard-coded `4` at all three call sites; no YAML field | **DEAD as config** (hard-coded value LIVE) |
+| `confidence_threshold` | ctor arg + stored attr (3 call sites pass 0.75) | **DEAD** (never read; no halting implemented anywhere) |
+| `decoder.type: "trm"` + `trm_*` config fields (config.py:122-131, alias path 398-409) | `alignment.py:147` builds `TRMDecoder` | **CONFIG-REACHABLE BUT UNEXECUTED** (0/9 configs use it; path C family) |
+| `trm_norm` | trm_qwen_vlm.py:70 | **DEAD trainable** (§5) |
+| Notebook `CONFIDENCE_THRESHOLD = 0.75` | notebook 03 cell 16 | **DEAD** (passed, never read) |
+
+Iteration-count provenance: **hard-coded Python defaults at call sites**, not configuration. No YAML in the repo can change the recursion depth, layer count, or halting (the last doesn't exist).
+
+### 5. Dead-state audit (classify only, NOT removed)
+
+**`trm_norm`** — created `trm_qwen_vlm.py:70` (RMSNorm(trm_hidden_dim)); moved device/dtype (:109, :200) but **zero forward call sites** — grep confirms no `self.trm_norm(` anywhere. Consequences: enters `state_dict` (key `trm_norm.weight`, 2048 params), enters the AdamW optimizer (requires_grad defaults True, no exclusion in the script), receives **no gradient ever** (never in the graph; AdamW skips None-grad params so it is never updated, but occupies optimizer state). Does NOT affect outputs/loss. Dead trainable parameter.
+
+**`confidence_threshold`** — passed by all 3 constructors (script:292, notebook 03 cell 16, notebook 05 cell 5), stored at :34, **never read**. No effect on training or inference; no halting logic exists in the repo. Stale parameter.
+
+### 6. Experiment provenance
+
+**Qwen + TRM (the executed path):**
+- Training executed: YES — notebook 03_FIXED (18 executed cells; `USE_TRM_RECURSION=True`, 4 layers, 4 steps) and the production `run_vlm_experiments.sh` run #3 (`trm_vlm_qa_qwen2.5-3b.yaml`, 4×GPU, DeepSpeed ZeRO-2, `use_trm_recursion=True` by script default). Loss/epoch traces retained in notebook outputs only.
+- Inference executed: YES — notebook 05 (10 cells, 0 errors) ran `QwenVLM.generate` TRM branch end-to-end.
+- Retained metrics: **NONE.** Training-time BLEU/ROUGE was 5-batch/except-pass (weak); no `eval_results.json` persisted; no checkpoint in-repo.
+- Qualitative evidence: YES — **degenerate repetition** ("It is a picture of a picture." loops; garbled code-text). Consistent with unaligned-vision + pad-supervision concerns already recorded; also with no halting and a broadcast z-state.
+
+**Qwen without TRM (baseline arm):**
+- Training: **NO evidence** — `03_..._no_TRM.ipynb` has 0 executed cells; `run_vlm_experiments.sh` has no baseline entry; `--disable_trm` path exists but no artifact.
+- Inference: **NO** — `04_vlm_qa_evaluation` errored on missing checkpoint; `evaluate_vlm_accelerate.py` baseline branch carries the unexercised double-strip bug.
+- Metrics: none. The baseline↔TRM comparison was **never actually run**.
+
+**Standalone `TRMDecoder`:** **zero execution evidence** — never instantiated by any retained config (all `type: qwen`), never referenced by any notebook or script; exists only behind `decoder.type: trm` in alignment.py path C (itself never forward-executed).
+
+### 7. Recommendation — **Option A**
+
+**Keep the QwenVLM y/z refinement as the canonical project "TRM" (recursive-refinement) implementation; retain `trm.py` as a primitives module; retire standalone `TRMDecoder`** (after the checkpoint-compat and config-path decisions below).
+
+Reasoning:
+- **Only the QwenVLM branch executed.** It is the only recursive implementation with training and inference evidence (albeit degenerate outputs). `TRMDecoder` has zero execution evidence and would be a *new* architecture, not a proven one, if promoted (Option B has no basis).
+- **`TRMDecoder` is not TRM** — it is a plain causal LM with a recursive-sounding name. Promoting it (B) would worsen naming integrity; keeping both unnamed (C) preserves the confusion.
+- The primitives (`TRMConfig`/`TRMLayer`/`TRMAttention`/`TRMMLP`/`RMSNorm`/`RotaryEmbedding`) are LIVE and artifact-linked through QwenVLM — they must stay regardless.
+- Retirement is a checkpoint-compat surface decision: `TRMDecoder` never entered any retained checkpoint, so removal is state-dict-safe for retained artifacts, but it stays config-reachable via `decoder.type: trm` — removing it requires deleting the alignment.py branch + config fields (a Batch-B decision recorded here as the next cleanup, not executed now).
+
+### 8. Naming integrity
+
+Calling the QwenVLM mechanism "TRM" is **not technically defensible as structural equivalence**; the honest classification is **"TRM-inspired but materially different"**: it keeps weight-shared iterative refinement and a y/z state motif, but lacks every mechanism that defines TRM (ACT halting, deep supervision, input injection, carry detach, two-level H/L schedule, puzzle embeddings). Permitted wording: "a TRM-inspired iterative latent-refinement head over Qwen hidden states." Not permitted: "Tiny Recursive Model," "recursive reasoning with halting," or any claim of TRM-paper equivalence. The paper/READMEs making such claims need the docs-pass correction (already flagged for stale docs generally).
+
+### 9. Checkpoint-recovery note (non-blocking)
+Perceiver checkpoint recovery is already recorded as unresolved-provenance item #1 in the Perceiver-canonicalization ledger section (`perceiver_v2/checkpoint-best/mp_rank_00_model_states.pt`, cluster-only). No duplication needed; no cluster access attempted.
+
+### Safe next cleanup (follows directly from Option A; NOT executed in this task)
+1. Delete `TRMDecoder` + `alignment.py:9,147` `decoder.type: trm` branch + `config.py` `trm_*` DecoderConfig fields + the `type == "trm"` alias mapping (config.py:398-409) in one commit — zero consumers, zero artifacts, state-dict-safe.
+2. Remove the dead `TRMConfig` import in `train_vlm_accelerate.py:47` (imported, never used).
+3. Remove dead `confidence_threshold` param + storage from `QwenVLM` and its 3 call sites (script:292, notebooks 03 cell 16 / 05 cell 5 — notebook source-line edits only).
+4. Remove or apply `trm_norm` (dead trainable in optimizer/state-dict) — removal changes state-dict keys, so tie it to a checkpoint-compat decision; recommend REMOVAL since no retained checkpoint contains it.
+5. Rewrite naming: QwenVLM docstring + config tags (`tags: [trm, recursive, …]`) → "TRM-inspired iterative refinement"; defer full docs pass.
