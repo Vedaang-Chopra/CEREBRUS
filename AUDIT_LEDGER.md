@@ -1678,3 +1678,32 @@ Commit: `2e729de425e9586fed326c7191481781f69c82ea` (main, working tree clean aft
 
 ### Recommended single next action
 Bundle fusion into the Batch-B **audio/tri-modal scope decision**: either (a) keep fusion.py + `FusionConfig` + `alignment.py` wiring as the declared substrate for a future tri-modal experiment, or (b) retire `fusion.py`, `FusionConfig`+fields, the loader branch, and the `alignment.py` fusion wiring in one commit (safe: zero configs enable it, zero executions, zero checkpoint keys — `strict=False` loaders unaffected). If the audio direction is abandoned, the whole cluster (fusion + audio encoder + tri-modal loss) can be retired together; if kept, no cleanup is warranted now. Do not delete fusion.py unilaterally before that decision.
+
+---
+
+## Fusion subsystem retirement (2026-09-20, execution)
+
+### Research decision
+Audio support REMAINS in the repository (`AudioEncoder`, audio config fields, audio dataset/transforms/datamodule code, `TriModalAlignmentLoss`, vision/text alignment behavior, Perceiver, QwenVLM/TRM, historical notebook outputs/results — all preserved untouched). Fusion experiments will NOT be maintained or run: fusion is dead architecture removed independently of audio. No replacement fusion mechanism created; audio path not redesigned.
+
+### Removed
+- `src/models/fusion.py` — deleted entire file (`MultimodalFusion`, `CrossModalAttentionLayer`).
+- `src/models/alignment.py` — `.fusion` import; `self.fusion = None`; construction block (`active_encoders > 1 and config.fusion is not None` + modality_dims + `MultimodalFusion(...)`); forward fusion branch (`modality_embeddings` dict → `self.fusion(...)` → `fused_emb`); `AlignmentModelOutput.fused_emb` field (verified zero consumers across src/scripts/notebooks — the sole hit was an unexecuted output repr in archive notebook 02); fusion row in `print_parameter_counts`; "Optional fusion module" docstring line.
+- `src/models/__init__.py` — `MultimodalFusion` import + `__all__` entry.
+- `src/config.py` — `FusionConfig` dataclass (5 fields); `ExperimentConfig.fusion: Optional[FusionConfig]`; loader branch (`if "fusion" in cfg ... FusionConfig(**_filter_fields(...))`).
+- `configs/*.yaml` — `fusion: null` line removed from all 9 retained configs.
+
+### Preserved exactly (verified untouched)
+`src/encoders/` incl. `AudioEncoder` + Perceiver; audio fields in `DatasetConfig`/`EncoderConfig`; audio data/transforms/datamodule code; `TriModalAlignmentLoss` + full tri-modal loss branch in `alignment.py` forward (incl. `active_encoders == 3` dispatch); vision/text alignment path; `decoders/`; all notebooks/results.
+
+### Validation performed
+- `python -m compileall -q src` → COMPILE_OK.
+- All 9 configs load via `load_config` → CONFIGS_OK; legacy `fusion: null` dict key tolerated by `from_dict` (field-filtering drops unknown keys) → old YAMLs/checkpoint-side config dicts unaffected; `strict=False` checkpoint loaders unaffected (zero fusion keys ever serialized).
+- Zero active references to `FusionConfig` / `MultimodalFusion` / `CrossModalAttention` / `fused_emb` / `fusion` in `src/`, `configs/`, `scripts/` (grep-verified, egg-info excluded).
+- **NOT YET EXECUTED — deferred by user**: live forward validation (canonical V+T alignment forward on `pixmo_alignment.yaml`; audio-enabled model construction independent of fusion; tri-modal construction). Timed out on HuggingFace weight downloads (network-bound, 300s cap). User elected to defer and complete later. Validation plan: run the forward tests offline (`HF_HUB_OFFLINE=1` against cached weights) or in a background process with extended timeout, then confirm: (a) V+T forward loss finite + embeddings returned, (b) `AlignmentModelOutput` has no `fused_emb`, (c) audio-enabled `MultimodalAlignmentModel` constructs and runs, (d) tri-modal model constructs.
+
+### Newly exposed dead surface
+- None found. Fusion was an isolated subsystem; no orphaned imports, no orphaned config fields, no orphaned script switches, no orphaned notebook cells remain. `TriModalAlignmentLoss` and `AudioEncoder` confirmed fully independent of fusion (zero references from `losses.py`/`encoders/` to `fusion.py` pre-removal).
+
+### Classification
+**Retired.** Fusion subsystem removed from the active tree; audio/tri-modal surface (Batch B) untouched and remains the open research decision.

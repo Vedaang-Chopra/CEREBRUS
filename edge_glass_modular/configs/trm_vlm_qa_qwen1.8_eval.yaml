@@ -67,7 +67,6 @@ decoder:
   load_in_4bit: true
 
 # Fusion
-fusion: null
 
 # Loss configuration
 losses:

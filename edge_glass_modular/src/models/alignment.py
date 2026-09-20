@@ -7,7 +7,6 @@ from dataclasses import dataclass
 
 from encoders import VisionEncoder, AudioEncoder, TextEncoder
 from config import ExperimentConfig
-from .fusion import MultimodalFusion
 from .losses import AlignmentLoss, TriModalAlignmentLoss
 
 
@@ -20,7 +19,6 @@ class AlignmentModelOutput:
     vision_emb: Optional[torch.Tensor] = None
     audio_emb: Optional[torch.Tensor] = None
     text_emb: Optional[torch.Tensor] = None
-    fused_emb: Optional[torch.Tensor] = None
 
 
 class MultimodalAlignmentModel(nn.Module):
@@ -28,7 +26,6 @@ class MultimodalAlignmentModel(nn.Module):
 
     This is the main model class that combines:
     - Encoders (vision, audio, text)
-    - Optional fusion module
     - Alignment losses
 
     Args:
@@ -82,31 +79,11 @@ class MultimodalAlignmentModel(nn.Module):
                 mrl_dimensions=config.text_encoder.mrl_dimensions,
             )
 
-        # Initialize fusion if multiple modalities
-        self.fusion = None
         active_encoders = sum([
             self.vision_encoder is not None,
             self.audio_encoder is not None,
             self.text_encoder is not None,
         ])
-
-        if active_encoders > 1 and config.fusion is not None:
-            modality_dims = {}
-            if self.vision_encoder is not None:
-                modality_dims["vision"] = config.vision_encoder.projection_dim
-            if self.audio_encoder is not None:
-                modality_dims["audio"] = config.audio_encoder.projection_dim
-            if self.text_encoder is not None:
-                modality_dims["text"] = config.text_encoder.projection_dim
-
-            self.fusion = MultimodalFusion(
-                modality_dims=modality_dims,
-                fusion_dim=config.fusion.fusion_dim,
-                strategy=config.fusion.strategy,
-                num_layers=config.fusion.num_fusion_layers,
-                num_heads=config.fusion.num_heads,
-                dropout=config.fusion.dropout,
-            )
 
         # Initialize loss functions
         if active_encoders == 3:
@@ -193,20 +170,6 @@ class MultimodalAlignmentModel(nn.Module):
                         embeddings_b_mrl=text_output.mrl_embeddings if text_output else None,
                     )
 
-        # Fuse modalities if fusion module exists
-        fused_emb = None
-        if self.fusion is not None:
-            modality_embeddings = {}
-            if vision_emb is not None:
-                modality_embeddings["vision"] = vision_emb
-            if audio_emb is not None:
-                modality_embeddings["audio"] = audio_emb
-            if text_emb is not None:
-                modality_embeddings["text"] = text_emb
-
-            if len(modality_embeddings) > 1:
-                fused_emb = self.fusion(modality_embeddings)
-
         # Combine losses
         total_loss = None
         if alignment_losses is not None:
@@ -219,7 +182,6 @@ class MultimodalAlignmentModel(nn.Module):
             vision_emb=vision_emb if return_embeddings else None,
             audio_emb=audio_emb if return_embeddings else None,
             text_emb=text_emb if return_embeddings else None,
-            fused_emb=fused_emb if return_embeddings else None,
         )
 
     @property
@@ -248,11 +210,6 @@ class MultimodalAlignmentModel(nn.Module):
         if self.text_encoder is not None:
             print(f"{'Text Encoder':<30} {self.text_encoder.num_parameters:>15,} "
                   f"{self.text_encoder.num_total_parameters:>15,}")
-
-        if self.fusion is not None:
-            fusion_trainable = sum(p.numel() for p in self.fusion.parameters() if p.requires_grad)
-            fusion_total = sum(p.numel() for p in self.fusion.parameters())
-            print(f"{'Fusion':<30} {fusion_trainable:>15,} {fusion_total:>15,}")
 
         print("-" * 60)
         print(f"{'TOTAL':<30} {self.num_trainable_parameters:>15,} {self.num_total_parameters:>15,}")

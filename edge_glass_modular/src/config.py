@@ -129,17 +129,6 @@ class DecoderConfig:
 
 
 @dataclass
-class FusionConfig:
-    """Configuration for multimodal fusion."""
-
-    strategy: Literal["concat", "cross_attention", "gated"] = "concat"
-    fusion_dim: int = 2048
-    num_fusion_layers: int = 2
-    num_heads: int = 8
-    dropout: float = 0.1
-
-
-@dataclass
 class DatasetConfig:
     """Configuration for datasets."""
 
@@ -301,7 +290,6 @@ class ExperimentConfig:
     audio_encoder: Optional[EncoderConfig] = None
     text_encoder: Optional[EncoderConfig] = None
     decoder: Optional[DecoderConfig] = None
-    fusion: Optional[FusionConfig] = None
 
     # Training configuration
     dataset: DatasetConfig = field(default_factory=DatasetConfig)
@@ -385,9 +373,6 @@ class ExperimentConfig:
 
             decoder_cfg = _filter_fields(decoder_cfg, DecoderConfig)
             cfg["decoder"] = DecoderConfig(**decoder_cfg)
-
-        if "fusion" in cfg and cfg["fusion"] is not None:
-            cfg["fusion"] = FusionConfig(**_filter_fields(cfg["fusion"], FusionConfig))
 
         if "dataset" in cfg:
             cfg["dataset"] = DatasetConfig(**_filter_fields(cfg["dataset"], DatasetConfig))

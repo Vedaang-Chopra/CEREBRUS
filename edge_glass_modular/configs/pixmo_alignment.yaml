@@ -45,7 +45,6 @@ decoder:
   load_in_8bit: false
   load_in_4bit: false
 
-fusion: null  # No fusion for bimodal
 
 losses:
   contrastive: 1.0   # CLIP loss is primary objective for alignment
