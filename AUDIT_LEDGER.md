@@ -959,3 +959,32 @@ Structural-only commit per ledger §D of "Final structural reconciliation". No n
 - Destination check: every moved file exists at exactly one destination; no retained notebook landed in `archive/`; no archived notebook remains at its old path (`ls` verified).
 - No duplicate against pre-existing `archive/04_alignment_evaluation.ipynb` (different file — the moved one is `05_alignment_evaluation.ipynb`; `04_vlm_qa_evaluation.ipynb` newly archived, was not already in `archive/`).
 - Notebooks not executed (per task constraints).
+
+## Cleanup batch — generated/debug/broken one-shot scripts (2026-09-20)
+
+Deletion-only commit per ledger §2/§3/§C.1/§C.2 of the notebooks/scripts classification and final reconciliation. All `git rm` (Git history preserves); nothing archived elsewhere. src/, configs, retained scripts/notebooks, older_code_base/, reports, W&B/output dirs untouched.
+
+### Deleted (29 files)
+
+- **Notebook-generation/patch tooling (23):** `scripts/{create_eval_notebook,create_alignment_eval_notebook,generate_eval_notebooks,add_checkpointing_to_notebook,add_test_split_to_notebook,insert_notebook_cell,update_notebook_structure,finalize_notebook_updates,map_notebook,fix_eval_notebook,fix_notebook_transforms,fix_val_transforms,fix_collate_fn,fix_training_loop,force_replace_qwenvlm,optimize_gpu_usage}.py` (16) + `notebooks/{merge_notebooks,modify_notebook,modify_notebook_v2..v5,patch_eval_notebook}.py` (7).
+- **Debug/inspection one-shots (5):** `scripts/{debug_ckpt_loading,debug_perceiver,inspect_checkpoint_simple,inspect_checkpoint_v2}.py` + `notebooks/ddsp_scripts/debug_gradients.py`.
+- **Empty (1):** `notebooks/ddsp_scripts/train_perceiver_v2.py` (0 lines).
+- **Broken/unused training entrypoint (1):** `scripts/train_instruction.py` (broken `MultimodalTrainer` import, zero artifacts — per ledger).
+
+### Retained deliberately
+
+- `scripts/train_alignment.py` — broken legacy CLI; retirement/replacement deferred to source reconciliation pass (task instruction).
+- `notebooks/system_architecture.md` — cited evidence, not classified for archive.
+- `notebooks/ddsp_scripts/` — became empty after deletion and was removed; provenance trainers already relocated in batch 1. (Also removed stale `scripts/__pycache__/`.)
+- Generated dirs `notebooks/{outputs,wandb,eda_outputs}/` — untouched, pending separate handling.
+
+### Reference scan
+
+- Searched active src/, configs/, retained scripts (train/eval/data/experiments + train_alignment.py), and retained notebooks for every deleted basename: **zero live references**. Only hits: two historical launch-command comments in retained `scripts/experiments/train_perceiver_v3.py` docstring mentioning `train_perceiver_v2.py` (comment-only, not an invocation; left unchanged). All other hits were inside the now-deleted files themselves or archive/docs (docs pass).
+
+### Validation
+
+- `python3 -m py_compile` on all 10 retained scripts (`scripts/train_alignment.py`, train/, eval/, data/, experiments/) — OK.
+- `bash -n scripts/train/run_vlm_experiments.sh` — OK.
+- Retained structure verified unchanged: `scripts/{train,eval,data,experiments,train_alignment.py}`; `notebooks/{experiments,analysis,archive,system_architecture.md}` (+ untouched outputs/wandb/eda_outputs).
+- No executions run beyond compile/syntax checks (per task constraints).
