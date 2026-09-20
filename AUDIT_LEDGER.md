@@ -755,3 +755,144 @@ edge_glass_modular/
 2. `train_instruction.py` + `train_alignment.py`: repair the broken CLI family, or retire the CLI path and declare notebook-01/improved_trainer the canonical entry (ledger default: retire-then-rebuild)?
 3. Notebook-generation scripts (`create_*notebook`, `fix_*`, `modify_*` family): delete outright at restructure, or move to `archive/`? They have zero unique logic.
 4. `notebooks/wandb/` dir (46 run dirs) inside notebooks/ — previously out of scope; confirm it can be excluded/ignored at restructure rather than relocated.
+
+## Final structural reconciliation (2026-09-20, commit base `62015b7`)
+
+Planning only — no moves executed, no code modified. Verified: `62015b7` contains the notebooks/scripts audit (93-line ledger append). Historical v0/v1/v2 stays recoverable via Git history; nothing in `older_code_base/` enters the active tree.
+
+### A. Source package — mostly unchanged (src/ IS the canonical basis)
+
+Sub-package layout already matches the final design. Only intra-package reorganization recommended (from data-subsystem audit Phase A, still pending):
+
+| Current path | Proposed path | Reason |
+|---|---|---|
+| `edge_glass_modular/src/` (all 7 sub-packages) | `src/` — **UNCHANGED** | Already canonical; keep package root stable. |
+| `src/data/dataset_builder.py` | `src/data/datasets/{image_text,qa,audio_text,instruction}.py` | Phase A split; shared `_ParquetImageDataset` base already exists — splitting is mechanical. |
+| `src/data/parquet_builder.py` | `src/data/downloaders/` (merge with `downloader.py`) | Co-locates parquet construction with dataset acquisition; `downloader.py` stays metadata-only until merged. |
+| `src/encoders/` (6 modules) | unchanged | KEEP; `perceiver.py` merge is a DEFERRED architecture decision, not a move. |
+| `src/models/` | unchanged | `fusion.py` removal is DEFERRED; `projector.py` split follows path-C decision. |
+| `src/decoders/` | unchanged | `trm.py` rename/redesign DEFERRED. |
+| `src/training/` | unchanged | `trainer.py`+`callbacks.py` retire only after CLI repair decision. |
+| `src/evaluation/` | unchanged | `simple_metrics.py` REMOVE LATER (duplicate, swapped p/r). |
+| `src/utils/` | unchanged | `checkpoint.py` effectively dead for canonical path (see CLI decision). |
+
+### B. Scripts → grouped destinations
+
+| Current path | Proposed path | Reason |
+|---|---|---|
+| `scripts/train_vlm_accelerate.py` | `scripts/train/train_vlm_accelerate.py` | Canonical QA training entry (REPAIR-LATER items unchanged). |
+| `scripts/run_vlm_experiments.sh` | `scripts/train/run_vlm_experiments.sh` | Production run history. |
+| `scripts/train_alignment.py` | `scripts/train/train_alignment.py` | Retained as entry-point shell; **broken wiring — repair before canonical** (or retire per Q1). |
+| `scripts/train_instruction.py` | (remove — see C) | Broken trainer import, zero artifacts. |
+| `scripts/evaluate_vlm_accelerate.py` | `scripts/eval/evaluate_vlm_accelerate.py` | Canonical QA eval (REPAIR-LATER). |
+| `scripts/evaluate_freeze_align.py` | `scripts/eval/evaluate_freeze_align.py` | Alignment eval (CLEAN-LATER). |
+| `scripts/inference_vlm.py` | `scripts/eval/inference_vlm.py` | Inference (REPAIR-LATER: checkpoint-format). |
+| `scripts/download_datasets.py` | `scripts/data/download_datasets.py` | Wraps `src/data/downloader`. |
+| `scripts/download_pixmo_audio.py` | `scripts/data/download_pixmo_audio.py` | Same. |
+| `notebooks/ddsp_scripts/train_perceiver.py` | `scripts/experiments/train_perceiver.py` | Executed packaged-Perceiver ablation trainer — provenance (principle 5). |
+| `notebooks/ddsp_scripts/train_perceiver_v3.py` | `scripts/experiments/train_perceiver_v3.py` | THE executed V3 training implementation (DeepSpeed); keep as provenance, do NOT extract to src yet (principle 4/5). |
+| `notebooks/ddsp_scripts/train_pixmo_alignment.py` | `scripts/experiments/train_pixmo_alignment.py` | Pre-notebook-01 W&B trainer; ablation lineage. |
+| `notebooks/ddsp_scripts/debug_gradients.py` | (remove — see C) | Debugging artifact. |
+| `notebooks/ddsp_scripts/train_perceiver_v2.py` (0 lines) | (remove — see C) | Empty. |
+| Remaining `scripts/*.py` (notebook-generation + debug/inspect family, ~16 files) | (remove — see C) | GENERATED/TEMPORARY; zero unique logic. |
+
+### C. Archive / remove later (recoverable via Git history)
+
+1. `scripts/` notebook-generation family: `create_eval_notebook.py`, `create_alignment_eval_notebook.py`, `generate_eval_notebooks.py`, `add_checkpointing_to_notebook.py`, `add_test_split_to_notebook.py`, `insert_notebook_cell.py`, `update_notebook_structure.py`, `finalize_notebook_updates.py`, `fix_eval_notebook.py`, `fix_notebook_transforms.py`, `fix_val_transforms.py`, `fix_collate_fn.py`, `fix_training_loop.py`, `force_replace_qwenvlm.py`, `optimize_gpu_usage.py`, `map_notebook.py`, `modify_*`/`patch_*` in `notebooks/` — delete at restructure (Git history preserves them).
+2. `scripts/debug_ckpt_loading.py`, `inspect_checkpoint_simple.py`, `inspect_checkpoint_v2.py`, `debug_perceiver.py`, `train_instruction.py`, `ddsp_scripts/{debug_gradients,train_perceiver_v2}.py`.
+3. Notebooks → `notebooks/archive/`: `02_perceiver_mrl_*`, `03_trm_vlm_qa_training.ipynb` (original), `03_..._MODULAR`, `03_..._no_TRM`, `04_vlm_qa_evaluation`, `05_alignment_evaluation`.
+4. Notebook markdown scratch: `EVALUATION_README`, `EVALUATION_SUMMARY`, `IMPLEMENTATION_SUMMARY`, `QUICK_START`, `REFACTORING_SUMMARY`, `TRM_VLM_QA_MODULAR_README`, `TRM_VLM_README` → `notebooks/archive/` (keep `PERCEIVER_TRAINING_ISSUE_ANALYSIS.md` + `system_architecture.md` — cited evidence).
+5. `src/evaluation/simple_metrics.py` — remove after confirming no imports.
+6. Stale top-level docs (`README.md` overclaims, `COMPLETE_CODEBASE.md`, `PROJECT_SUMMARY.md`, `QUICK_REFERENCE.md`) — rewrite in the docs pass, not now.
+
+### D. Notebooks → grouped destinations
+
+| Current path | Proposed path | Reason |
+|---|---|---|
+| `notebooks/01_pixmo_vision_text_alignment.ipynb` | `notebooks/experiments/01_pixmo_vision_text_alignment.ipynb` | Canonical alignment training (77.7/77.5% chain). |
+| `notebooks/07_alignment_final_report.ipynb` | `notebooks/experiments/07_alignment_final_report.ipynb` | Final report; V3 eval code stays put for provenance. |
+| `notebooks/03_trm_vlm_qa_training_FIXED.ipynb` | `notebooks/experiments/03_trm_vlm_qa_training_FIXED.ipynb` | Only executed TRM-VLM training. |
+| `notebooks/04_pixmo_dataset_eda.ipynb` | `notebooks/analysis/04_pixmo_dataset_eda.ipynb` | EDA. |
+| `notebooks/05_vlm_qualitative_inference.ipynb` | `notebooks/analysis/05_vlm_qualitative_inference.ipynb` | Only executed inference evidence. |
+| Archive group (see C.3) | `notebooks/archive/` | Historical/superseded. |
+| `notebooks/PERCEIVER_TRAINING_ISSUE_ANALYSIS.md` | `notebooks/experiments/PERCEIVER_TRAINING_ISSUE_ANALYSIS.md` | Cited negative-result diagnosis; travels with 07. |
+| `notebooks/outputs/` | **UNCHANGED** (do not relocate) | Generated outputs; principle 6. |
+| `notebooks/wandb/`, `notebooks/eda_outputs/` | **UNCHANGED** | Generated; ignore at restructure. |
+
+### E. Tests
+
+- No current test suite in `edge_glass_modular/` (V0 had `tests/` + `pytest.ini`; nothing carried forward).
+- Proposed: `edge_glass_modular/tests/` with `pytest.ini`, mirroring src sub-packages (`tests/data/`, `tests/encoders/`, …).
+- V0 `older_code_base/v0_code_base/tests/` = historical reference only; port selectively when tests are written (target first: `metrics.py`, `qa_metrics.py`, `parquet_builder.py` — pure/pure-ish modules already smoke-validated in the data pass).
+- Seeding tests is a FUTURE task, not part of the restructure.
+
+### F. Historical code — leave active main
+
+| Item | Disposition |
+|---|---|
+| `older_code_base/` entirely (v0/v1/v2, dataset, experiments, additional_code incl. vendored TinyRecursiveModels) | Remove from active main (tracked deletion or exclude); recoverable via Git history. No content enters `src/` except already-salvaged `parquet_builder.py`. |
+| `code_base/` git-deleted remnants | Already gone; nothing to do. |
+| `architectures/` (images) | Untracked; keep out of main. |
+| `wandb/` (root + notebooks) | Ignore/remove from main; do not relocate. |
+| Salvage ledger entries (feature caching, in-memory datasets, collate_alignment, TRM deep supervision) | Remain Git-history-only; re-extract on demand. |
+
+### G. Repair-before-canonical list (future, NOT this restructure)
+
+1. `scripts/train_alignment.py` + `src/training/trainer.py` + `callbacks.py` + `src/utils/checkpoint.py` — broken CLI wiring (repair or retire; Q1).
+2. `evaluate_vlm_accelerate.py` + `QwenVLM.generate` baseline double-strip.
+3. `inference_vlm.py` — directory-aware checkpoint loader + quantization-safe `.to()`.
+4. `losses.py:171` `mrl_losses` NameError (use_mrl=false path); temperature plumbing.
+5. `improved_trainer.py` validate: single-direction I2T only (add T2I or document).
+6. `evaluate_freeze_align.py` — strict=True inconsistency; `AlignmentBenchmark` default `mrl_dims=[]` silently disables MRL.
+
+### H. Deferred architecture decisions (do NOT resolve by moving code)
+
+- Canonical Perceiver implementation (packaged vs v2-style vs notebook V3) — `perceiver.py` stays as-is until decision.
+- TRM redesign/naming (`trm.py` not recursive; QwenVLM TRM variant) — including dead `trm_norm` and stale `confidence_threshold`.
+- `fusion.py` removal (zero consumers) and `projector.py` consolidation (path C decision).
+- Checkpoint-loader redesign (strict=False everywhere, no producer fingerprinting).
+- Data Phase A/B items not yet executed (datasets/ split, downloader merge, skip-on-failure option).
+
+### I. Proposed final tree (cleaned repository)
+
+```
+Edge Assistant/
+├── edge_glass_modular/
+│   ├── src/
+│   │   ├── data/            # datasets/, downloaders/ after Phase A; else current files
+│   │   ├── encoders/        # unchanged (perceiver merge deferred)
+│   │   ├── models/          # unchanged (fusion/projector decisions deferred)
+│   │   ├── decoders/        # unchanged (TRM redesign deferred)
+│   │   ├── training/        # unchanged (CLI retirement decision pending)
+│   │   ├── evaluation/      # unchanged (- simple_metrics.py later)
+│   │   └── utils/           # unchanged
+│   ├── configs/             # unchanged (9 YAMLs all load)
+│   ├── scripts/
+│   │   ├── train/           # train_vlm_accelerate.py, run_vlm_experiments.sh, (train_alignment.py)
+│   │   ├── eval/            # evaluate_vlm_accelerate.py, evaluate_freeze_align.py, inference_vlm.py
+│   │   ├── data/            # download_datasets.py, download_pixmo_audio.py
+│   │   └── experiments/     # train_perceiver.py, train_perceiver_v3.py, train_pixmo_alignment.py
+│   ├── notebooks/
+│   │   ├── experiments/     # 01, 03_FIXED, 07, PERCEIVER_TRAINING_ISSUE_ANALYSIS.md
+│   │   ├── analysis/        # 04 EDA, 05_vlm_qualitative_inference
+│   │   ├── archive/         # 02, 03 originals/MODULAR/no_TRM, 04_vlm_qa_evaluation, 05_alignment_evaluation, scratch MDs
+│   │   └── (outputs/, eda_outputs/, wandb/ stay in place, gitignored)
+│   ├── tests/               # NEW (pytest.ini + per-subpackage tests) — future task
+│   ├── outputs/             # unchanged, gitignored
+│   ├── reports/             # unchanged (docs pass later)
+│   ├── pyproject.toml       # dependency reconciliation later
+│   └── README.md            # rewrite later (docs pass)
+├── AUDIT_LEDGER.md          # working scratch (this file)
+├── PROJECT_RESUME_CONTEXT.md
+└── (older_code_base/, architectures/, Papers/, PDFs: out of active main; Git-history recoverable)
+```
+
+### J. Generated directories to ignore/remove from main
+
+`**/__pycache__/`, `**/*.egg-info/`, `wandb/` (root + notebooks), `notebooks/outputs/`, `notebooks/eda_outputs/`, `edge_glass_modular/outputs/`, `runs_perceiver_mrl_qwen/`, `.pi-subagents/`, `.DS_Store`. Add to `.gitignore`; never relocate.
+
+### K. Questions requiring user intent
+
+1. `train_alignment.py` CLI: repair to use `ImprovedMultimodalTrainer` (notebook-01 wiring) or retire the `MultimodalTrainer` family (`trainer.py`, `callbacks.py`, `utils/checkpoint.py`) outright? Affects whether those files stay in `src/training/`.
+2. `older_code_base/`: delete from main (git-history recoverable) vs keep as untracked local-only? Default: delete tracked remnants, keep untracked parts local.
+3. Confirm notebook-generation/debug script family is deleted (not archived) — they are recoverable in Git history either way.
