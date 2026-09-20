@@ -662,3 +662,96 @@ Chain of trust (attention arm): notebook 01 checkpoint → notebook 07 attention
 
 ### Recommended next step
 Repair the two broken QA-facing entry points as one commit: fix the double-strip in `QwenVLM.generate` baseline branch (making `evaluate_vlm_accelerate.py` trustworthy), and give `inference_vlm.py` a directory-aware checkpoint loader plus a quantization-safe `.to()` path (or reuse pattern from `MultimodalAlignmentModel.to`).
+
+## Notebooks / scripts classification (2026-09-19)
+
+Scope: `notebooks/*.ipynb`, `notebooks/*.py` helpers, `notebooks/ddsp_scripts/`, `notebooks/archive/`, `scripts/`. Classification by filename, execution counts (cell-level exec/error scan), imports, and overlap with audited `src/` modules. No code changed. Historical v0/v1/v2 notebooks NOT re-inventoried (covered by the data audit's salvage list).
+
+### 1. Notebook classification (all execution counts verified)
+
+| Notebook | Exec cells / errors | Task | Classification | Evidence retained? | Unique code? | Keep? |
+|---|---|---|---|---|---|---|
+| `01_pixmo_vision_text_alignment.ipynb` | 24 / 0 | Alignment training (ImprovedMultimodalTrainer, pixmo parquet) → produced `checkpoint_best.pt` | **CANONICAL EXPERIMENT** | YES — checkpoint fed the final CSV chain (no artifact in-repo) | No — imports `models`, `data.dataset_builder` from src; notebook-only: training-loop wiring + `retrieve_top_k` (superseded by improved_trainer + metrics.py) | **YES** — provenance of the 77.7/77.5% result |
+| `02_perceiver_mrl_vision_text_alignment.ipynb` | 2 / 1 | Attempted packaged-Perceiver MRL training; aborted after 2 cells | **DEBUGGING / HISTORICAL** | Training-curves PNGs in `notebooks/outputs/perceiver_mrl_alignment/` (provenance unclear — likely from ddsp_scripts runs, not this notebook) | No | **ARCHIVE** |
+| `03_trm_vlm_qa_training.ipynb` | 3 / 1 | Early TRM-VLM QA training; **notebook-local `QwenVLM`, `TRMVLMWithConfidence`, `TinyVLMDecoder` classes** | **HISTORICAL / SUPERSEDED** | No | YES — earliest QwenVLM variant, but superseded by `src/models/trm_qwen_vlm.py` (04-era). No retained results | **ARCHIVE** (but see salvage note below) |
+| `03_trm_vlm_qa_training_FIXED.ipynb` | 18 / 1 | TRM-VLM QA training (imports `models.trm_qwen_vlm` from src) | **ABLATION** (TRM-enabled production run lineage) | Weak — load/epoch traces only; no committed results | Notebook-only: `collate_fn` with answer_mask construction (already mirrored in train_vlm_accelerate.py) | **YES** — executed evidence for E-experiment |
+| `03_trm_vlm_qa_training_MODULAR.ipynb` | 16 / 0 | QA captioning variant (evaluate_caption; no TRM import) | **ABLATION** | No results retained | No unique logic | **ARCHIVE** |
+| `03_trm_vlm_qa_training_no_TRM.ipynb` | **0 / 0** | Baseline (non-TRM) QA training | **HISTORICAL / GENERATED** | None — never executed (confirms training-audit finding that the baseline arm never ran) | No | **ARCHIVE** |
+| `04_pixmo_dataset_eda.ipynb` | 13 / 0 | PixMo + QA EDA (splits, n-grams, aspect ratios); wrote `notebooks/eda_outputs/*.png` | **DATA PREPARATION / ANALYSIS** | YES — eda_outputs PNGs | No unique modeling code | **YES** (analysis value) |
+| `04_vlm_qa_evaluation.ipynb` | 2 / 1 | VLM QA evaluation — **errored on missing VLM checkpoint** | **DEBUGGING** | No (the FileNotFoundError IS the evidence) | No | **ARCHIVE** |
+| `05_alignment_evaluation.ipynb` | 4 / 1 | Alignment retrieval eval attempt (src.evaluation.benchmark; cluster paths) | **HISTORICAL / SUPERSEDED** by 07 | Partial | No | **ARCHIVE** |
+| `05_vlm_qualitative_inference.ipynb` | 10 / 0 | Qualitative VLM inference (TRM branch; degenerate outputs) | **ANALYSIS / EVALUATION** | YES — the ONLY executed inference evidence | No — imports from src; loops are notebook-only glue | **YES** |
+| `07_alignment_final_report.ipynb` | 8 / 0 | Final attention-vs-Perceiver report + multiscale tables → `outputs/alignment_eval_final/` CSVs | **CANONICAL EXPERIMENT** | YES — the final CSV artifact chain | **YES — notebook-local `PerceiverV3Model` + full Perceiver stack (FeedForward/PerceiverAttention/PerceiverLayer/PerceiverResampler) + `EvalConfig` + `compute_metrics`; NONE of it exists in `src/`** | **YES** — but flag for salvage (see §5) |
+| `archive/04_alignment_evaluation.ipynb` | — | Superseded eval notebook | **HISTORICAL** | No | No | Already archived; leave |
+
+### 2. Notebook-support scripts inside `notebooks/` (top level)
+
+`merge_notebooks.py`, `modify_notebook{,_v2,_v3,_v4,_v5}.py`, `patch_eval_notebook.py` — all are **GENERATED / TEMPORARY** one-shot notebook JSON editors (file mtime cluster Dec 10 2025). No unique implementation logic. → archive/remove later.
+
+### 3. `notebooks/ddsp_scripts/` — DeepSpeed/Accelerate launcher-era scripts (IMPORTANT, previously unclassified)
+
+| Script | What it is | Classification |
+|---|---|---|
+| `train_perceiver.py` (261 L) | Accelerate trainer importing packaged `models.alignment.MultimodalAlignmentModel` | **ABLATION** (packaged-perceiver lineage; notebook 02 abandoned path) |
+| `train_perceiver_v2.py` (0 lines) | Empty file | **GENERATED / TEMPORARY** |
+| `train_perceiver_v3.py` (736 L) | Self-contained Accelerate+DeepSpeed trainer with **its own inline `MultimodalAlignmentConfig` + `MultimodalAlignmentModel` + Perceiver stack** (d_text=384 MiniLM) — this is the DeepSpeed ZeRO run family that produced the `perceiver_v2/checkpoint-best` mp_rank state consumed by notebook 07 | **ABLATION — CONTAINS THE ONLY EXECUTED PERCEIVER TRAINING CODE** (kernel of notebook 07's PerceiverV3Model, pre-eval) |
+| `train_pixmo_alignment.py` (716 L) | Standalone W&B trainer importing packaged `MultimodalAlignmentModel` | **ABLATION** (pre-notebook-01 CLI-era training attempt) |
+| `debug_gradients.py` (102 L) | Gradient-flow inspection | **DEBUGGING** |
+
+These are the missing provenance link for the Perceiver arm: DeepSpeed-run training code lives HERE and in notebook 07's eval-time `PerceiverV3Model`, never in `src/`. → **retain** (move under a scripts/experiments destination), do not delete.
+
+### 4. `scripts/` classification (grouped)
+
+**Real training entry points**
+- `train_alignment.py` — BROKEN experiment wiring (audited: trainer.py interface mismatch). Retain as entry point **only after repair or retirement** in favor of notebook-01/improved_trainer flow.
+- `train_vlm_accelerate.py` — KEEP (canonical QA training; REFACTOR LATER findings already recorded).
+- `train_instruction.py` — imports broken `MultimodalTrainer` (same wiring defect family as train_alignment.py); never produced artifacts → **EXPERIMENTAL/likely obsolete**.
+- `run_vlm_experiments.sh` — KEEP (documented production run history; CLEAN LATER).
+
+**Real evaluation/inference entry points**
+- `evaluate_vlm_accelerate.py` — KEEP (REPAIR LATER: double-strip default path).
+- `evaluate_freeze_align.py` — KEEP (CLEAN LATER).
+- `inference_vlm.py` — KEEP (REPAIR LATER: checkpoint-format break).
+
+**Dataset/download utilities**
+- `download_datasets.py`, `download_pixmo_audio.py` — KEEP (wrap src/data/downloader).
+
+**Notebook-generation utilities** (all GENERATED/TEMPORARY dev artifacts; safely removable once notebooks are curated)
+- `generate_eval_notebooks.py`, `create_eval_notebook.py` (stale-import history, fixed in data pass), `create_alignment_eval_notebook.py` (hard-coded cluster paths), `add_checkpointing_to_notebook.py`, `add_test_split_to_notebook.py`, `insert_notebook_cell.py`, `update_notebook_structure.py`, `finalize_notebook_updates.py`, `fix_eval_notebook.py`, `fix_notebook_transforms.py`, `fix_val_transforms.py`, `fix_collate_fn.py`, `fix_training_loop.py`, `force_replace_qwenvlm.py`, `optimize_gpu_usage.py`, `map_notebook.py` (has the known compileall f-string SyntaxError).
+
+**Debug/inspection**
+- `debug_ckpt_loading.py`, `inspect_checkpoint_simple.py`, `inspect_checkpoint_v2.py`, `debug_perceiver.py` — one-time diagnostics; archive/remove later.
+
+**No dataset-repair, reproducibility, or patch scripts found beyond the above** — the `fix_*` family here is uniformly notebook-editing, not code repair.
+
+### 5. Notebook-only salvageable code (§4 of task)
+
+| Notebook/script path | Component | Why it matters | Extract to src/? |
+|---|---|---|---|
+| `notebooks/07_alignment_final_report.ipynb` (cell 4) + kernel in `ddsp_scripts/train_perceiver_v3.py` | `PerceiverV3Model` + Perceiver stack (`PerceiverLayer` w/ self-attention, per-attn pre-LN) + `EvalConfig` | THE implementation that produced the recorded Perceiver negative result and the DeepSpeed checkpoint consumed by notebook 07. Never in `src/`; packaged `perceiver.py` lacks self-attention/mask (encoder-audit finding) | YES — if Perceiver work resumes: merge V3 architecture into packaged `perceiver.py` (design-family source), reconciling 512-d labeling + MiniLM text confound |
+| `notebooks/07_alignment_final_report.ipynb` (cell 6) | Self-contained `compute_metrics` (final-CSV producer) | Duplicate of `src/evaluation/metrics.py` semantics — do NOT extract; recorded as HISTORICAL artifact producer only | NO |
+| `notebooks/01_pixmo_vision_text_alignment.ipynb` | Training-loop wiring for ImprovedMultimodalTrainer (data→trainer glue) | The only executed alignment-training path; `scripts/train_alignment.py` is broken. Useful as the template for repairing the CLI | YES-LATER — the repair spec for train_alignment.py should be derived from this notebook's wiring |
+| `notebooks/03_trm_vlm_qa_training.ipynb` | Earliest notebook-local `QwenVLM`/`TinyVLMDecoder` variants | Superseded by `src/models/trm_qwen_vlm.py`; only provenance value (evolution of the prefix-injection design). No extraction | NO (archive with history) |
+
+### 6. Likely final category structure (proposal only — NOT executed)
+
+```
+edge_glass_modular/
+├── notebooks/
+│   ├── experiments/    # 01 alignment training, 03_FIXED, 07 final report
+│   ├── analysis/       # 04 EDA, 05_vlm_qualitative_inference
+│   └── archive/        # 02, 03 (original), 03_MODULAR, 03_no_TRM, 04_vlm_qa_evaluation, 05_alignment_evaluation + modify_*/patch_* helpers
+├── scripts/
+│   ├── train/          # train_vlm_accelerate.py (+ repaired train_alignment.py), run_vlm_experiments.sh
+│   ├── eval/           # evaluate_vlm_accelerate.py, evaluate_freeze_align.py, inference_vlm.py
+│   ├── data/           # download_datasets.py, download_pixmo_audio.py
+│   └── experiments/    # notebooks/ddsp_scripts/* (perceiver/pixmo trainers) — or src-adjacent if salvaged
+└── (removed later)     # notebook-generation + debug/inspect one-shots
+```
+
+### 7. Ambiguities requiring user input
+
+1. `ddsp_scripts/train_perceiver_v3.py` vs notebook 07 `PerceiverV3Model`: keep BOTH as experiment provenance, or extract the V3 architecture into `src/encoders/perceiver.py` now (it is the executed design) and archive both? Ledger default: keep both, extract later.
+2. `train_instruction.py` + `train_alignment.py`: repair the broken CLI family, or retire the CLI path and declare notebook-01/improved_trainer the canonical entry (ledger default: retire-then-rebuild)?
+3. Notebook-generation scripts (`create_*notebook`, `fix_*`, `modify_*` family): delete outright at restructure, or move to `archive/`? They have zero unique logic.
+4. `notebooks/wandb/` dir (46 run dirs) inside notebooks/ — previously out of scope; confirm it can be excluded/ignored at restructure rather than relocated.
