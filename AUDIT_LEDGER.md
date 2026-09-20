@@ -1806,3 +1806,30 @@ Training writes into `Path(config.trainer.output_dir)` (e.g. `outputs/<run>/`):
 
 ### Commit
 `f37cc28` — `src/models/checkpoint_loader.py` (adapter-only rejection + safetensors fallback fix), `scripts/train/train_vlm_accelerate.py` (full-state best save + separate adapter export), `tests/test_checkpoint_loader_regression.py`, this ledger entry.
+
+---
+
+## Device-placement audit & repair — VLM inference/training path (2026-09-20, executed)
+
+### Previous behavior & why it was unsafe
+- `scripts/eval/inference_vlm.py` called `model.to(model_device)` on the **full QwenVLM**, whose `qwen` member is a `QwenDecoder` wrapping a HF backbone that may be (a) bitsandbytes-quantized (4/8-bit, inference loads with `device_map="auto"`), (b) device_map-sharded, and (c) PEFT-wrapped. `nn.Module.to()` on a loaded quantized model is forbidden by HF/bitsandbytes, and moving a device_map-managed model breaks its dispatch map. Compounding it, the device-detection fallback `hasattr(model.qwen.model, "device")` is unreliable: **PeftModel exposes no `.device` attribute** (verified against installed peft 0.17.1), so the check silently fell through to the raw-parameter branch — the code worked only by luck of single-device placement.
+- `src/models/trm_qwen_vlm.py` mutated **modules inside forward()/generate() on every call**: `forward()` re-assigned `self.vision_proj`, called `self.trm_layers.to(...)`, rewrote `self.z_init.data`, and re-assigned `self.down_proj`/`self.up_proj` (twice per forward); `generate()` re-assigned `self.vision_proj`. This re-registered submodules at runtime (an `.data`-assignment hazard for optimizers/Accelerate state tracking, and repeated work every step of generation).
+- Training/eval (`train_vlm_accelerate.py`, `evaluate_vlm_accelerate.py`) never called `.to()` on the VLM; they relied on `accelerator.prepare()` and the runtime in-forward realignment — i.e. training and inference previously relied on **different** placement behavior.
+
+### New device-placement ownership
+1. **Backbone (HF Qwen, possibly quantized/device_map/PEFT): placed ONLY by HuggingFace at load time. Never moved afterwards — by anyone.**
+2. **Custom non-HF modules** (`vision_proj`, `down_proj`/`up_proj`, `trm_layers`, `z_init`): aligned ONCE at setup via `QwenVLM.align_custom_modules()` (new, `trm_qwen_vlm.py`), which targets the backbone's first-parameter device + backbone dtype. Called by `inference_vlm.py` (after checkpoint load), `train_vlm_accelerate.py` (before `accelerator.prepare`), and `evaluate_vlm_accelerate.py` (before `accelerator.prepare`). `accelerator.prepare` still moves the whole QwenVLM in non-quantized training as before (idempotent for already-aligned modules).
+3. **forward()/generate()**: zero module mutation — only tensor placement (`vision_tokens` → `vision_proj.weight` device/dtype; `qwen_hidden` → TRM stack device/dtype; `y_up` → `qwen_hidden` device/dtype; `lm_head` input → lm_head weight device/dtype; masks/ids → token device). A mis-placed module now fails fast with an explicit device-mismatch error instead of being silently migrated.
+4. **Compatibility cases**: (a) 4-bit Qwen + LoRA + device_map — no `.to()` ever reaches the backbone; (b) non-quantized single-device — alignment is a no-op re-placement at setup; (c) Accelerate training — setup alignment then `prepare()` as before; (d) standalone inference — alignment replaces the removed full-model `.to()`; input tensors (image tensor, tokenized question) already move to the detected device in the script as before.
+
+### Residual `.to()` classification (post-fix)
+- `trm_qwen_vlm.py`: line 123/125 — inside `align_custom_modules()` (setup-only, custom modules only, never the backbone); all other occurrences are tensor moves inside forward/generate.
+- `decoders/qwen.py`: 3 occurrences — all tensor moves (`prefix_embeds` dtype/device) inside forward/generate; no module mutation.
+- `inference_vlm.py`: no full-VLM `.to()` remains; `aligned_model.eval().to(device)` is the standalone alignment encoder (no HF/quantized backbone inside) — safe.
+
+### Validation (executed)
+- New `tests/test_device_placement.py` (5 tests, no downloads): mock decoder whose `.to`/`_apply` raise — proves the old full-model `.to()` path crashes on a quantized/device-map backbone, the new setup-time alignment never touches the backbone, forward+generate perform **zero** `Module.to()` calls (globally instrumented), and custom-module/tensor placement stays consistent end-to-end. **ALL 5 PASSED.**
+- `tests/test_generation_regression.py` (4/4) and `tests/test_checkpoint_loader_regression.py` (6/6) still pass; `compileall src scripts tests` OK; all 9 configs load (9/9).
+
+### Commit
+`<device-commit>` — `src/models/trm_qwen_vlm.py`, `scripts/eval/inference_vlm.py`, `scripts/train/train_vlm_accelerate.py`, `scripts/eval/evaluate_vlm_accelerate.py`, `tests/test_device_placement.py`, this ledger entry.

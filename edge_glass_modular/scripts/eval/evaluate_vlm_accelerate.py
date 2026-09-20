@@ -159,7 +159,12 @@ def main():
         num_trm_layers=4,
         num_recursion_steps=4
     )
-    
+    # Device placement (see AUDIT_LEDGER.md, device-placement audit): align the
+    # custom non-HF modules ONCE at setup — never mutate modules in forward().
+    # (Non-quantized run: accelerator.prepare below moves the whole QwenVLM as
+    # before; align_custom_modules is idempotent w.r.t. devices.)
+    model.align_custom_modules()
+
     # Load VLM checkpoint
     # Prepare with Accelerate (Must create loader first to pass to prepare for DeepSpeed)
     

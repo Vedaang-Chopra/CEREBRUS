@@ -105,14 +105,23 @@ def main():
         
     print(f"Model is on device: {model_device}")
     
-    # Move extra components if needed (though QwenVLM move might have handled it if we called it?)
-    # Let's simple call model.to(model_device) to ensure non-HF parts are aligned, assuming single GPU for now if 'auto' picked one.
-    # If distributed/sharded, this might be complex. 
-    # For inference, 'auto' usually fits on one GPU if possible.
-    
-    # Actually, simpler: Determine execution device from the model and move inputs there.
-    # We should ensure QwenVLM's own parameters (vision_proj) are on the correct device.
-    model.to(model_device)
+    # Device placement (see AUDIT_LEDGER.md, device-placement audit):
+    # The Qwen backbone may be quantized (bitsandbytes), device_map-managed
+    # ('auto' above), and/or PEFT-wrapped. HF/bitsandbytes forbid nn.Module.to()
+    # on a loaded quantized model, and moving a device_map-sharded model breaks
+    # its dispatch — so the FULL QwenVLM is NEVER moved here. The Qwen backbone
+    # keeps exactly the placement HuggingFace gave it at load; only the custom
+    # non-HF modules (vision_proj, TRM layers, z_init) are aligned ONCE, now,
+    # to the backbone's device/dtype. forward()/generate() only move tensors.
+    model.align_custom_modules()
+
+    # Device used for input tensors: the first parameter of the (possibly
+    # PEFT-wrapped) decoder — robust when PeftModel lacks a `.device` attribute.
+    if hasattr(model.qwen.model, "device"):
+        model_device = model.qwen.model.device
+    else:
+        # Fallback (covers PeftModel and other wrappers without `.device`)
+        model_device = next(model.qwen.parameters()).device
 
     
     # Load Checkpoint

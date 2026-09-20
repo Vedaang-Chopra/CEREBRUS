@@ -5,6 +5,34 @@ from typing import Optional, Tuple, List, Union
 from src.decoders.qwen import QwenDecoder
 from src.decoders.trm import TRMConfig, TRMLayer
 
+
+# ---------------------------------------------------------------------------
+# Device-placement policy (see AUDIT_LEDGER.md, device-placement audit)
+#
+# The Qwen backbone (self.qwen.model) may be:
+#   - quantized with bitsandbytes (4-bit / 8-bit) — nn.Module.to() on a
+#     quantized model is forbidden by HF/bitsandbytes after load;
+#   - placed/sharded by a HF device_map — moving it breaks the dispatch map;
+#   - PEFT-wrapped — PeftModel does not even expose a `.device` attribute, so
+#     naive `hasattr(model, 'device')` detection silently falls back.
+# Therefore the backbone is placed ONLY by HuggingFace at load time
+# (device_map / quantization) and NEVER moved afterwards.
+#
+# The custom non-HF modules (vision_proj, down_proj/up_proj, trm_layers,
+# z_init) are plain fp32 nn.Modules created on CPU. They are aligned ONCE at
+# setup via `align_custom_modules()` — at inference by the calling script, and
+# in training by accelerator.prepare() + an explicit setup-time alignment.
+# forward()/generate() must not mutate modules; they may only move tensors.
+# ---------------------------------------------------------------------------
+
+
+def _first_param_device(module):
+    """Device of the first parameter of ``module`` (None if it has none)."""
+    for p in module.parameters():
+        return p.device
+    return None
+
+
 class QwenVLM(nn.Module):
     """
     Qwen-based VLM with TRM-inspired iterative latent refinement.
@@ -71,6 +99,31 @@ class QwenVLM(nn.Module):
             # z is the "reasoning state"
             self.z_init = nn.Parameter(torch.randn(1, 1, self.trm_hidden_dim) * 0.02)
 
+    def align_custom_modules(self, dtype: Optional[torch.dtype] = None):
+        """Align the custom (non-HF) modules to the Qwen backbone at SETUP time.
+
+        Moves ONLY the plain modules this class owns (vision_proj, down_proj/
+        up_proj, trm_layers, z_init) to the backbone's first-parameter device —
+        never the backbone itself. Safe for quantized / device_map-managed /
+        PEFT-wrapped backbones because the backbone is not touched. Call once
+        after construction (and once after checkpoint loading); forward() and
+        generate() never mutate modules.
+
+        Args:
+            dtype: target dtype. Defaults to the Qwen backbone's dtype so
+                projected prefix embeddings concatenate cleanly with input
+                embeddings.
+        """
+        backbone_device = _first_param_device(self.qwen)
+        if dtype is None:
+            dtype = self.qwen.model.dtype
+        for name in ("vision_proj", "down_proj", "up_proj", "trm_layers"):
+            module = getattr(self, name, None)
+            if module is not None and module.parameters():
+                module.to(device=backbone_device, dtype=dtype)
+        if self.use_trm_recursion and hasattr(self, "z_init"):
+            self.z_init.data = self.z_init.data.to(device=backbone_device, dtype=dtype)
+
     def forward(
         self,
         # Notebook-style arguments
@@ -95,19 +148,11 @@ class QwenVLM(nn.Module):
         if prefix_embeds is None and vision_tokens is not None:
             # We need to project vision tokens first!
             # Project logic moved here to ensure we pass projected embeddings as prefix
-            device = vision_tokens.device
-            qwen_dtype = self.qwen.model.dtype
-
-            # Align aux modules
-            if self.vision_proj.weight.device != device or self.vision_proj.weight.dtype != qwen_dtype:
-                self.vision_proj = self.vision_proj.to(device=device, dtype=qwen_dtype)
-                
-            if self.use_trm_recursion:
-                self.trm_layers.to(device=device, dtype=qwen_dtype)
-                if self.z_init.device != device or self.z_init.dtype != qwen_dtype:
-                    self.z_init.data = self.z_init.data.to(device=device, dtype=qwen_dtype)
-
-            vision_tokens = vision_tokens.to(device=device, dtype=qwen_dtype)
+            # Device-placement: modules are aligned at setup (align_custom_modules /
+            # accelerator.prepare / HF device_map) — forward() only moves TENSORS,
+            # never mutates modules (see device-placement policy, module header).
+            vision_tokens = vision_tokens.to(device=self.vision_proj.weight.device,
+                                             dtype=self.vision_proj.weight.dtype)
             prefix_embeds = self.vision_proj(vision_tokens)
 
         # Handle question_ids + answer_ids -> input_ids
@@ -185,19 +230,13 @@ class QwenVLM(nn.Module):
         # Applying to whole sequence is easier implementation-wise for a Transformer.
         
         # Project down if needed
-        # Ensure qwen_hidden matches TRM device target
-        # Align auxiliary modules to Qwen dtype/device to avoid dtype/device mismatches
-        target_device = qwen_hidden.device
-        target_dtype = qwen_hidden.dtype
-        if hasattr(self.down_proj, 'weight'):
-            self.down_proj = self.down_proj.to(device=target_device, dtype=target_dtype)
-        if hasattr(self.up_proj, 'weight'):
-            self.up_proj = self.up_proj.to(device=target_device, dtype=target_dtype)
-        self.trm_layers.to(device=target_device, dtype=target_dtype)
-        if self.z_init.device != target_device or self.z_init.dtype != target_dtype:
-            self.z_init.data = self.z_init.data.to(device=target_device, dtype=target_dtype)
-
-        x = self.down_proj(qwen_hidden) # (B, Seq, trm_dim)
+        # Device-placement: TRM modules are aligned at setup — this section only
+        # moves TENSORS to wherever the (never-mutated) modules live.
+        # If modules were never aligned (CPU) while qwen_hidden is on GPU, the
+        # down_proj call itself will raise a device-mismatch error — that is the
+        # explicit signal to call align_custom_modules() at setup, not a reason
+        # to mutate modules mid-forward.
+        x = self.down_proj(qwen_hidden.to(device=self._trm_device(), dtype=self._trm_dtype()))
         
         # Initialize latent z
         batch_size, seq_len, _ = x.shape
@@ -228,11 +267,13 @@ class QwenVLM(nn.Module):
         final_hidden = qwen_hidden + y_up
         
         # LM Head
+        # (lm_head belongs to the HF backbone — never moved; the input is cast
+        # to its weight dtype instead.)
         if hasattr(self.qwen.model, "lm_head"):
-            logits = self.qwen.model.lm_head(final_hidden)
+            lm_head = self.qwen.model.lm_head
         else:
-             base = self.qwen.model.base_model.model if hasattr(self.qwen.model, "base_model") else self.qwen.model
-             logits = base.lm_head(final_hidden)
+             lm_head = self.qwen.model.base_model.model.lm_head if hasattr(self.qwen.model, "base_model") else self.qwen.model.lm_head
+        logits = lm_head(final_hidden.to(device=lm_head.weight.device, dtype=lm_head.weight.dtype))
 
         # Calculate loss if labels provided
         tr_loss = None
@@ -267,6 +308,27 @@ class QwenVLM(nn.Module):
             hidden_states=outputs.hidden_states,
         )
 
+    def _trm_device(self):
+        """Device of the (setup-aligned) TRM stack — first parameter wins; Identity
+        projections have no parameters, so fall back to trm_layers / z_init."""
+        for module in (self.down_proj, self.up_proj):
+            dev = _first_param_device(module) if module is not None else None
+            if dev is not None:
+                return dev
+        dev = _first_param_device(self.trm_layers)
+        if dev is not None:
+            return dev
+        return self.z_init.device
+
+    def _trm_dtype(self):
+        """Dtype of the (setup-aligned) TRM stack."""
+        for module in (self.down_proj, self.up_proj):
+            for p in module.parameters():
+                return p.dtype
+        for p in self.trm_layers.parameters():
+            return p.dtype
+        return self.z_init.dtype
+
     @torch.no_grad()
     def generate(
         self,
@@ -280,16 +342,11 @@ class QwenVLM(nn.Module):
     ):
         """Generate answers with TRM-inspired iterative refinement."""
         # Project vision
-        # Keep everything on the text/question device to avoid cross-GPU issues
-        device = question_ids.device if question_ids is not None else vision_tokens.device
-        target_dtype = self.qwen.model.dtype
-
-        # Align vision projection with Qwen sharded dtype/device
-        if self.vision_proj.weight.device != device or self.vision_proj.weight.dtype != target_dtype:
-            self.vision_proj = self.vision_proj.to(device=device, dtype=target_dtype)
-
+        # Device-placement: vision_proj is aligned at setup (align_custom_modules /
+        # accelerator.prepare / HF device_map) — never mutated here. Tensors are
+        # moved to wherever the aligned modules and question tokens live.
         vision_tokens = vision_tokens.to(
-            device=device,
+            device=self.vision_proj.weight.device,
             dtype=self.vision_proj.weight.dtype,
         )
 

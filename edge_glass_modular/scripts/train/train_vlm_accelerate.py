@@ -289,7 +289,16 @@ def main():
         num_trm_layers=4, # Configurable?
         num_recursion_steps=4,
     )
-    
+
+    # Device placement (see AUDIT_LEDGER.md, device-placement audit):
+    # Align the custom non-HF modules (vision_proj, TRM layers, z_init) ONCE at
+    # setup to the Qwen backbone's placement — never the backbone itself, which
+    # may be quantized/device_map-managed/PEFT-wrapped. forward() no longer
+    # mutates modules at runtime, so this setup-time alignment is required.
+    # (For non-quantized runs, accelerator.prepare below also moves the whole
+    # QwenVLM as before; align_custom_modules is idempotent w.r.t. devices.)
+    model.align_custom_modules()
+
     # Enable gradient checkpointing if available/needed
     if hasattr(model, "gradient_checkpointing_enable"):
          model.gradient_checkpointing_enable()
