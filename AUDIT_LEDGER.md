@@ -1133,3 +1133,23 @@ Artifact-organization-only commit. No source code, notebooks, historical code, o
 - `python3 -m compileall -q src src/training src/utils scripts` → OK (exit 0).
 - Post-deletion reference scan: zero live references to deleted symbols remain (only improved_trainer's own internal `_save_checkpoint`/`_load_latest_checkpoint` methods and the new `__init__` docstring mention).
 - Torch-venv check: `import utils` OK, checkpoint exports gone; `import training` OK. Full `from training.improved_trainer import ImprovedMultimodalTrainer` blocked by missing `sentence_transformers` in the v1 venv — pre-existing environment gap (previously recorded), unrelated to this deletion; compile + AST-level import chain verified instead.
+
+## simple_metrics retirement attempt — BLOCKED by live consumer (2026-09-20)
+
+Verification pass only; **no file deleted** (previous "zero active consumers" finding was wrong at notebook granularity).
+
+### Dependency evidence
+
+- Live import found: `notebooks/analysis/05_vlm_qualitative_inference.ipynb` cell 4 (executed, `execution_count=4`, no error): `from src.evaluation.simple_metrics import compute_bleu, compute_rouge_l, compute_perplexity`. This is a RETAINED analysis notebook (only executed inference evidence in the repo) — a genuine retained-notebook consumer, so per task rule the deletion is blocked.
+- Symbol check: `simple_metrics.py` defines `compute_bleu`, `compute_rouge_l`, `compute_perplexity`. Notebooks call `compute_bleu`/`compute_rouge_l` (cell 11); `compute_perplexity` has no call site anywhere (dead symbol).
+- Canonical overlap: `qa_metrics.py` already provides correct-orientation `compute_bleu`, `compute_rouge_l`, `compute_f1`, `compute_exact_match` — notebook 05's executed metric path actually FAILED with `NameError: compute_f1 is not defined` (cell 11 output) precisely because simple_metrics lacks `compute_f1`; the notebook's metrics were never produced via simple_metrics.
+- `src/evaluation/__init__.py` does not export simple_metrics; no src/script/config consumer exists. Consumers = notebook 05 only.
+
+### Disposition options (need user decision, NOT executed)
+
+1. Repair notebook 05 cell 4 import → `src.evaluation.qa_metrics` (one-line, also fixes the latent compute_f1 NameError) then delete simple_metrics in the same commit. Preferred: preserves the notebook's executed-evidence role with a correct import.
+2. Keep simple_metrics as-is (notebook-modifying excluded from this task's scope by instruction).
+
+### Status
+
+- `simple_metrics.py` RETAINED unchanged; `metrics.py`/`qa_metrics.py` untouched. Compile checks unnecessary (no change made).
