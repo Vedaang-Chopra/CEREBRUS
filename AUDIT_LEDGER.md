@@ -988,3 +988,39 @@ Deletion-only commit per ledger §2/§3/§C.1/§C.2 of the notebooks/scripts cla
 - `bash -n scripts/train/run_vlm_experiments.sh` — OK.
 - Retained structure verified unchanged: `scripts/{train,eval,data,experiments,train_alignment.py}`; `notebooks/{experiments,analysis,archive,system_architecture.md}` (+ untouched outputs/wandb/eda_outputs).
 - No executions run beyond compile/syntax checks (per task constraints).
+
+## Generated-artifact audit (2026-09-20, audit-only — no files changed)
+
+Scope: `notebooks/wandb/`, `notebooks/outputs/`, `notebooks/eda_outputs/`, root `wandb/`, `.gitignore`. No deletions/moves in this pass.
+
+### Per-directory findings
+
+| Directory | Tracked? | Size / files | Producer | Referenced by | Unique evidence? | Reproducible? | Disposition |
+|---|---|---|---|---|---|---|---|
+| `edge_glass_modular/notebooks/wandb/` | **Fully tracked** (156 files) despite gitignore `*wandb*` (tracked before pattern) | 6.9 MB / 153 files (41 run dirs, Dec 2025) | W&B local runs from notebook-era training | None (no notebook/script reads it) | No — run metadata/logs only; no retained run summaries with provenance | No (W&B run data; runs not re-runnable) | **DELETE FROM MAIN + GITIGNORE** (git-history recoverable) |
+| root `wandb/` | **Fully tracked** (187 files) despite `*wandb*` | 14 MB / 185 files (34 run dirs, Nov 2025) | W&B runs from earlier alignment/CLI-era training | None | No — same character as above | No | **DELETE FROM MAIN + GITIGNORE** |
+| `notebooks/outputs/` | Tracked (10 files) | 728 KB | Notebook training runs: `pixmo_alignment/` (training curves, loss components, lr schedule, similarity/embedding plots, `metrics.csv`) + `perceiver_mrl_alignment/` (3 curve PNGs) | `notebooks/experiments/01_pixmo_vision_text_alignment.ipynb` and `scripts/eval/evaluate_freeze_align.py` mention `outputs/pixmo_alignment` (script also has a `notebooks/checkpoints/... → outputs/pixmo_alignment/...` fallback) | **Yes, partially** — these are the only persisted training-curve plots anywhere; `metrics.csv` is the known non-resume-safe training-summary row. `perceiver_mrl_alignment` PNGs have unclear provenance (ledger: likely ddsp_scripts runs, not notebook 02) | No (absolute cluster data paths gone) | **MOVE LATER TO `edge_glass_modular/outputs/`** (train-history subdirectory) in a later batch; not deleted |
+| `notebooks/eda_outputs/` | Tracked (2 PNGs) | 48 KB / 2 files (`pixmo_dataset_split_dist.png`, `pixmo_qa_mixed_split_dist.png`) | EDA notebook 04 (retained in `analysis/`) | Ledger cites them as notebook 04's retained evidence; the notebook's live code saves to a cluster-absolute path (`/home/hice1/.../images`), so these are copies brought back locally | **Yes** — only persisted visual evidence for the retained EDA notebook | No (parquet datasets absent) | **KEEP TRACKED AS RESULT ARTIFACT** (tiny, supports retained notebook) |
+| `.gitignore` (repo root; no package-level one) | n/a | — | — | — | — | — | Gaps listed below |
+
+### `.gitignore` gaps
+
+Present and effective: `__pycache__/`, `.ipynb_checkpoints/`, `*.pt`/`*.pth`/`*.ckpt`, `venv/`/`env/`, `edge_glass_modular/outputs/`, `*wandb*`/`*run-*`/`*.bin`. Gaps:
+
+1. **Tracked remnants defeat the patterns**: root `wandb/` (187 files) and `notebooks/wandb/` (156) match `*wandb*` but were committed before the pattern — they are still tracked and will keep updating. Future batch must `git rm -r --cached` (or delete) them.
+2. `notebooks/outputs/` and `notebooks/eda_outputs/` are NOT ignored (deliberate for eda_outputs; notebooks/outputs pending its move decision).
+3. No `.venv/` pattern (only `venv/`/`env/`) and no standalone `*.pyc` (only `__pycache__/`).
+4. No generic cache pattern (`cache/`, `.cache/`) — none currently present outside `older_code_base/`, so low priority.
+5. Model checkpoints: covered via `*.pt`/`*.pth`/`*.ckpt`; directory-form checkpoints (`checkpoint-epoch-*`, `checkpoint_best/` DeepSpeed dirs) not covered but none exist in-repo (cluster-only).
+
+### Cross-check vs `edge_glass_modular/outputs/`
+
+The package `outputs/` (19 tracked files, gitignored but pre-tracked) holds the authoritative final tables/plots (`alignment_eval_final/` CSVs/tex/PNGs) plus `pixmo_alignment_eval/visualizations/` — no overlap with `notebooks/outputs/` training curves (different artifact class), and no equivalent of the EDA split-dist PNGs. Untouched per task constraints; note `edge_glass_modular/outputs/` itself is also a tracked-despite-ignore case like wandb.
+
+### Questions
+
+1. The `pixmo_alignment/` training curves + `metrics.csv` in `notebooks/outputs/` are the only persisted training-history evidence (ledger marks `metrics.csv` non-resume-safe, curves provenance-confident for notebook 01 only). Confirm intent to relocate them under `outputs/train_history/` rather than discard.
+
+### Recommended next cleanup batch
+
+`git rm -r --cached` (delete from main, keep local copies) root `wandb/` + `notebooks/wandb/` (341 tracked files, ~21 MB), verify `*wandb*` then ignores them; keep `eda_outputs/`; defer `notebooks/outputs/` relocation to the artifacts-consolidation pass that also sorts `edge_glass_modular/outputs/`.
