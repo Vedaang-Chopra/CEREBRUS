@@ -561,3 +561,40 @@ Findings:
 1. Which exact `checkpoint_best.pt` (which epoch/run of notebook 01) fed the final CSV and the QA runs — single checkpoint or overwritten across sessions? Path evidence only; no file hash exists.
 2. Did any QA run complete multiple epochs on the cluster (checkpoint rotation deleted evidence)? `training_progress.log`/W&B summaries are not in-repo.
 3. Was DeepSpeed ZeRO-2 actually active at runtime (plugin passed, but requires the deepspeed env) or did it fall back to plain DDP? Matters only for rerun fidelity.
+
+## Training-path low-risk fixes (2026-09-19)
+
+Scope: masking semantics in `src/models/trm_qwen_vlm.py`, optimizer filter in `src/training/improved_trainer.py`, checkpoint diagnostics in `scripts/{train_vlm_accelerate,evaluate_vlm_accelerate}.py`. No other behavior touched.
+
+### Masking semantics discovered (pre-fix trace)
+
+`answer_mask` is created in `scripts/train_vlm_accelerate.py:collate_fn` (lines 109-115): `1 = real answer token, 0 = answer padding` — a **valid-token/padding mask**, NOT an answer-only loss mask. `PixmoQADataset` per-item `answer_mask` (1s only) was overwritten by this collate mask. Pre-fix `QwenVLM.forward` accepted `answer_mask` and **never read it**: labels were `cat(−100·question, answer_ids)` (padding supervised), and no attention mask was passed to Qwen for the text block. The collate answer padding and the question tokens both entered CE. Separation now applied: `answer_mask` drives BOTH (a) the text attention mask (padding semantics) and (b) label −100 filling (loss semantics); the question block remains −100 (no loss) as before — no intended-loss-token change.
+
+### Fixes made
+
+1. `trm_qwen_vlm.py` `forward` (question_ids+answer_ids branch): builds `attention_mask = cat(ones(question), answer_keep)`; labels become `cat(−100·question, masked_fill(answer_keep==0 → −100))`. Missing `answer_mask` falls back to all-valid (unchanged behavior for such callers).
+2. `trm_qwen_vlm.py` manual TRM-branch loss: replaced the `logits.shape[1] > labels.shape[1]` heuristic (which mis-detected batch-length padding) with explicit prefix-aware label padding — labels are padded with −100 over the prefix region, so shapes always align and the prefix contributes nothing to CE.
+3. `improved_trainer.py`: `AdamW((p for p in model_params if p.requires_grad), …)` — frozen CLIP/MPNet backbones no longer enter the optimizer.
+4. Checkpoint diagnostics at script `strict=False` load sites (train + evaluate): missing/unexpected keys captured and logged at WARNING; all-match case logged at INFO; strictness unchanged.
+
+### Validation performed (synthetic, no downloads; venv torch 2.9.1)
+
+`/tmp/validate_training_fixes.py` — ALL PASSED:
+1. Padded answer labels become −100 (per-batch variable answer lengths).
+2. Attention-mask length = question+answer; padding entries 0, valid entries 1; with the prefix block the full mask and labels align (prefix −100 / ones).
+3. Non-padding intended targets unchanged; questions remain −100; `CrossEntropyLoss` default `ignore_index=-100` verified equal to manual mean over valid positions.
+4. Missing-`answer_mask` fallback = all-valid.
+5. Optimizer filter: 2/4 tensors in optimizer; gradients flow only to the trainable module.
+6. Checkpoint diagnostics: matching load reports no keys; producer-only keys (simulated decoder) captured as unexpected while load still succeeds; `strict=False` preserved.
+7. `py_compile` + AST parse of all four modified files; edited regions verified present.
+
+Full-module import in the v1 venv is blocked by missing `sentence_transformers`/`transformers` deps there (pre-existing environment gap, not a code issue); compile/AST checks + the synthetic logic checks cover the changed code paths.
+
+### Intentionally deferred (unchanged per task constraints)
+
+- `trm_norm` dead module; `confidence_threshold` stale arg; TRM architecture; decoder naming.
+- Baseline generate double-strip bug (`outputs[:, prompt_len:]`).
+- In-forward `.to()` mutations in QwenVLM.
+- Broken legacy CLI (`trainer.py`/`train_alignment.py`/`callbacks.py`).
+- Evaluation behavior (incl. the 5-batch BLEU/ROUGE subset and swallowed exceptions).
+- Notebook load sites (07) — not scripts; untouched.

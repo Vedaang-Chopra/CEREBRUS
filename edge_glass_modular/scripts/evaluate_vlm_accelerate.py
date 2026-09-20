@@ -114,7 +114,15 @@ def main():
 
     if os.path.exists(alignment_checkpoint_path):
          ckpt = torch.load(alignment_checkpoint_path, map_location='cpu', weights_only=False)
-         aligned_model.load_state_dict(ckpt['model_state_dict'], strict=False)
+         load_result = aligned_model.load_state_dict(ckpt['model_state_dict'], strict=False)
+         missing_keys = list(load_result.missing_keys)
+         unexpected_keys = list(load_result.unexpected_keys)
+         if missing_keys:
+             logger.warning(f"Alignment checkpoint: {len(missing_keys)} MISSING keys (left at init): {missing_keys[:20]}{' ...' if len(missing_keys) > 20 else ''}")
+         if unexpected_keys:
+             logger.warning(f"Alignment checkpoint: {len(unexpected_keys)} UNEXPECTED keys (ignored): {unexpected_keys[:20]}{' ...' if len(unexpected_keys) > 20 else ''}")
+         if not missing_keys and not unexpected_keys:
+             logger.info("Alignment checkpoint: all keys matched (strict=False load, fully compatible).")
          logger.info(f"Loaded alignment checkpoint from {alignment_checkpoint_path}")
     else:
          logger.warning(f"Alignment checkpoint not found at {alignment_checkpoint_path}, using random init (bad for performance!)")

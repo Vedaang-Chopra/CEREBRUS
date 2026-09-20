@@ -115,13 +115,30 @@ class QwenVLM(nn.Module):
 
         # Handle question_ids + answer_ids -> input_ids
         if input_ids is None and question_ids is not None and answer_ids is not None:
+            assert question_ids is not None and answer_ids is not None  # for type checkers
             input_ids = torch.cat([question_ids, answer_ids], dim=1)
             
+            # Build the text attention mask from the question/answer masks.
+            # answer_mask semantics (from scripts/train_vlm_accelerate.py:collate_fn):
+            #   1 = real answer token, 0 = answer padding. It is a padding mask, NOT
+            #   a loss mask — loss masking is handled separately via labels below.
+            # If a caller passed no answer_mask, treat every answer token as valid.
+            if answer_mask is not None:
+                if answer_ids is not None and answer_mask.device != answer_ids.device:
+                    answer_mask = answer_mask.to(answer_ids.device)
+                answer_keep = answer_mask.to(torch.long)
+            else:
+                answer_keep = torch.ones_like(answer_ids)
+            attention_mask = torch.cat(
+                [torch.ones_like(question_ids), answer_keep], dim=1
+            )
+            
             # Create labels if not provided
-            # Standard VLM QA: -100 for question, answer_ids for answer
+            # Standard VLM QA: -100 for question AND for answer padding, answer_ids for real tokens
             if labels is None:
                 question_labels = torch.full_like(question_ids, fill_value=-100)
-                labels = torch.cat([question_labels, answer_ids], dim=1)
+                answer_labels = answer_ids.masked_fill(answer_keep == 0, -100)
+                labels = torch.cat([question_labels, answer_labels], dim=1)
                 
         # Fallback if just question_ids (e.g. generation start)
         if input_ids is None and question_ids is not None:
@@ -143,8 +160,10 @@ class QwenVLM(nn.Module):
              raise ValueError("forward() requires input_ids OR (question_ids + answer_ids)")
 
         # Qwen hidden state (last layer)
-        # Use last_hidden_state: (B, Seq, Dim)
+        # Use last_hidden_state: (B, Seq, Dim)  [Seq includes the visual prefix]
         qwen_hidden = outputs.hidden_states[-1]
+        # Note: QwenDecoder returns hidden states over prefix+text; the manual TRM
+        # loss path below pads labels with -100 over the prefix region.
         
         if not self.use_trm_recursion:
             # Return standard dictionary matching what notebook expects ('loss', 'logits', 'confidence')
@@ -222,21 +241,22 @@ class QwenVLM(nn.Module):
         # Calculate loss if labels provided
         tr_loss = None
         if labels is not None:
-            # If we had a prefix, logits include it. Labels likely don't (they are text only).
-            # We need to slice logits to match labels length or pad labels.
-            # Usually labels corresponds to input_ids (text).
-            
+            # Logits cover [prefix (if any) + text]; labels cover text only.
+            # Pad labels with -100 over the prefix region so shapes align and the
+            # prefix contributes nothing to the CE loss (instead of guessing by
+            # comparing lengths, which mis-detects any batch-length padding).
             if prefix_embeds is not None:
                 num_prefix = prefix_embeds.shape[1]
                 # Logits shape: (B, num_prefix + seq_len, Vocab)
                 # Labels shape: (B, seq_len)
-                if logits.shape[1] > labels.shape[1]:
-                    # Slice off the prefix part from logits
-                    logits_for_loss = logits[:, num_prefix:, :]
-                else:
-                    logits_for_loss = logits
-            else:
-                logits_for_loss = logits
+                prefix_labels = torch.full(
+                    (labels.shape[0], num_prefix),
+                    fill_value=-100,
+                    dtype=labels.dtype,
+                    device=labels.device,
+                )
+                labels = torch.cat([prefix_labels, labels], dim=1)
+            logits_for_loss = logits
 
             # Shift so that tokens < n predict n
             shift_logits = logits_for_loss[..., :-1, :].contiguous()

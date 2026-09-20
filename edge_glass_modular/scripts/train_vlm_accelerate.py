@@ -227,7 +227,17 @@ def main():
     checkpoint = torch.load(checkpoint_path, map_location=accelerator.device, weights_only=False) # Load to CPU first
     
     # Load state dict with strict=False because we removed decoder/text_encoder
-    aligned_model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+    # Log incompatibilities explicitly: silent strict=False has hidden
+    # missing/unexpected-key failures in the past (see AUDIT_LEDGER checkpoint audit).
+    load_result = aligned_model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+    missing_keys = list(load_result.missing_keys)
+    unexpected_keys = list(load_result.unexpected_keys)
+    if missing_keys:
+        logger.warning(f"Alignment checkpoint: {len(missing_keys)} MISSING keys (left at init): {missing_keys[:20]}{' ...' if len(missing_keys) > 20 else ''}")
+    if unexpected_keys:
+        logger.warning(f"Alignment checkpoint: {len(unexpected_keys)} UNEXPECTED keys (ignored): {unexpected_keys[:20]}{' ...' if len(unexpected_keys) > 20 else ''}")
+    if not missing_keys and not unexpected_keys:
+        logger.info("Alignment checkpoint: all keys matched (strict=False load, fully compatible).")
     logger.info("Loaded alignment checkpoint (strict=False)")
     
     # Freeze and set to eval

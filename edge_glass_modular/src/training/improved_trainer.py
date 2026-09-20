@@ -93,9 +93,11 @@ class ImprovedMultimodalTrainer:
         self.effective_batch_size = cfg.dataset.batch_size * self.world_size
 
         # Optimizer
+        # Only trainable parameters: frozen backbones (CLIP/MPNet) have
+        # requires_grad=False and must not consume optimizer state memory.
         model_params = self.model.module.parameters() if isinstance(self.model, DDP) else self.model.parameters()
         self.optimizer = AdamW(
-            model_params,
+            (p for p in model_params if p.requires_grad),
             lr=cfg.optimization.lr,
             weight_decay=cfg.optimization.weight_decay,
             betas=(0.9, 0.95),
