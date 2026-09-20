@@ -1257,3 +1257,144 @@ Scope: exactly the four Batch A items. Deferred list untouched (verified post-ho
 
 ### Not done (explicitly deferred, unchanged)
 Batch B list from the reconciliation audit stands as recorded.
+
+## Perceiver provenance resolution (2026-09-20, research-provenance audit — no source code changed)
+
+Resolves the ledger's long-standing open question ("which Perceiver is canonical"). Task: recover V1/V2 historical implementations from `archive/historical-code-pre-retirement` (branch NOT checked out; all reads via `git show`), compare architectures structurally, trace result provenance, and recommend a disposition. All paths below verified present in the archive tree; git provenance via `git log --follow` on the archive branch.
+
+### 1. Implementation inventory (provenance-verified)
+
+| # | Implementation | Path (archive branch = `archive/historical-code-pre-retirement`, tip `134539e`) | Git provenance | Executed? | Produced retained result? |
+|---|---|---|---|---|---|
+| 1 | **Packaged `PerceiverResampler`** (current) | `edge_glass_modular/src/encoders/perceiver.py` on main (`HEAD bcd3404`); unchanged since `09db6be` "Submitting the modular changes" (2025-12-01) | main history | **Config-reachable, never trained/evaluated.** Zero retained artifact references its weights. Notebook 02 attempted it and aborted after 2 cells (1 error). | **NO** |
+| 2 | **V1 `PerceiverLatentEncoder`** | `older_code_base/v1_code_base/imports/perceiver.py` (370 L; original path `code_base/v1_code_base/imports/perceiver.py`, created `a323341` "Submitting modified encoders and perciver") | v1 era | Not evidenced by any retained run/notebook output | NO |
+| 3 | **V2 `PerceiverResampler` + `MultimodalAlignmentModel`** | `older_code_base/v2_code_base/imports/multimodal_alignment_perceiver.py` (1158 L; created `5c021d3` "Pushning new percieve...", refined `7570637`) | v2 era | v2 notebook era only (`04/05_multimodal_*_valor_perceiver.ipynb`); no retained metrics | NO |
+| 4 | **Executed V3 training code** | `edge_glass_modular/scripts/experiments/train_perceiver_v3.py` (736 L, commit `b13cecc` 2025-12-10; formerly `notebooks/ddsp_scripts/train_perceiver_v3.py`) | Accelerate+DeepSpeed ZeRO | **YES — the only executed Perceiver training code** (trained `perceiver_v2/checkpoint-best`) | Via its checkpoint → notebook 07 → final CSV (see §4) |
+| 5 | **Notebook 07 eval-time `PerceiverV3Model`** | `edge_glass_modular/notebooks/experiments/07_alignment_final_report.ipynb` cell 4 (executed, `execution_count=2`) | reconstructed for eval | **YES — instantiated at eval, produced the final CSV Perceiver rows** | **YES — the Perceiver arm of `alignment_metrics_all_models.csv:14-25`** |
+
+### 2. Structural comparison
+
+**A. Packaged current** (`src/encoders/perceiver.py`, d=512, 64 latents, 4 layers, 8 heads → **12,637,184 params**):
+- Latents: `randn * 0.02`.
+- Per layer: cross-attention (Q from latents, KV from input, **bias-free** to_q/to_kv, biased to_out) → FFN (4×, GELU, dropout) — **NO self-attention**.
+- **Pre-LN, but with ONE shared `norm1` module applied to BOTH x and latents** (`attn(self.norm1(x), self.norm1(latents))`) — v1/v2/V3 all use separate norms (v2/V3 put ln_q/ln_kv *inside* attention).
+- Residuals: `latents + attn`, `latents + ffn(...)` (2-residual layers).
+- **No mask/KV-mask support anywhere**; dropout present but defaults 0.0 (and no config passes it).
+- Final `LayerNorm`. Interface: `forward(x: (B,T,dim)) → (B, num_latents, dim)`; generic token inputs; no positional encoding; config params: dim/num_latents/num_layers/num_heads/dropout only.
+
+**B. Historical strongest = V1 `PerceiverLatentEncoder`** (v1 `imports/perceiver.py`):
+- Latents `randn * 0.02`; explicit `d_input` with runtime assert; per block: `enc_proj` Linear(d_input→d_latent) then **cross-attn → SELF-ATTN → FFN**, all pre-LN (3 separate LNs per block) + residual with dropout on each branch.
+- **KV mask support**: `encoder_mask (B,T) bool True=keep → masked_fill(-inf)`.
+- FFN mlp_ratio 4.0; dropout param (default 0.0 in config dataclass but usage docstring shows 0.1).
+- No final LN (output raw latents); companion `ProjectorMLP` (LN→Linear→GELU→Dropout→Linear).
+
+**C. Executed V3** — two copies exist and are **MATERIALLY DIFFERENT** (see §5):
+- Training script (`train_perceiver_v3.py`): v2-style design family — PerceiverAttention with **ln_q/ln_kv inside attention**, self-attention per layer, KV mask support, latents `randn * dim**-0.5`, `ln_out` final norm, extra `ln_ffn` on the FFN branch → PerceiverResampler **16,858,112 params**; adapters are 2-hidden-layer MLPAdapters (1024→2048→512 vision, 384→768→512 text); `AlignmentProjector` = mean-pool over latents → LN+Linear → 512-d. Model total **20,962,304 params**. Loss: symmetric contrastive T=0.07 + matryoshka over ALL dims (64/128/256/512) averaged; text backbone MiniLM (d_text=384).
+- Notebook 07 `PerceiverV3Model` (eval-time): same design family but **architecturally reduced** — adapters are single `Sequential(LN, Linear)` (no hidden layer, no GELU), no `ln_ffn` (FFN branch applies no pre-norm), attention `out_proj` renamed `out` → PerceiverResampler **16,854,016 params**, model total **17,842,432 params** (≈3.1M fewer than the training model, from adapters + ln_ffn).
+- Both V3 copies: d_vision=1024 (CLIP ViT-L/14-336 patch tokens), d_text=384 (**MiniLM**, not MPNet), d_model=512, d_out=512, 64 latents, 4 layers, 8 heads, latent-init script=`dim**-0.5` vs notebook=`0.02`, generic token inputs (both modalities pass through the SAME shared resampler), no positional encoding, dropout 0.1, KV-mask parameter present but **always None in practice** (vision/image features are never padded).
+
+Key cross-version deltas vs packaged: V1/V2/V3-training/V3-notebook ALL have latent self-attention and (except notebook) KV masking; packaged has neither. Packaged is the only one with a shared norm1 and the only one never executed.
+
+### 3. Interface compatibility (replacing packaged module with V3-style architecture)
+
+| Surface | Impact |
+|---|---|
+| `VisionEncoder` perceiver path | Encoders already wrap the resampler (MLPAdapter → perceiver → mean-pool → final LN+Linear); a V3-style resampler with the same `(B,T,dim)→(B,K,dim)` contract drops in. Adapter/projection wrappers change state-dict keys (packaged key `...norm1.weight` vs V3 `...ln_q/ln_kv`, missing `ln_ffn` etc.) — **no checkpoint exists for the packaged path, so nothing breaks**. |
+| `AudioEncoder` | Same resampler contract; V3-style adds a mask arg the audio path could finally use. |
+| Configs | `perceiver_mrl_alignment.yaml` fields map 1:1 (latents 64, dim 512, layers 4, heads 8, dropout 0.1 — the V3 defaults exactly). QA configs' `perceiver_latent_dim: 1024` also constructible. |
+| `MultimodalAlignmentModel` / alignment.py | Perceiver-agnostic (params pass through encoders). No change. |
+| Forward signature | V3 accepts optional `mask=None` — a superset of the packaged signature; callers passing only `x` work unchanged. |
+
+**Classification: SMALL ADAPTER.** The resampler contract is identical; the only real work is reconciling constructor param names/normalization-key layout and choosing the mask convention (V1-style external mask vs V3 in-attention ln_q/ln_kv). Not DROP-IN (state-dict keys + norms differ), not architecture migration (contract unchanged).
+
+### 4. Result provenance chain (code-existed → instantiated → executed → produced)
+
+1. **Packaged perceiver**: existed; config-reachable; instantiated by NOTHING in any retained execution (notebook 02 aborted pre-training). Produced **no results**.
+2. **Executed V3 training** (`train_perceiver_v3.py`, DeepSpeed): instantiated and trained its inline model → `perceiver_v2/checkpoint-best` (mp_rank_00 DeepSpeed state; cluster-only, not in-repo). This checkpoint is the ONLY retained Perceiver training evidence (its training curves live in `results/train_history/perceiver_mrl_alignment/`, provenance attributed to the ddsp_scripts run family, not notebook 02).
+3. **Notebook 07 eval** (executed, outputs retained): loaded that DeepSpeed checkpoint into its **notebook-local `PerceiverV3Model`** via `strict=False` + `module.` key-strip → produced `embeddings_val_perceiver.pt` and the Perceiver rows of `alignment_metrics_all_models.csv` (I2T/T2I R@5 = 0.201%/0.168%, MedR 1517/1555).
+4. **Chance-level cross-check (new, decisive)**: Perceiver R@1 = 0.033512% = **exactly 1/2,984** (the filtered val N); R@5 = 6 hits (i2t) / 5 hits (t2i) out of 2,984. The Perceiver arm is statistically **at chance** — consistent with embeddings that carry near-zero learned signal, e.g. an eval-time model whose loaded state was largely mismatched/random-initialized under `strict=False` (see §5) or a genuinely unlearned model.
+5. **Consequence**: the retained Perceiver result is attributable to the **notebook 07 eval-time instantiation of a V3-family model trained by the V3 script** — NOT to the packaged `src/encoders/perceiver.py` (never), NOT to V1, NOT to V2 directly (V2 is the design ancestor of the script).
+
+### 5. V3 duplication determination
+
+**Materially different** — not byte-identical, not a minor variant. Verified diffs (script vs notebook cell 4):
+
+| Component | Script V3 (training) | Notebook V3 (eval) | Impact |
+|---|---|---|---|
+| Adapters | 2-hidden MLPAdapter (LN→Linear i→2i→GELU→Dropout→Linear o) | `Sequential(LN, Linear)` | **Different depth/params; state-dict keys incompatible** (script keys would be dropped, notebook keys randomly init'd under strict=False) |
+| FFN normalization | extra `ln_ffn` pre-norm (script keys `...ln_ffn.*`) | none | Key mismatch (4 tensors/layer) |
+| Attention out | `out_proj` | `out` | Key mismatch (4×4=16 tensors) |
+| Latent init | `randn * dim**-0.5` | `randn * 0.02` | init-only (overwritten if loaded) |
+| Param delta | 20,962,304 total | 17,842,432 total | −3,119,872 params |
+| Shared | identical PerceiverLayer topology (cross→self→FFN, pre-LN in attention), dims 1024/384/512/512, 64×4×8, MiniLM text | same | — |
+
+**Checkpoint integrity flag (HIGH)**: notebook 07 loads the DeepSpeed `mp_rank_00_model_states.pt` into the notebook model with `strict=False` and no missing/unexpected key logging (only `module.` stripping). Given the key differences above (adapter depth, `ln_ffn`, `out` vs `out_proj`), a large fraction of the trained PerceiverResampler/adapter weights **may have silently failed to load**, leaving eval-time weights partially random-initialized. This is a *hypothesis* — the checkpoint is not in-repo and key dumps were never persisted — but the at-chance result (§4.4) is exactly the symptom such a silent mismatch produces. **The negative Perceiver result must be treated as UNRELIABLE as an architecture verdict** until either the checkpoint is recovered and key-verified or a controlled rerun is done. This strengthens, rather than weakens, the case against citing the Perceiver arm as evidence that "Perceiver failed."
+
+### 6. Recommendation
+
+**Option B — replace packaged `src/encoders/perceiver.py` with the executed V3 architecture** (the script-V3 form, i.e. the design that actually trained a checkpoint), implemented as the canonical maintained module.
+
+Reasoning:
+- **Provenance**: the packaged module produced zero evidence and never executed; keeping it "canonical" preserves a module whose architecture no experiment ever exercised — the exact label-integrity problem §7 flags. The V3 family is the only Perceiver code that ever ran end-to-end (training + eval).
+- **Design-family correctness**: V3 (script form) carries the self-attention + KV-mask + per-attention pre-LN machinery the earlier ledger already judged "required to make the packaged Perceiver comparable"; the packaged module is a degraded derivative missing exactly those parts.
+- **Simplicity**: one maintained resampler beats two (packaged + historical). V1 and V2 remain on the archive branch; no variant proliferation in main.
+- **Interface**: SMALL ADAPTER cost (identical tensor contract; encoders/alignment.py/configs need no structural change).
+- **Reproducibility honesty**: replacing the module does NOT retroactively validate the at-chance negative result (§5 flag stands); it just makes the *next* rerun test the architecture actually trained last time. The negative result should be restated as "V3-family Perceiver run was at chance; silent-load hypothesis unresolved."
+
+Option C rejected: a second "experimental" implementation adds a second untested variant and keeps the untested packaged one alive — the repo's problem is already too many untested variants, not too few. Option A rejected for the same label-integrity reason. Option D (adopting V1 or V2 wholesale) rejected: V1 lacks a final norm and was never run; V2's monolithic 1158-L file is the ancestor the script already distilled.
+
+### 7. Result-label integrity (current misleading naming)
+
+Current docs/config DO falsely imply the packaged implementation produced the retained Perceiver results:
+1. `PROJECT_RESUME_CONTEXT.md` §5/§6C says "a final notebook-local Perceiver V3 model was evaluated" — already correct, but §3 "Perceiver compression" row says "`PerceiverResampler` is packaged" adjacent to the failed-result narrative, which reads as if the packaged module was the ablation arm. Needs an explicit "packaged module = never executed; V3-family (script-trained, notebook-evaluated) = the failed arm" sentence.
+2. `perceiver_mrl_alignment.yaml` — named as if it describes the Perceiver MRL experiment, but (a) its `perceiver_dropout: 0.1`/dims match the V3 defaults while its own structure (via `VisionEncoder`) instantiates the packaged module with no self-attention, and (b) no artifact was ever produced under this config. Its provenance is aspirational, not historical. Should carry a comment header marking it never-run.
+3. `configs/no_trm_vlm_qa_*` perceiver fields (latent_dim 1024, dropout 0.0) — match no executed config; QA script path ignores them (ledger training audit). Dead/misleading fields.
+4. Final CSV `table_4096_detailed.csv` labels the perceiver arm "4096" — V3 outputs 512-d (d_out=512). Already recorded; the dimension mislabel now additionally carries the at-chance finding (§4.4).
+5. `COMPLETE_CODEBASE.md` / package README (docs pass): describe the packaged Perceiver as the project's Perceiver architecture without the never-executed caveat.
+
+Required eventual corrections (docs/config pass, NOT code): (a) resume-context wording per (1); (b) never-run provenance comment on `perceiver_mrl_alignment.yaml`; (c) CSV/table dimension relabel or a provenance note in `results/alignment/`; (d) audit-report wording "Perceiver V3 family" instead of implying module equivalence.
+
+### Classification summary
+
+| Component | Disposition |
+|---|---|
+| `src/encoders/perceiver.py` (packaged) | **REPLACE LATER** (Option B accepted; not executed in this task — Batch-B item now decided) |
+| `scripts/experiments/train_perceiver_v3.py` | **KEEP as provenance** (source of the executed architecture; do not delete) |
+| Notebook 07 `PerceiverV3Model` | **KEEP as provenance** (eval-time producer; do not extract as code) |
+| V1 `imports/perceiver.py` (archive) | HISTORICAL (design reference only) |
+| V2 `multimodal_alignment_perceiver.py` (archive) | HISTORICAL (design ancestor; distilled into script V3) |
+| Retained Perceiver result (0.20%/0.17%) | **QUALIFIED — at-chance + silent-load hypothesis; not a valid architecture verdict** |
+
+### Unresolved questions
+1. Can `perceiver_v2/checkpoint-best/mp_rank_00_model_states.pt` be recovered from the cluster/scratch? Resolves the §5 silent-load hypothesis definitively (load with `strict=True` against both key layouts and compare).
+2. Was the notebook-07 eval load actually mismatched, or did it load cleanly (i.e. was the failure genuine model failure)? Only the checkpoint can answer.
+3. If Perceiver work resumes under Option B: rerun with (a) the merged canonical V3 module, (b) text backbone decision (MiniLM 384 vs MPNet 384→512 projection — the confound recorded earlier), (c) explicit key-verified checkpoint loading.
+
+## Perceiver canonicalization — Option B executed (2026-09-20, single-file architecture replacement)
+
+`src/encoders/perceiver.py` rewritten to the executed V3-training architecture (source of truth: `scripts/experiments/train_perceiver_v3.py`, per the provenance audit's Option B decision). No other source/config/result file touched; notebook 07 and archive code untouched.
+
+### What changed in the module
+- Per-attention: **separate `ln_q`/`ln_kv` pre-normalization inside attention**, biased `q_proj`/`k_proj`/`v_proj`/`out_proj` (was: shared `norm1` applied to both x and latents, bias-free to_q/to_kv).
+- Per-layer: **latent self-attention added** (cross-attn → self-attn → FFN; was cross-attn → FFN only), **`ln_ffn` pre-normalized FFN branch** (new), residual connections preserved.
+- Model: latents init `randn * dim**-0.5` (V3 training form; was `*0.02`), final norm renamed `ln_out` (V3 key), `mlp_ratio`/`mask` constructor args added.
+- Optional KV/input mask: `(B,T) bool True=keep`, default None — callers unchanged.
+- Provenance docstring: canonicalized-from-V3-training note; no experiment conclusions in source.
+
+### One deliberate deviation from the script (reported, not silent)
+The V3 script's cross-attention mask path contains a **latent broadcasting bug**: `attn.masked_fill(~mask...)` on a `(B,H,N_q,N_kv)` tensor with a `(B,N_kv)` mask — this raises for B≠H (e.g. B=2) and only "works" accidentally for B=H. Never exercised in training (mask was always None: image features are unpadded). The canonical module **fixes this with `mask.unsqueeze(1).unsqueeze(2)`** → `(B,1,1,N_kv)` before `masked_fill`. Masked parity vs the script's intended semantics verified at 0.0 max abs diff (using the pre-fixed reference); masked output differs from no-mask output as expected and stays finite. The script itself is untouched (provenance artifact).
+
+### Validation (torch 2.8.0 CPU, synthetic, no model downloads)
+1. **Numeric parity (strongest check)**: verbatim V3-training classes extracted from the script via `git show` (archive branch, not checked out); weights copied with `load_state_dict(strict=True)` — **key layout and 123-tensor/16,858,112-param state identical**; no-mask forward max abs diff = **0.0**; masked forward max abs diff = **0.0** (vs pre-fixed reference).
+2. Shape `(B,T,D)→(B,64,512)` verified; dim=512 (alignment config) and dim=1024 (QA configs) both forward OK.
+3. Backward: nonzero gradients on all 123 tensors through both masked and no-mask paths; latents grad nonzero.
+4. Mask semantics: boolean keep-mask alters output, all-finite under partial padding.
+5. `python -m compileall src scripts` → OK; all 9 retained YAML configs load via `load_config`; AST-level static check: `VisionEncoder`/`AudioEncoder` construct with `dim/num_latents/num_layers/num_heads` kwargs (all present) and call `self.perceiver(<single positional tensor>)` — signature-compatible, no caller edits required.
+
+### Config compatibility
+`perceiver_num_latents`(64)/`perceiver_latent_dim`(512)/`perceiver_num_layers`(4)/`perceiver_num_heads`(8)/`perceiver_dropout`(0.1) map 1:1 onto the new constructor; no YAML changed; no speculative fields added.
+
+### Result integrity (unchanged)
+- All retained results (final CSVs, tables, plots, training-history PNGs) untouched — the historical Perceiver result remains evidence from a compromised train/eval provenance chain.
+- **This canonicalization does NOT validate the old result.** The audit's silent-load hypothesis (§5 of the provenance audit) and at-chance finding stand: a controlled rerun — key-verified checkpoint loading, resolved text-backbone choice — is required before any Perceiver performance interpretation.
+- Notebook 07's `PerceiverV3Model` stays as-is (eval-time provenance; deliberately NOT the source for this port).
