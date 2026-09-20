@@ -457,3 +457,107 @@ Lost functionality worth noting: v2's deep supervision + last-cycle-only grad (m
 1. Did any actual distributed/accelerate training run execute with the `.to()`-mutation code (i.e. did it ever corrupt optimizer state), or were all runs single-process notebooks/scripts? Determines urgency of the refactor.
 2. Was the baseline (non-TRM) generate path ever used for evaluation? The double-strip bug would have silently truncated all baseline answers — if `04_vlm_qa_evaluation` ever produced numbers through that branch they are suspect (it errored on missing checkpoint, so likely no).
 3. Should a real TRM (vendored ACT machinery or v2-style deep supervision) ever be ported, or is the current "hidden-state refiner" framing the intended final design? No artifact answers intent.
+
+## Training / checkpoint / experiment-wiring audit (2026-09-19)
+
+Scope: `src/training/{trainer,improved_trainer,callbacks}.py`, `src/utils/checkpoint.py`, `scripts/{train_alignment,train_vlm_accelerate,evaluate_vlm_accelerate,run_vlm_experiments.sh}`, driving configs + execution evidence in notebooks 01/04/05/07. Audit only — no code changed. **Resolves the suspected QA perceiver/checkpoint mismatch from the core-model pass — the mismatch does not occur in the script path (see §B.1).**
+
+### A. Alignment training — actual path
+
+```
+notebooks/01_pixmo_vision_text_alignment.ipynb (24 executed cells)
+→ load_config(pixmo_alignment[_1].yaml) → build_image_datasets_from_parquet (Pixmo Parquet loaders)
+→ MultimodalAlignmentModel(cfg)  [vision CLIP frozen / Linear 1024→4096 / SimpleAttentionPooling trainable;
+   text MPNet frozen / Linear 384→4096 trainable; MRL parameter-free; no fusion; no decoder]
+→ ImprovedMultimodalTrainer(cfg, model, train_loader, val_loader, use_wandb=True)
+→ AdamW(model.parameters(), lr, wd, betas=(0.9,0.95))   ← NOTE: NOT filtered by requires_grad
+→ warmup+cosine LambdaLR; bf16 autocast; GradScaler(enabled=fp16=False) → inert
+→ grad-accum 2 (config), clip 1.0; symmetric InfoNCE 1.0 + MRL 0.5 (sampled single dim)
+→ validate(): val loss + i2t R@1/5/10 (single-direction; only I2T, not T2I)
+→ save: checkpoint_latest.pt / checkpoint_best.pt / checkpoint_epoch_N.pt
+   payload = {epoch, global_step, best_val_loss, model_state_dict (unwrapped), history, config dataclass,
+              optimizer/scheduler/scaler state unless save_optimizer_state=False}
+```
+
+Findings:
+1. **Optimizer includes frozen parameters.** `AdamW(self.model.parameters(), …)` (improved_trainer.py:96-102) is not filtered by `requires_grad`. Frozen CLIP/MPNet weights enter the optimizer; they receive no grads so they are never updated (AdamW skips `p.grad is None`), but optimizer state memory is inflated and this diverges from the QA script which does filter. Harmless-but-wasteful.
+2. **Resume path is `strict=False` with keys logged** (improved_trainer.py:267-273): missing keys warned, unexpected keys counted at INFO. Optimizer-state load failure caught and logged. Sound.
+3. `scripts/train_alignment.py` (the only CLI entry) remains **BROKEN EXPERIMENT WIRING**: it uses `MultimodalTrainer`, which calls `self.model(batch)` and indexes `outputs["loss"]` on a dataclass (trainer.py:55-56) — raises immediately. Also its `MultimodalDataModule` path cannot consume Parquet configs. All real alignment training happened in notebook 01.
+4. `callbacks.py`/`utils/checkpoint.py` (`save_checkpoint` tmp+atomic-rename, `step_*.pt`) are consumed only by the broken `MultimodalTrainer` — effectively dead for the canonical path.
+
+### B. VLM/QA training — actual path
+
+```
+run_vlm_experiments.sh production run: accelerate launch --num_processes 4
+  train_vlm_accelerate.py --config trm_vlm_qa_qwen2.5-3b.yaml --batch_size 4 --gradient_accumulation_steps 4 --use_wandb
+→ Accelerator(mixed_precision=bf16, DeepSpeedPlugin(zero_stage=2, accum=4, clip=1.0))
+→ alignment_config = --alignment_config (DEFAULT: pixmo_alignment.yaml) with decoder=None, text_encoder=None
+   → MultimodalAlignmentModel: vision = CLIP + Linear 1024→4096 + SimpleAttentionPooling, use_perceiver=FALSE
+→ torch.load(checkpoint_best.pt) → load_state_dict(strict=False)  [silent — no missing/unexpected logging]
+→ aligned_model.eval(); all params requires_grad=False; vision_encoder moved to accelerator device
+→ encode_images(): vision_encoder(images, return_sequence=True) → sequence (B,577,4096) under no_grad
+→ QwenDecoder(Qwen2.5-3B-Instruct, 4-bit nf4, LoRA r=64 q/k/v/o) → QwenVLM(vision_proj 4096→2048, use_trm_recursion=TRUE default)
+→ optimizer = AdamW(filter(requires_grad, model.parameters()), lr=1e-4)  ← correctly filtered
+→ warmup+cosine (floor 0.1); accelerator.prepare(model, optimizer, loaders, scheduler)
+→ loss = QwenVLM.forward(...).loss (HF CE over answer tokens; question −100)
+→ save: save_pretrained/checkpoint_best (unwrapped state_dict) + accelerator.save_state per epoch (DeepSpeed format,
+   rotation keeps last) + checkpoint-final
+```
+
+Findings:
+1. **QA-config `vision_encoder.use_perceiver: true` is dead config in the script path.** The script constructs the vision encoder exclusively from `--alignment_config` (default `pixmo_alignment.yaml`, `use_perceiver: false`); the QA YAML's vision block is only read for `projection_dim` (train_vlm_accelerate.py:272) and similar scalar fields. **The suspected perceiver/random-weights scenario therefore did not occur in script-driven runs** — the vision encoder was the attention-path architecture matching `checkpoint_best.pt`. (Notebook variants that build the model differently were not evidence-checked cell-by-cell; notebook 04 errored on a missing checkpoint and never trained.)
+2. **`answer_mask` is accepted by `QwenVLM.forward` and never used** (trm_qwen_vlm.py:83 — parameter bound, no downstream reference). The training loop passes it every step. Consequence: `labels = cat(−100, answer_ids)` supervises **pad_token_id positions as real targets** in the CE loss, and no `attention_mask` is passed to Qwen for the text block. Training/val loss therefore includes padding supervision; plausibly contributes to the degenerate repetitive generation observed in notebook 05. CONFIRMED training-semantics bug.
+3. Trainable-parameter map (QA path): Qwen base weights FROZEN+4-bit (not in optimizer ✓); LoRA adapters TRAINABLE+optimizer ✓; `vision_proj` TRAINABLE+optimizer ✓; TRM down/up_proj+layers+z_init TRAINABLE+optimizer ✓ (when use_trm; **`trm_norm` created trainable but never called → dead trainable param, still in optimizer with zero grads**); `vision_proj` gradient flows (vision encoder output under no_grad; projection trainable) ✓; frozen vision encoder excluded from optimizer ✓; alignment text encoder not instantiated ✓. Alignment path trainable map: vision projector+SimpleAttentionPooling and text projector trainable, both in optimizer (along with everything frozen — A.1); MRL parameter-free.
+4. Distributed: 4-process launch + DeepSpeed ZeRO-2 plugin. The in-forward `.to()` mutations in QwenVLM are **no-ops on a homogeneous single-node 4×GPU run** (device/dtype already match after the first step), which is why no corruption was observed — but they remain DDP-unsafe: re-assigning `self.vision_proj` after `accelerator.prepare` desynchronizes module references across ranks and would break under any heterogeneous placement. Severity for actual runs: LOW (no-op in the executed configuration); structurally still must go.
+5. Checkpoint resume: auto-detect `checkpoint-epoch-*` by `scheduler.bin` presence (completeness proxy) → `accelerator.load_state(strict=False / load_module_strict=False)`. Epoch parsed from directory name. Reasonable; strict=False again silent.
+
+### C. Checkpoint audit
+
+| Load site | Producer | Consumer arch | strict | Handling | Risk |
+|---|---|---|---|---|---|
+| notebook 07 ← attention `checkpoint_best.pt` | ImprovedMultimodalTrainer (notebook 01) | MultimodalAlignmentModel + `pixmo_alignment_1.yaml` | False, silent | none | LOW: `pixmo_alignment_1.yaml` is byte-identical to `pixmo_alignment.yaml` (diff verified empty) → architecture matches producer. |
+| notebook 07 ← `perceiver_v2/checkpoint-best/pytorch_model/mp_rank_00_model_states.pt` | **DeepSpeed ZeRO run of the notebook-local PerceiverV3Model** | PerceiverV3Model (notebook-local) | False + key remap | silent | The Perceiver arm of the final table came from a DeepSpeed run of notebook V3 — still NOT the packaged `perceiver.py`. Modular Perceiver remains run-orphaned. |
+| train_vlm_accelerate ← `pixmo_alignment/checkpoint_best.pt` | ImprovedMultimodalTrainer | attention-path vision encoder (script-enforced) | False, silent | not logged | Text-encoder/decoder keys unexpected (dropped); vision keys match; shape mismatches would still raise. LOW. |
+| improved_trainer resume | itself | itself | False | missing warned, unexpected counted | Sound. |
+| evaluate_vlm_accelerate ← VLM ckpt | train_vlm_accelerate | same construction path | False | silent | Consistent. |
+
+1. `checkpoint_best.pt` schema: dict with `model_state_dict`, `config` (ExperimentConfig dataclass), epoch/step/best_val_loss — matches notebook 07's `ckpt.get('model_state_dict', ckpt)` read. ✔
+2. `strict=False` at every load site without producer/consumer fingerprinting (no arch hash, no config echo) — provenance rests entirely on path naming.
+3. No checkpoint artifacts exist in-repo (paths are cluster-absolute `/home/hice1/...`); correspondence claims rest on notebook code, not retrievable files.
+
+### D. Experiment evidence
+
+1. **Alignment**: notebook 01 (24 executed cells, ImprovedMultimodalTrainer, pixmo parquet) produced `checkpoint_best.pt`; notebook 07 evaluated it under the identical config. The 77.7/77.5% artifact chain is **config-consistent end-to-end** (provenance still limited by absent files/paths).
+2. **Perceiver arm**: trained under DeepSpeed (mp_rank_00 state file), evaluated via notebook-local V3 — never the packaged module. Confirms and strengthens the prior Perceiver finding.
+3. **VLM/QA production run** (`run_vlm_experiments.sh` #3): `trm_vlm_qa_qwen2.5-3b.yaml`, no TRM flags → **use_trm_recursion=True by default** — the production run was TRM-enabled, 4 processes, ZeRO-2. No result artifacts persist.
+4. **Baseline (use_trm=false) generation**: the no_TRM notebook has **0 executed cells**; `run_vlm_experiments.sh` has no baseline eval entry; `04_vlm_qa_evaluation` errored on a missing checkpoint. **No evidence the baseline branch (with its double-strip bug) ever produced evaluation numbers.** The double-strip bug is confirmed-but-never-exercised.
+5. Distributed execution: confirmed used (accelerate launch --num_processes 4). `.to()` mutation severity downgraded to LOW as above.
+
+### E. Trustworthiness of reported experiment paths
+
+| Path | Trustworthy? |
+|---|---|
+| Attention alignment training + final retrieval CSV | YES — config-consistent chain; normal loss semantics. |
+| Perceiver negative table | Outcome trustworthy as a V3-notebook result; architecture attribution to the packaged module remains INVALID. |
+| VLM/QA training loss/perplexity | QUALIFIED — losses include pad-token supervision (answer_mask bug), TRM-variant only; no artifact persists anyway. |
+| VLM/QA generated-text metrics (val BLEU/ROUGE) | WEAK — only first 5 batches, exceptions swallowed (`except: pass`), generation via `inner_model.qwen.generate` bypassing QwenVLM.generate. |
+| Anything citing paper Table VII BLEU/ROUGE | Still UNVERIFIED (unchanged). |
+
+### F. Classification
+
+| Component | Classification |
+|---|---|
+| `improved_trainer.py` | **KEEP** (REFACTOR LATER: unfiltered optimizer params; DDP guard OK) |
+| `trainer.py` + `train_alignment.py` + `callbacks.py` + `utils/checkpoint.py` | **BROKEN EXPERIMENT WIRING** (CLI path; repair or retire in favor of the notebook-01 flow) |
+| `train_vlm_accelerate.py` | **REFACTOR LATER** (works; silent strict=False; swallowed eval exceptions; dead config fields) |
+| `answer_mask` non-consumption in QwenVLM | **REPAIR LATER** (confirmed training-semantics bug) |
+| `trm_norm` dead trainable module | **REPAIR LATER** (apply or remove) |
+| Alignment checkpoint chain (01→07) | **KEEP** (provenance-qualified) |
+| Perceiver v2 DeepSpeed checkpoint + key-remap eval | **HISTORICAL** |
+| `run_vlm_experiments.sh` | **CLEAN LATER** (comment-documented script; hardcoded run names) |
+
+### G. Unresolved questions
+
+1. Which exact `checkpoint_best.pt` (which epoch/run of notebook 01) fed the final CSV and the QA runs — single checkpoint or overwritten across sessions? Path evidence only; no file hash exists.
+2. Did any QA run complete multiple epochs on the cluster (checkpoint rotation deleted evidence)? `training_progress.log`/W&B summaries are not in-repo.
+3. Was DeepSpeed ZeRO-2 actually active at runtime (plugin passed, but requires the deepspeed env) or did it fall back to plain DDP? Matters only for rerun fidelity.
