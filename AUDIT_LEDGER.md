@@ -937,3 +937,25 @@ Structural-only commit. Notebooks, src/, configs, historical code, and debug/gen
 - Docs with old script paths NOT updated (descriptive, not run-required; docs pass will rewrite them anyway): `README.md:83`, `reports/README.md:83`, `reports/SETUP_AND_RUN.md:30,201,215`, `reports/implementation_report.md:43`.
 - `run_vlm_experiments.sh` uses repo-root-relative `edge_glass_modular/...` paths — unchanged (invoked from repo root, as before).
 - No script was executed end-to-end (would require models/checkpoints/datasets) — per task constraints.
+
+## Structural move batch 2 — notebooks (2026-09-20)
+
+Structural-only commit per ledger §D of "Final structural reconciliation". No notebook contents, src/, configs, or scripts modified. `system_architecture.md` and the `modify_*`/`patch_*`/`merge_*` helper scripts deliberately left in `notebooks/` (classified GENERATED/TEMPORARY but deferred to the cleanup batch per §C.1 — not in this task's scope).
+
+### Moves performed (all `git mv`, 19 files, 0 content changes)
+
+- `notebooks/experiments/` (4): `01_pixmo_vision_text_alignment.ipynb`, `03_trm_vlm_qa_training_FIXED.ipynb`, `07_alignment_final_report.ipynb`, `PERCEIVER_TRAINING_ISSUE_ANALYSIS.md`.
+- `notebooks/analysis/` (2): `04_pixmo_dataset_eda.ipynb`, `05_vlm_qualitative_inference.ipynb`.
+- `notebooks/archive/` (13, joining pre-existing `archive/04_alignment_evaluation.ipynb`): superseded/debug notebooks `02_perceiver_mrl_vision_text_alignment.ipynb`, `03_trm_vlm_qa_training.ipynb` (original), `03_trm_vlm_qa_training_MODULAR.ipynb`, `03_trm_vlm_qa_training_no_TRM.ipynb`, `04_vlm_qa_evaluation.ipynb`, `05_alignment_evaluation.ipynb` + ledger §C.4 notebook-era scratch MDs (`EVALUATION_README`, `EVALUATION_SUMMARY`, `IMPLEMENTATION_SUMMARY`, `QUICK_START`, `REFACTORING_SUMMARY`, `TRM_VLM_QA_MODULAR_README`, `TRM_VLM_README`).
+- Unmoved (per exclusions): `notebooks/outputs/`, `notebooks/wandb/`, `notebooks/eda_outputs/`, `notebooks/system_architecture.md`, `notebooks/ddsp_scripts/` remnants.
+
+### Reference-repair scan
+
+- Searched all live src/scripts/configs/notebooks for old notebook basenames. Remaining hits are all in files that are themselves pending cleanup/deletion (`scripts/generate_eval_notebooks.py`, `scripts/create_eval_notebook.py`, `notebooks/merge_notebooks.py` — GENERATED/TEMPORARY per §2/§C.1) or inside archive'd scratch MDs and reports (docs-pass items). No live script/config imports or reads a moved notebook by path; notebook cells load models/checkpoints/parquets, not sibling notebooks. Zero mechanical reference edits required.
+
+### Validation
+
+- `git status`/`git diff --cached -M`: all 19 changes recognized as 100% renames (R, 0 insertions/deletions).
+- Destination check: every moved file exists at exactly one destination; no retained notebook landed in `archive/`; no archived notebook remains at its old path (`ls` verified).
+- No duplicate against pre-existing `archive/04_alignment_evaluation.ipynb` (different file — the moved one is `05_alignment_evaluation.ipynb`; `04_vlm_qa_evaluation.ipynb` newly archived, was not already in `archive/`).
+- Notebooks not executed (per task constraints).
