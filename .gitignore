@@ -39,3 +39,5 @@ code_base/v2_code_base/artifacts/
 code_base/v2_code_base/data/
 
 Papers/.DS_Store
+# Retired historical code (tracked source preserved on archive/historical-code-pre-retirement)
+older_code_base/

@@ -1078,3 +1078,30 @@ Artifact-organization-only commit. No source code, notebooks, historical code, o
 ### Issue
 
 - `edge_glass_modular/outputs/alignment_evaluation_results.csv` was deleted rather than moved — flagged here explicitly: it is the conflicting, non-authoritative metrics table. Git-history recoverable if the user disagrees.
+
+## Historical-code retirement (2026-09-20)
+
+### Archive branch
+
+- Created `archive/historical-code-pre-retirement` from pre-retirement HEAD = `134539e56fbd65fa955caac66c3ea46ff6ce6af7` (the curated-results commit). Intentional preserved copy of the tracked V0/V1/V2 tree. Long-term work remains on `main`.
+
+### Dependency scan (verified, not inferred)
+
+- `older_code_base|v0/v1/v2_code_base|TinyRecursiveModels` searched across `edge_glass_modular/src/`, scripts/, configs/, pyproject.toml, requirements.txt, notebooks/, tests (none exist): **zero runtime imports**.
+- Only hits: (1) `src/data/parquet_builder.py:3` docstring provenance mention — safe; (2) stale `src/data/__pycache__/parquet_builder.*.pyc` containing the string — compiled artifact, not source; (3) `COMPLETE_CODEBASE.md` mentions of v2/v3_code_base — documentation, safe.
+- Vendored `TinyRecursiveModels` (`older_code_base/additional_code/other_repo/`, has own `.git`) is imported by nothing in the active tree. No BLOCK.
+
+### Removal from main
+
+- `git rm -r older_code_base` — 191 tracked files deleted from the index (no history rewrite). Tracked content recoverable via the archive branch and via history.
+
+### Local-only material retained (physically untouched)
+
+- `older_code_base/additional_code/` (incl. vendored TinyRecursiveModels w/ its own .git) and `older_code_base/v2_code_base/data/` remain on disk, untracked. 44,910 total files / 26 GB in `older_code_base/` remain locally.
+- Ignore rule added: `.gitignore` += `older_code_base/` (verified via `git check-ignore -v`); `git status` clean of these paths. Untracked material NOT copied onto the archive branch.
+
+### Validation
+
+- Archive branch SHA verified `134539e…` (pre-retirement HEAD); `git ls-files older_code_base` on main → 0.
+- Local files intact (`find older_code_base -type f | wc -l` → 44,910); `git status --porcelain older_code_base` → empty (no pollution).
+- No active source/script/config imports historical code; `edge_glass_modular` untouched.

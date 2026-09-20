@@ -1,0 +1,157 @@
+{
+  "runId": "8524f11c",
+  "agent": "reviewer",
+  "task": "[Read from: /Users/vedaangchopra/all_data/complete_technical_work/all_projects_implemented/Edge Assistant/edge_glass_modular/plan.md, /Users/vedaangchopra/all_data/complete_technical_work/all_projects_implemented/Edge Assistant/edge_glass_modular/progress.md]\n\nRead-only open-source release audit of /Users/vedaangchopra/all_data/complete_technical_work/all_projects_implemented/Edge Assistant/edge_glass_modular. Inspect README, pyproject, configs, scripts, notebooks, gitignore (if any), tests/CI, source. Search for hard-coded paths, secret/API-key patterns (do not expose secret values), personal identifiers/absolute paths, dependency and missing-package risks, stale/mismatched docs/entry points, reproducibility blockers. Cite precise files. Also list code features that may be absent from a CERBERUS paper description. Do not modify anything.",
+  "exitCode": 0,
+  "processSignal": "SIGTERM",
+  "usage": {
+    "input": 97324,
+    "output": 7522,
+    "cacheRead": 197632,
+    "cacheWrite": 0,
+    "cost": 0.3244384,
+    "turns": 6
+  },
+  "model": "openai-codex/gpt-5.6-terra:high",
+  "attemptedModels": [
+    "openai-codex/gpt-5.6-terra:high"
+  ],
+  "modelAttempts": [
+    {
+      "model": "openai-codex/gpt-5.6-terra:high",
+      "success": true,
+      "exitCode": 0,
+      "usage": {
+        "input": 97324,
+        "output": 7522,
+        "cacheRead": 197632,
+        "cacheWrite": 0,
+        "cost": 0.3244384,
+        "turns": 6
+      }
+    }
+  ],
+  "durationMs": 156740,
+  "toolCount": 20,
+  "launchContractDigest": "7d729c96aa16e3a797d531b24658a8d9a7a2362c9afe516cdd6ebefe5d96f1ed",
+  "launchResolvedExtensions": {
+    "version": 1,
+    "source": "launch-resolved",
+    "disableAmbientExtensions": false,
+    "runtime": [
+      "sha256:14e9345dd92a8c05"
+    ],
+    "configured": [],
+    "effective": [
+      "sha256:14e9345dd92a8c05"
+    ],
+    "omitted": {
+      "runtime": 0,
+      "configured": 0,
+      "effective": 0
+    }
+  },
+  "acceptance": {
+    "status": "attested",
+    "evidenceStatus": "attested",
+    "explicit": false,
+    "effectiveAcceptance": {
+      "level": "attested",
+      "explicit": false,
+      "inferredReason": [
+        "read-only/reviewer-style agent"
+      ],
+      "criteria": [
+        {
+          "id": "criterion-1",
+          "must": "Return concrete findings with file paths and severity when applicable",
+          "evidence": [
+            "review-findings",
+            "residual-risks"
+          ],
+          "severity": "required"
+        }
+      ],
+      "evidence": [
+        "review-findings",
+        "residual-risks"
+      ],
+      "verify": [],
+      "stopRules": []
+    },
+    "inferredReason": [
+      "read-only/reviewer-style agent"
+    ],
+    "criteria": [
+      {
+        "id": "criterion-1",
+        "must": "Return concrete findings with file paths and severity when applicable",
+        "evidence": [
+          "review-findings",
+          "residual-risks"
+        ],
+        "severity": "required"
+      }
+    ],
+    "runtimeChecks": [],
+    "verifyRuns": [],
+    "childReport": {
+      "criteriaSatisfied": [
+        {
+          "id": "criterion-1",
+          "status": "satisfied",
+          "evidence": "Concrete severity-rated findings cite README.md, pyproject.toml, configs, scripts, source, notebooks, and tracked runtime artifacts."
+        }
+      ],
+      "changedFiles": [],
+      "testsAddedOrUpdated": [],
+      "commandsRun": [
+        {
+          "command": "python3 -m compileall -q src scripts",
+          "result": "passed",
+          "summary": "All Python source and scripts compiled under Python 3.14."
+        },
+        {
+          "command": "AST import/dependency scan and notebook privacy/credential-pattern scan",
+          "result": "passed",
+          "summary": "Identified undeclared imports, absolute paths, credential-like notebook cells, and W&B metadata fields without exposing values."
+        },
+        {
+          "command": "Test-suite discovery",
+          "result": "not-run",
+          "summary": "No test suite or CI configuration was present to execute."
+        }
+      ],
+      "validationOutput": [
+        "compileall completed with exit code 0",
+        "No standalone tests, CI workflow, license, or project-local gitignore were found",
+        "181 tracked data/output/W&B/egg-info runtime artifacts were identified"
+      ],
+      "residualRisks": [
+        "Release is blocked by missing license, tests/CI, broken documented entry points, undeclared dependencies, privacy artifacts, and nonportable datasets.",
+        "Credential-like notebook assignments require manual verification and rotation/redaction before publication.",
+        "Datasets, model revisions, and dependency versions are not pinned for reproducibility."
+      ],
+      "noStagedFiles": true,
+      "diffSummary": "No files modified; read-only audit.",
+      "reviewFindings": [
+        "blocker: README.md:83 and scripts/download_pixmo_audio.py:20-27 - documented downloader command uses unsupported arguments and omits required arguments.",
+        "blocker: scripts/train_alignment.py:13 and src/__init__.py:1-3 - documented training entry point imports a non-exported load_config symbol.",
+        "high: pyproject.toml:9 conflicts with Python-3.10-only union annotations in src/data/downloader.py:38-39.",
+        "high: pyproject.toml omits requests, soundfile, matplotlib, scikit-learn, seaborn, and nbformat used by repository code.",
+        "high: configs/*.yaml and several scripts contain nonportable account-specific absolute paths.",
+        "high: tracked notebooks/W&B artifacts contain personal metadata; selected notebook cells contain credential-like assignments requiring review."
+      ],
+      "manualNotes": "plan.md and progress.md were not present at the supplied paths; no secret values were output."
+    }
+  },
+  "effects": {
+    "fileMutation": {
+      "status": "not-applicable",
+      "expected": false,
+      "attempted": true
+    }
+  },
+  "transcriptPath": "/Users/vedaangchopra/all_data/complete_technical_work/all_projects_implemented/Edge Assistant/edge_glass_modular/.pi-subagents/artifacts/8524f11c_reviewer_2_transcript.jsonl",
+  "timestamp": 1786952104815
+}
