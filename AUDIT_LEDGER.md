@@ -1625,3 +1625,56 @@ Synthetic validation (torch 2.8.0 CPU, transformers 4.57.6): `MultimodalAlignmen
 - Notebook 01 cell 26's executed output still shows the old `(llm_projector): MultimodalProjector(` model repr — historical output, intentionally untouched.
 
 Commit: `2e729de425e9586fed326c7191481781f69c82ea` (main, working tree clean after commit).
+
+## Fusion subsystem audit (2026-09-20, audit-only, no code changed)
+
+### 1. What `src/models/fusion.py` implements
+- `MultimodalFusion(modality_dims: Dict[str,int], fusion_dim, strategy, num_layers, num_heads, dropout)` — three strategies:
+  - **concat**: `Linear(sum(dims) → fusion_dim×2) → GELU → Dropout → Linear(→fusion_dim) → LayerNorm`. Input dict of `(B, dim)` vectors → output `(B, fusion_dim)`.
+  - **cross_attention**: per-modality `Linear(dim→fusion_dim)` → stack `(B, M, fusion_dim)` → `num_layers` × `CrossModalAttentionLayer` (self-attn = `nn.MultiheadAttention` over the modality axis + FFN, pre-norm residuals) → mean-pool over modalities → LayerNorm → `(B, fusion_dim)`.
+  - **gated**: per-modality projectors + gate MLP (`Linear(fusion_dim×M → M)` + Softmax) → gate-weighted sum → LayerNorm.
+- `CrossModalAttentionLayer` is a modality-axis transformer block (MHA + 4× FFN + 2 LayerNorms); it is *self*-attention across modalities, not true query-from-modality-A cross-attention.
+- Modalities: generic — whatever keys are in `modality_dims`. Construction site (`alignment.py:102-109`) builds the dict from whichever encoders are active (vision/audio/text), so it supports **bi-modal (V+T, V+A, A+T) and tri-modal (V+A+T)** generically; no vision+text assumption. Requires `active_encoders > 1` (`alignment.py:93`).
+- Trainable parameters (V+T, dims 4096, fusion_dim 2048 — verified by instantiation + forward on CPU): concat **41,953,280**; cross_attention **117,501,952**; gated **16,793,602**. Tri-modal concat forward `(2,2048)` verified.
+- Forward is exercised by `alignment.py:208` (needs `self.fusion is not None` AND ≥2 modality embeddings present in the batch) and returned as `fused_emb` (`return_embeddings=True`).
+
+### 2. Construction evidence
+- Single construction site: `alignment.py:102`, condition `active_encoders > 1 AND config.fusion is not None` (`alignment.py:93`).
+- Exact config requirement: a non-null `fusion:` block in the YAML → `FusionConfig` (`config.py:132-138`, `config.py:389-390` loader branch).
+- **All 9 retained YAMLs set `fusion: null`** (pixmo both have explicit comment "No fusion for bimodal") → **zero retained config can instantiate fusion**. Construction is reachable only by hand-editing a config in memory (as done for the CPU smoke test above).
+- Other references: `models/__init__.py` re-export only. No script/notebook constructs `MultimodalFusion` directly.
+
+### 3. Execution evidence
+- **Zero forward executions in the retained corpus.** No script calls fusion forward; `scripts/` and `src/training/` contain no `fused_emb`/`fusion(` usage.
+- Retained notebooks: zero source or output references to `MultimodalFusion`, `(fusion):` repr, or `FusionConfig`. The only notebook hit is `archive/02_perceiver_mrl_vision_text_alignment.ipynb` cell 27 — an output repr of `AlignmentModelOutput(... fused_emb=None, lm_loss=None, logits=None)`, i.e. the *disabled* default fields, not fusion execution (cell `ec: None`, never executed).
+- "Config reachable" only in the formal sense: loader branch (`config.py:389-390`) and alignment construction would run if a config set `fusion:` non-null. **Nothing executed.**
+
+### 4. Checkpoint/result evidence
+- No retained checkpoint can contain fusion keys: every checkpoint-producing run used a `fusion: null` config (notebook 01/pixmo, notebook 02/perceiver_mrl, all scripts). `find` for checkpoint binaries in the working tree: none (training-host only).
+- Hypothetically, had fusion been constructed in a training run, `ImprovedMultimodalTrainer` optimizer includes all `requires_grad` params — but fusion forward would only receive gradients if a ≥2-modality batch was fused. No such run exists in the retained corpus.
+- **No retained result is attributable to fusion.** All alignment metrics (R@K) and VLM QA metrics came from single-modality embeddings (vision+text contrastive) and the QwenVLM path.
+
+### 5. Audio / tri-modal dependency
+- `TriModalAlignmentLoss` (losses.py:178) takes raw `vision_emb/audio_emb/text_emb` — **zero references to fusion.py**. Independent of fusion.
+- `AudioEncoder` is likewise independent (encoders/audio.py does not import fusion). No script or notebook does audio training (`grep audio_encoder/AudioEncoder` in scripts/training: zero hits).
+- Audio training could work without `fusion.py` entirely: the loss operates on pooled embeddings; fusion is only the (unused) mechanism to merge modalities into one decoder prefix. The alignment loss path never fuses.
+- Coupling is only *wiring-level*: `alignment.py` constructs fusion when >1 encoder is active, and the tri-modal loss is selected when all 3 encoders are active — but neither requires the other. Fusion is an **independent experimental surface** that happens to be paired with the (never-enabled) tri-modal direction in `COMPLETE_CODEBASE.md`'s planned experiment table (`trimodal_qwen.yaml` "Cross-attn fusion" — a config that never existed in any retained tree).
+
+### 6. Historical provenance
+- **No historical execution anywhere.** `MultimodalFusion`/`fusion_dim`/`CrossModalAttention`: zero hits in V0/V1/V2/additional_code/experiments (py + ipynb, venvs excluded) — the older code bases never implemented or used a fusion module.
+- Git `git log --all -S MultimodalFusion`: the only commits mentioning it are the recent cleanup/retire commits; fusion.py entered the modular tree at the original "modular changes" commits and was never materially changed or exercised.
+- The historical archive branch (`archive/historical-code-pre-retirement`) contains the identical fusion.py + the identical all-null configs. The only fusion-adjacent historical code is `v2_code_base/notebooks/TRM_VLM_Scaled_MoE.ipynb:722` `self.input_fusion = nn.Linear(hidden*3, hidden)` — a different, notebook-local design (early-fusion of TRM inputs), not `MultimodalFusion`, and never part of main.
+- `COMPLETE_CODEBASE.md` claims "Multiple fusion strategies" as a merged feature — a documentation claim only, consistent with never-executed status.
+
+### 7. Config surface that exists solely for fusion (do not remove yet)
+- `FusionConfig` dataclass (`config.py:132-138`): `strategy` (`concat|cross_attention|gated`), `fusion_dim` (default 2048), `num_fusion_layers`, `num_heads`, `dropout` — all five fields consumed only by `alignment.py:104-108`.
+- `ExperimentConfig.fusion: Optional[FusionConfig] = None` (`config.py:304`).
+- Loader branch `config.py:389-390` (`FusionConfig(**_filter_fields(...))`).
+- `fusion: null` line in all 9 YAMLs.
+- Note: `FusionConfig` is NOT dead config scaffolding in the `num_inner_steps` sense — it is the parser for a live `Optional` field; removal would be coupled to the `alignment.py` fusion wiring decision (Batch-B).
+
+### Classification
+**Dead — but deferred to the audio/tri-modal research decision.** Concretely: config-gated dead (all 9 configs null it), zero construction in retained runs, zero forward executions, zero checkpoint keys, zero result attribution, zero historical execution in V0/V1/V2 (unlike Path C, which was at least serialized). It differs from Path C only in that it never even got constructed. It is *config-reachable* experimental surface tied to the inactive audio/tri-modal research direction, so final disposition belongs to the same Batch-B research decision as `TriModalAlignmentLoss` + `AudioEncoder` wiring (ledger §Batch B).
+
+### Recommended single next action
+Bundle fusion into the Batch-B **audio/tri-modal scope decision**: either (a) keep fusion.py + `FusionConfig` + `alignment.py` wiring as the declared substrate for a future tri-modal experiment, or (b) retire `fusion.py`, `FusionConfig`+fields, the loader branch, and the `alignment.py` fusion wiring in one commit (safe: zero configs enable it, zero executions, zero checkpoint keys — `strict=False` loaders unaffected). If the audio direction is abandoned, the whole cluster (fusion + audio encoder + tri-modal loss) can be retired together; if kept, no cleanup is warranted now. Do not delete fusion.py unilaterally before that decision.
