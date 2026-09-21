@@ -1,3 +1,7 @@
+> **Historical snapshot — not the current canonical architecture.** Preserved for provenance only;
+> superseded by the current source, `tests/`, and `AUDIT_LEDGER.md`. Current documentation lives in
+> `edge_glass_modular/README.md`.
+
 # Edge Glass Modular - Complete Implementation Guide
 
 ## Overview

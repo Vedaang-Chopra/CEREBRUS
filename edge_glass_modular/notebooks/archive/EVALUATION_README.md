@@ -1,3 +1,6 @@
+> **Historical snapshot — not the current canonical architecture.** Archived with the pre-retirement
+> notebooks; superseded by current source, `tests/`, and `AUDIT_LEDGER.md`.
+
 # Alignment Model Evaluation System
 
 This directory contains a comprehensive, modular evaluation system for vision-text aligned models trained with the Edge Glass framework.

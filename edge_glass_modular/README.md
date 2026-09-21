@@ -1,199 +1,234 @@
-# Edge Glass Modular: Advanced VLM Agent Framework
+# Edge Glass Modular (CERBERUS)
 
-**Production-ready, modular PyTorch foundation for multimodal agent training.**
+A modular multimodal / VLM **research** codebase focused on:
 
-This framework provides a complete infrastructure for training Vision-Language Models (VLMs) and Multimodal Agents on large-scale GPU clusters. It merges research flexibility with production reliability, featuring Distributed Data Parallel (DDP) training, crash-safe checkpointing, modular encoder-decoder architectures, and advanced representation learning techniques like MRL.
+- **frozen-encoder alignment** — bridging frozen CLIP vision and frozen sentence-transformer text backbones into one shared, L2-normalized embedding space;
+- **compact / multi-scale representations** — Matryoshka-style nested prefix embeddings (4096 → 128 dims) supervised and evaluated at multiple scales;
+- **VLM integration** — feeding aligned visual tokens to a LoRA-adapted Qwen2.5 model for image-question answering;
+- **TRM-inspired iterative refinement experiments** — an iterative y/z refinement loop over Qwen hidden states, inspired by (but *not* a faithful implementation of) TinyRecursiveModels.
 
----
-
-## 🚀 Key Features
-
-### 🏗 Architecture
-- **Dual Decoders**: Support for **Qwen (7B/14B)** via LoRA/8-bit quantization and a custom lightweight **TRM (Tiny Recursive Model)**.
-- **Multimodal Encoders**: 
-  - **Vision**: CLIP with learnable **Attention Pooling** and **Matryoshka Representation Learning (MRL)** up to 4096 dimensions.
-  - **Audio**: Whisper encoder.
-  - **Text**: Sentence-BERT.
-- **Efficient Compression**: **Perceiver Resampler** for variable-length vision/audio sequence compression.
-
-### ⚙️ Production Training
-- **Robust Infrastructure**: 
-  - **DDP** Support (Distributed Data Parallel).
-  - **Mixed Precision** (BF16/FP16).
-  - **Gradient Accumulation** & Clipping.
-- **Resilience**: Crash-safe checkpointing (auto-resume from latest step) and best-model tracking.
-- **Observability**: Integrated **WandB** logging, automated training curve plotting, and embedding space visualization.
-
-### 🧠 Advanced Capabilities
-- **Matryoshka Representation Learning (MRL)**: Trains embeddings to be useful at multiple scales (128 to 4096 dim) simultaneously.
-- **Attention Pooling**: Replaces static pooling with learnable query-based attention for better feature extraction.
-- **Text Dropout**: Regularization technique to force stronger reliance on visual modalities.
+This is a research prototype, not a production or proven tri-modal system. Provenance decisions for every retained result live in the top-level `AUDIT_LEDGER.md`.
 
 ---
 
-## 📂 Project Structure
+## Current maintained architecture
 
-```bash
+### Canonical alignment path (authoritative)
+
+This is the path that produced the authoritative retained alignment results:
+
+```
+image → CLIP ViT-L/14-336 (frozen)
+      → Linear projection (1024 → 4096)
+      → SimpleAttentionPooling (learnable, over patch tokens)
+      → L2-normalized aligned embedding
+      → MRL prefix representations (2048 / 1024 / 512 / 256 / 128)
+```
+
+Text side: `sentence-transformers/all-mpnet-base-v2` (frozen) → Linear projection → L2 norm → the same MRL prefixes. Trained with a symmetric InfoNCE/CLIP loss plus MRL contrastive loss on sampled prefix dimensions (`src/models/alignment.py`, `src/models/losses.py`, `src/encoders/{vision,text,mrl,pooling}.py`; driven by `configs/pixmo_alignment.yaml`).
+
+**The retained paired-retrieval results under `results/alignment/alignment_eval_final/` come from this path and are the authoritative alignment numbers** (see `AUDIT_LEDGER.md` for the provenance chain and qualifications).
+
+### Perceiver (canonical implementation, provenance-compromised historical result)
+
+`src/encoders/perceiver.py` now implements the architecture that the **executed V3 training run** actually used (`scripts/experiments/train_perceiver_v3.py`): per-layer cross-attention with separate query/KV pre-normalization, latent **self-attention**, FFN branch with its own pre-norm, residual connections, final latent LayerNorm, and KV-mask support. This was verified to be a 0.0-diff extract of the training computation under strict weight copy.
+
+Important provenance caveat — **do not quote the historical Perceiver number as an architecture verdict**:
+
+- The historical Perceiver evaluation architecture **differed** from the training architecture.
+- The historical checkpoint was loaded with `strict=False`.
+- The historical retained Perceiver metric (near-random paired R@5 in `results/alignment/alignment_eval_final/`) is therefore **provenance-compromised**: it is retained as a recorded historical outcome, not as a valid comparison of architectures.
+- A **controlled rerun** (matching train/eval architecture, strict loading, fixed text backbone) is required before drawing any Perceiver-vs-attention-pooling conclusion.
+
+The historical number itself is preserved unchanged in the retained CSVs.
+
+### VLM path (Qwen2.5-3B + TRM-inspired iterative refinement)
+
+The executed VLM graph:
+
+```
+image
+  → aligned visual tokens (from the canonical alignment encoder)
+  → vision_proj
+  → Qwen2.5-3B (LoRA)
+  → final hidden states
+  → TRM-inspired y/z iterative refinement (shared TRMLayers, fixed 4 iterations)
+  → residual add
+  → LM head
+```
+
+Precisely stated:
+
+- Refinement reuses a **shared stack of `TRMLayers`** (`src/models/trm_qwen_vlm.py`); the loop alternates y-updates and z-updates over the final hidden states for a **fixed 4 iterations**.
+- This is **TRM-inspired iterative refinement**, *not* a faithful implementation of [TinyRecursiveModels](https://github.com/SamsungSAILMontreal/TinyRecursiveModels): there is no adaptive halting, no standalone `TRMDecoder`, and the recursion depth is fixed rather than learned.
+- **No standalone `TRMDecoder` exists anymore** — the standalone decoder path and its config surface were retired. `src/decoders/trm.py` retains only the `TRMLayer` building block and a retirement note.
+- No quantitative VLM improvement is claimed: no retained, provenance-clean evaluation artifact supports one.
+
+### Audio (retained experimental support)
+
+Audio was an **early / experimental scope**:
+
+- `AudioEncoder` (frozen Whisper encoder) and the tri-modal loss scaffolding are retained in the tree.
+- **No retained experiment demonstrates successful tri-modal alignment or tri-modal VLM training.** Do not infer audio results from the vision-text results.
+- The fusion subsystem has been **retired** and is not part of the maintained architecture.
+
+---
+
+## Repository structure
+
+```
 edge_glass_modular/
-├── configs/                  # Experiment configurations (YAML)
-│   ├── pixmo_alignment.yaml  # Vision-Text alignment
-│   ├── trimodal_qwen.yaml    # V+A+T with Qwen
-│   ├── trimodal_trm.yaml     # V+A+T with TRM
-│   └── ...
-├── src/                      # Source code
-│   ├── data/                 # Data loading & processing
-│   │   ├── dataset_builder.py # Parquet dataset & Transforms
-│   │   └── downloader.py     # Parallel downloaders
-│   ├── encoders/             # Vision, Audio, Text encoders
-│   ├── decoders/             # Qwen & TRM definitions
-│   ├── models/               # Fusion & Alignment logic
-│   ├── training/             # Trainer, Callbacks, Checkpointing
-│   └── utils/                # Logging, Viz, Registry
-├── notebooks/                # Interactive tutorials
-│   ├── 02_pixmo_vision_text_alignment.ipynb
-│   └── 03_trm_vlm_qa_training_FIXED.ipynb
-├── scripts/                  # Entry points
-│   ├── train_alignment.py    # Main training script
-│   └── download_datasets.py  # Data preparation
-└── README.md                 # This file
+├── src/
+│   ├── config.py              # dataclass-based YAML config loading
+│   ├── data/                  # parquet datasets, datamodule, transforms, downloader, parquet_builder
+│   ├── encoders/              # vision, text, audio, pooling, perceiver, mrl
+│   ├── decoders/              # qwen (LoRA/quantized Qwen), trm (TRMLayer building block only)
+│   ├── models/                # alignment.py, losses.py, trm_qwen_vlm.py, checkpoint_loader.py
+│   ├── training/              # improved_trainer.py (canonical alignment trainer)
+│   ├── evaluation/            # retrieval metrics, QA metrics, benchmark/explainability/zero-shot (experimental)
+│   └── utils/                 # logging, visualization, registry, distributed
+├── scripts/
+│   ├── train/                 # train_vlm_accelerate.py, run_vlm_experiments.sh
+│   ├── eval/                  # evaluate_vlm_accelerate.py, inference_vlm.py, evaluate_freeze_align.py
+│   ├── data/                  # download_datasets.py, download_pixmo_audio.py
+│   └── experiments/           # train_pixmo_alignment.py, train_perceiver.py, train_perceiver_v3.py
+├── configs/                   # 9 experiment YAMLs
+├── tests/                     # 48-test permanent regression suite
+├── results/                   # curated retained artifacts (alignment / train_history / eda)
+├── notebooks/                 # experiments/, analysis/, archive/, wandb/, system_architecture.md
+├── reports/                   # historical report snapshots (see headers inside each file)
+└── pyproject.toml             # dependency contract
 ```
 
----
-
-## 🛠 Installation
-
-1.  **Prerequisites**:
-    *   Python 3.10+
-    *   NVIDIA GPU (Recommended: A100/H100 for Qwen runs, modest GPUs for TRM).
-
-2.  **Install Package**:
-    ```bash
-    cd edge_glass_modular
-    pip install -e .
-    ```
-    `pip install -e .` installs dependencies within the validated compatibility
-    ranges declared in `pyproject.toml` (e.g. `transformers>=4.57,<4.58`).
-    For the exact reproducible environment, install the repository lock file
-    instead: `pip install -r ../requirements.txt`.
+Historical code (v0–v2 codebases, pre-retirement sources, retired subsystems) is preserved on the archive branch
+`archive/historical-code-pre-retirement` and under the untracked `older_code_base/` at the repo root. It is **not** part of the maintained code.
 
 ---
 
-## 🚦 Quick Start
+## Installation / reproducibility
 
-### 1. Download Data
-Download and prepare the PixMo (or other) datasets.
 ```bash
-# Download PixMo-Cap (example: 20k samples)
-python scripts/download_pixmo_audio.py --dataset pixmo --num_samples 20000
+cd edge_glass_modular
+pip install -e .
 ```
 
-### 2. Run Training (CLI)
-Train using pre-defined configurations for different experiments.
+- `pip install -e .` installs dependencies **within the validated compatibility ranges** declared in `pyproject.toml`
+  (transformers `>=4.57,<4.58`, peft `>=0.17,<0.19`, accelerate `>=1.10,<1.12`, bitsandbytes `>=0.48,<0.49`,
+  torch `>=2.8,<2.10`, sentence-transformers `>=5.1,<5.2`, safetensors, huggingface_hub, etc.).
+- For **exact reproduction**, use the repository lock files at the repo root:
+  `pip install -r ../requirements.txt` (equivalently `../requirements.lock.txt`).
+- Validated core environment: **transformers 4.57.x, PEFT 0.17–0.18, Accelerate 1.10–1.11** (torch 2.9.x).
+  Do not perform unconstrained dependency upgrades — an unconstrained `sentence-transformers` install has
+  previously forced transformers to 5.x and broken the Qwen generation path.
 
-**Vision-Text Alignment (Single GPU)**:
+---
+
+## Testing
+
 ```bash
-python scripts/train_alignment.py --config configs/pixmo_alignment.yaml
+pytest tests/
 ```
 
-**Tri-Modal (Vision+Audio+Text) with Qwen (2 GPUs)**:
+48 tests, CPU-only and network-free. Key regression coverage:
+
+- **generation** (baseline Qwen generation, no prompt-echo / double-strip);
+- **refinement EOS** (per-sequence EOS stopping, pad-filling, early exit in the refinement loop);
+- **checkpoint loading** (full-state directories, adapter-only rejection, `.pt` unwrapping);
+- **device placement** (quantized/device_map/PEFT backbone never moved; custom modules aligned at setup);
+- **Qwen prefix masking** (prefix mask/labels semantics in `QwenDecoder.forward/generate`);
+- **alignment forward/loss** (bi-modal + MRL + tri-modal wiring, canonical loss keys);
+- **config parsing** (all 9 YAMLs load; retired surfaces verified absent);
+- **best-checkpoint semantics** (full-state `checkpoint_best/` save contract, adapter-only rejection end to end).
+
+---
+
+## Training
+
+### Alignment
+
+The historically successful canonical alignment training ran through the **`ImprovedMultimodalTrainer` /
+notebook workflow** (`src/training/improved_trainer.py`, driven from `notebooks/experiments/01_pixmo_vision_text_alignment.ipynb`).
+There is currently **no polished canonical alignment CLI**: the old trainer CLI family was retired, and
+`scripts/experiments/train_pixmo_alignment.py` exists as an experiment script, not a maintained entry point.
+Reproducing the alignment run today means driving `ImprovedMultimodalTrainer` from a notebook or script of your own.
+
+### VLM (Qwen2.5-3B QA)
+
+The maintained training entry point is the Accelerate script:
+
 ```bash
-torchrun --nproc_per_node=2 scripts/train_alignment.py \
-    --config configs/trimodal_qwen.yaml
+accelerate launch scripts/train/train_vlm_accelerate.py \
+    --config configs/trm_vlm_qa_qwen2.5-3b_regularized.yaml \
+    --alignment_config configs/pixmo_alignment.yaml \
+    --checkpoint_path <path-to-alignment-checkpoint.pt> \
+    --output_dir <output-dir> \
+    --use_wandb
 ```
 
-**TRM Decoder (Lightweight)**:
+Notes:
+
+- Alignment-checkpoint lookup falls back to candidates relative to the script, plus a hardcoded HPC-cluster path (last-resort candidate, retained intentionally).
+- Refinement is enabled by default; `--disable_trm` disables it.
+- `scripts/train/run_vlm_experiments.sh` holds the historically used launch invocations (demo / verification / full runs).
+
+### Evaluation / inference
+
 ```bash
-# Faster training, lower memory
-python scripts/train_alignment.py --config configs/trimodal_trm.yaml
+# QA evaluation
+accelerate launch scripts/eval/evaluate_vlm_accelerate.py \
+    --config configs/trm_vlm_qa_qwen2.5-3b_regularized.yaml \
+    --checkpoint_path <path-to-full-state-checkpoint-dir> \
+    --output_file eval_results.json
+
+# Interactive inference
+python scripts/eval/inference_vlm.py \
+    --image_path <image> --question "<question>" \
+    --checkpoint_path best   # or 'latest', or an explicit path
 ```
 
-### 3. Run Notebooks
-For interactive debugging, exploration, or debugging specific components:
+Checkpoint paths may be a full-state checkpoint directory, a sharded safetensors directory, or a loose `.pt` file.
 
-- **`notebooks/02_pixmo_vision_text_alignment.ipynb`**: End-to-end guide for Stage 1 alignment training. Visualizes embedding spaces and loss curves.
-- **`notebooks/03_trm_vlm_qa_training_FIXED.ipynb`**: Stage 2 QA training with the TRM decoder. Includes the **Label Masking** fix for robust generation.
+### Checkpoint semantics
 
----
-
-## 🔧 Configuration
-
-Experiments are controlled via YAML files in `configs/`.
-
-**Example: `configs/pixmo_alignment.yaml`**
-```yaml
-dataset:
-  train_parquet: path/to/train.parquet
-  batch_size: 64
-  text_dropout_prob: 0.1  # Regularization
-
-vision_encoder:
-  projection_dim: 4096    # MRL Top Dimension
-  use_attention_pooling: true  # Better than CLS token
-
-losses:
-  contrastive: 0.25       # CLIP Loss weight
-  mrl: 1.0                # MRL Loss weight
-  sample_single_mrl_dim: true # Efficient training
-
-optimization:
-  lr: 0.0002
-  warmup_ratio: 0.1
-  max_grad_norm: 1.0
-```
+- `checkpoint_best/` (new format) is a **full Accelerate full-state directory** (`model.safetensors` containing
+  LoRA + `vision_proj` + refinement layers + `z_init`) — a complete, restorable VLM.
+- `checkpoint_best_adapter/` is a **LoRA-only** export and **cannot** restore the complete VLM by itself.
+- Historical adapter-only `checkpoint_best/` artifacts (LoRA only; `vision_proj`/refinement/`z_init` missing) are
+  **incomplete for full-VLM inference and intentionally rejected** by `src/models/checkpoint_loader.load_vlm_checkpoint`
+  with an explicit error naming the missing components. Use a full-state `checkpoint-epoch-N/` / `checkpoint-final/`
+  directory, or re-run the fixed training path.
+- Device placement is handled at load time: the HF backbone (possibly 4/8-bit quantized, device_map-sharded, PEFT-wrapped)
+  is never moved after load; custom modules are aligned once to the backbone's device/dtype.
 
 ---
 
-## 📊 Outputs & Monitoring
+## Results
 
-**Visualizations**: `outputs/<experiment_name>/`
-- `training_curves.png`: Loss progression.
-- `loss_components.png`: CLIP vs MRL contribution.
-- `embedding_space.png`: PCA/t-SNE of vision-text alignment.
-- `metrics.csv`: Tabular history.
+Curated retained artifacts:
 
-**Checkpoints**: `checkpoints/<experiment_name>/`
-- `checkpoint_best.pt`: Model with lowest validation loss.
-- `checkpoint_latest.pt`: Autosave for crash recovery.
+- `results/alignment/alignment_eval_final/` — final paired PixMo retrieval tables (attention vs. historical
+  Perceiver arm; multi-scale 4096→128 prefix ablation; plots). The **attention-pooling (canonical alignment path)
+  rows are the authoritative retained alignment results** per `AUDIT_LEDGER.md`. The Perceiver rows are a
+  **provenance-compromised historical outcome** (see the Perceiver section above) — retain as recorded, do not
+  interpret as an architecture verdict.
+- `results/train_history/` — training curves / loss components / LR schedules for the `pixmo_alignment` and
+  `perceiver_mrl_alignment` runs.
+- `results/eda/` — PixMo dataset split-distribution plots.
 
-**WandB**: Set `use_wandb: true` in config or passed to trainer to sync runs to Weights & Biases.
-
----
-
-## 🐛 Troubleshooting
-
-| Issue | Solution |
-|-------|----------|
-| **OOM (Out Of Memory)** | Reduce `batch_size`, enable `gradient_checkpointing`, or freeze encoder layers. |
-| **0.0000 Validation Loss** | Known issue with `None` loss handling. **Fixed** in `ImprovedMultimodalTrainer` (Stage 1). Ensure you are using the latest code. |
-| **Empty/Jibberish Generation** | Caused by incorrect label masking. **Fixed** in `03_trm_vlm_qa_training_FIXED.ipynb`. Ensure `answer_mask` is used. |
-| **Training Not Resuming** | Check if `checkpoint_latest.pt` exists in the experiment directory. |
+No provenance-free alignment result is included; a conflicting, unprovenanced metrics CSV was previously removed
+(see `AUDIT_LEDGER.md`).
 
 ---
 
-## 📅 Architecture History
-- **v1**: Basic research notebooks.
-- **v2**: Monolithic script.
-- **v3**: Initial modularization.
-- **Current (Edge Glass Modular)**: Fully merged, production-grade package with all capabilities from v1-v3 combined.
+## Status & known debt
 
-**Status**: Ready to train on 2×H200 GPUs.
+Current at commit `ca641a8` (sanity sweep); see `AUDIT_LEDGER.md` for the full audit trail. Known intentional debt:
 
-```mermaid
-%% graph TD
-%%     %% Professional IEEE Paper Styles
-%%     classDef correct fill:#d6e9f8,stroke:#2e5c8a,stroke-width:2px
-%%     classDef broken fill:#f5e6e6,stroke:#8b0000,stroke-width:2px,stroke-dasharray: 5 5
-%%     classDef neutral fill:#f0f0f0,stroke:#555555,stroke-width:2px
+1. `decoder.num_layers_baseline` / `decoder.use_learned_z_init` — dead config fields retained for compatibility.
+2. `src/utils/registry.py` — public extension surface with zero current consumers.
+3. Hardcoded HPC fallback path in `train_vlm_accelerate.py` checkpoint lookup.
+4. `ImprovedMultimodalTrainer` has no CLI (canonical alignment CLI is planned, not built).
+5. Legacy alias config fields (`lr`, `gradient_clip`, `grad_accum_steps`, `trainer.num_epochs`) kept because retained configs use them.
+6. Git history carries large historical blobs (repo-history slimming deliberately not performed).
 
-%%     subgraph Fixed [Fixed Architecture - Notebook-aligned]
-%%         A[CLIP Features]:::neutral --> B[MLP Adapter<br/>LN, Linear, GELU, Dropout, Linear]:::correct
-%%         B --> C[Perceiver Resampler]:::neutral
-%%         C --> D[Alignment Projector<br/>LayerNorm, Linear]:::correct
-%%     end
-
-%%     subgraph Broken [Broken Script Architecture]
-%%         X[CLIP Features]:::neutral --> Y[Linear<br/>Weak Adapter]:::broken
-%%         Y --> Z[Perceiver Resampler]:::neutral
-%%         Z --> W[Linear<br/>No Normalization]:::broken
-%%     end
-```
+Audio / tri-modal remains retained-but-experimental; fusion and Path C (`MultimodalProjector`) are retired.

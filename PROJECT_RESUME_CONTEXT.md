@@ -1,6 +1,6 @@
 # PROJECT_RESUME_CONTEXT — CERBERUS / Edge Glass
 
-**Last audited: 2026-09-13**  
+**Last audited: 2026-09-21** (documentation reconciliation pass on `main`, following the architecture-cleanup series that ended at commit `ca641a8`)  
 **Evidence status: repository-audited; resume claims must derive from this file or newer verified evidence.**
 
 > **Audit rule:** Persisted experiment artifacts and current code were treated as stronger evidence than project prose, paper claims, or old resume-like text. `VERIFIED_IMPLEMENTED` means source exists and is integrated enough to inspect/compile or load configuration; it does **not** by itself prove a successful production run. `VERIFIED_EXPERIMENT` means an executed notebook/output artifact persists. Repository artifacts do not include the data, model checkpoints, source commit SHA, seed, or environment needed to independently reproduce the main results.
@@ -18,7 +18,7 @@
 | Primary contributor / role | **Vedaang Chopra — primary repository author and research/engineering implementer.** Git history contains many commits authored by Vedaang across data, alignment, decoder, reports, results, and audit work; one visible commit is authored by Shourya Teja Adluri. | `git shortlog -sne --all`; recent history. High for primary contribution; do not imply sole authorship. |
 | Dates evidenced | Main implementation/experimentation: Nov–Dec 2025; documentation/paper sync: Jan 2026; repository audit: Aug 2026; this resume-context audit: Sep 2026. | Git log and commit timestamps. High. |
 | Project type | Academic/research engineering prototype; personal/research repository. | Paper, Git ownership, artifact state. High. |
-| Current status | **PARTIAL / research prototype.** The audited, artifact-backed component is vision–text retrieval. Modular code also contains audio, Qwen, TRM, and distributed-training paths, but these are not all validated end to end. | `AUDIT_REPORT.md`, current code, outputs. High. |
+| Current status | **PARTIAL / research prototype.** The audited, artifact-backed component is vision–text retrieval. Modular code also contains retained experimental audio, Qwen, TRM-inspired-refinement, and distributed-training paths, but these are not all validated end to end. | `AUDIT_REPORT.md`, current code, outputs. High. |
 | Current one-sentence description | A modular PyTorch research prototype that freezes CLIP and sentence-transformer backbones, trains pooling/projection heads with symmetric contrastive and nested-prefix objectives, and evaluates multi-scale PixMo image–text retrieval. | Current config, encoders, losses, final CSV. High. |
 
 **Working-tree caveat:** At audit time, many legacy `code_base/v0_code_base`, `v1_code_base`, and `v2_code_base` files were deleted in the working tree and `older_code_base/` was untracked. They are not the current canonical implementation and should not be used to inflate current capabilities. The current implementation surface is `edge_glass_modular/`.
@@ -35,12 +35,10 @@ The problem is difficult because the source representations differ in modality, 
 
 **Differentiation actually supported by the repository:**
 
-- Encoder-frozen **CLIP ViT-L/14-336** vision and **`sentence-transformers/all-mpnet-base-v2`** text backbones are projected to a common 4096-dimensional space in the primary configuration.
-- Vision pooling is learned attention pooling in the successful artifact-backed path; a Perceiver-style alternative was evaluated and failed.
-- The “MRL” implementation is specifically a normalized **prefix-slicing** scheme over the learned projected vector, supervised with contrastive loss at sampled dimensions. It is not a separately learned cascade of Matryoshka heads.
-- A prefix-token bridge for Qwen and a custom small decoder exist as architectural extensions, but repository evidence does not establish a reproducible, quantitative end-to-end generation result.
-
-Do **not** describe this as a completed edge deployment, a production VLM, an agent system, an omni-model, or a proven multimodal generation system.
+- Encoder-frozen **CLIP ViT-L/14-336** vision and **`sentence-transformers/all-mpnet-base-v2`** text backbones are projected to a common 4096-dimensional space in the primary configuration. This is the **canonical alignment path** and produced the authoritative retained alignment results.
+- Vision pooling is learned attention pooling in the successful artifact-backed path. The historical Perceiver-style alternative arm produced a near-random result whose train/eval architecture chain is provenance-compromised (see below); it is retained as a recorded historical outcome, **not** as a valid architecture verdict. A controlled rerun is required before drawing any Perceiver conclusion.
+- The "MRL" implementation is specifically a normalized **prefix-slicing** scheme over the learned projected vector, supervised with contrastive loss at sampled dimensions. It is not a separately learned cascade of Matryoshka heads.
+- The decoder-facing extension is a Qwen2.5-3B VLM path with **TRM-inspired iterative refinement**: a fixed 4-iteration y/z loop over shared `TRMLayer`s applied to Qwen final hidden states. It is *not* a faithful implementation of TinyRecursiveModels and there is no standalone `TRMDecoder` anymore. Repository evidence does not establish a reproducible, quantitative end-to-end generation result.
 
 ---
 
@@ -57,29 +55,30 @@ Do **not** describe this as a completed edge deployment, a production VLM, an ag
 | Text encoder | Frozen `sentence-transformers/all-mpnet-base-v2`, linear projection to 4096 dimensions. | VERIFIED_IMPLEMENTED; configured for main path. | `configs/pixmo_alignment.yaml:30-35`; `src/encoders/text.py:43-94,130-169`. |
 | Representation | `MatryoshkaProjection` slices and re-normalizes the first N coordinates of a projected vector; no learned parameters inside the MRL module. | VERIFIED_IMPLEMENTED; retrieval evaluation persists. | `src/encoders/mrl.py:35-80`; final CSV. |
 | Objective | L2-normalized symmetric CLIP/InfoNCE loss; MRL loss invokes the same contrastive loss for sampled common prefix dimension(s). | VERIFIED_IMPLEMENTED. | `src/models/losses.py:9-40,43-98,101-175`. |
-| Evaluation | Pairwise cosine-similarity matrix, diagonal pairing assumption, I2T/T2I Recall@K, MRR, and median rank. | VERIFIED_IMPLEMENTED + VERIFIED_EXPERIMENT for final CSVs. | `src/evaluation/metrics.py:51-114`; `outputs/alignment_eval_final/alignment_metrics_all_models.csv`. |
-| Outputs | Versioned final CSV tables and plots for attention vs. Perceiver and prefix dimensions. | VERIFIED_EXPERIMENT. | `outputs/alignment_eval_final/`. |
+| Evaluation | Pairwise cosine-similarity matrix, diagonal pairing assumption, I2T/T2I Recall@K, MRR, and median rank. | VERIFIED_IMPLEMENTED + VERIFIED_EXPERIMENT for final CSVs. | `src/evaluation/metrics.py:51-114`; `results/alignment/alignment_eval_final/alignment_metrics_all_models.csv`. |
+| Outputs | Versioned final CSV tables and plots for attention vs. Perceiver and prefix dimensions. | VERIFIED_EXPERIMENT. | `results/alignment/alignment_eval_final/` (curated location; was `results/alignment/alignment_eval_final/` before the artifact reorganization). |
 
 ### Alternative and extension subsystems
 
 | Subsystem | Actual implementation | Status and qualification |
 |---|---|---|
-| Perceiver compression | `PerceiverResampler` is packaged; vision path uses MLP adapter → Perceiver → mean pooling → final projection. | PARTIAL. A **notebook-local** `PerceiverV3Model` rather than the packaged module generated the final negative table; output is 512-d in its configuration despite table labels showing 4096. Do not attribute the final negative result cleanly to the reusable packaged Perceiver. `AUDIT_REPORT.md:44-45,79,115-117`. |
-| Audio | Frozen Whisper encoder, optional Perceiver and prefix slicing; tri-modal loss can sum vision–text, audio–text, and vision–audio losses. | PARTIAL / UNVERIFIED_EXPERIMENT for current repo. No retained artifact establishes audio retrieval, ASR preservation, or tri-modal results. `src/encoders/audio.py`; `src/models/losses.py:178-274`. |
-| Fusion | Concatenation, cross-attention, and gated fusion module definitions exist. | PARTIAL. No current configuration/artifact demonstrates a completed fusion experiment. `src/models/fusion.py`; `src/models/alignment.py:90-114`. |
-| Qwen integration | Qwen 1.5B, 1.8B, 3B, and 7B model IDs appear across configs. Qwen decoder supports 4/8-bit loading, LoRA, and prepended learned prefix embeddings. | VERIFIED_IMPLEMENTED as code/config; **UNVERIFIED** as an artifact-backed end-to-end evaluated result. `src/decoders/qwen.py`; configs. |
-| TRM integration | A custom small causal transformer-like decoder with RMSNorm, RoPE, self-attention, and prefix embedding support; separate Qwen+optional-recursion wrapper also exists. | PARTIAL. It is not evidence of a reproduced “Tiny Recursive Model” result or deployed edge decoder. `src/decoders/trm.py`; `src/models/trm_qwen_vlm.py`. |
-| Alignment training | `ImprovedMultimodalTrainer` contains warmup/cosine scheduling, gradient accumulation/clipping, optional DDP, checkpoint save/load, validation retrieval, W&B calls. | PARTIAL. Notebook-oriented trainer has evidence of past use; no clean command/data/checkpoint bundle is retained. `src/training/improved_trainer.py`. |
-| Public alignment CLI | `scripts/train_alignment.py` wires the data module to `MultimodalTrainer`. | CONTRADICTED as runnable canonical training path: the trainer calls `self.model(batch)` and indexes the returned dataclass as `outputs["loss"]`, incompatible with `MultimodalAlignmentModel.forward`. `src/training/trainer.py:52-56`; `src/models/alignment.py:175-184`; `AUDIT_REPORT.md:50,108-110`. |
-| VLM training/eval scripts | Accelerate + optional DeepSpeed scripts load an alignment checkpoint, Qwen, a QA Parquet dataset, and optional recursion. | PARTIAL. Scripts depend on unavailable checkpoint/data paths, allow `strict=False`, and lack persisted evaluation JSON/predictions. `scripts/train_vlm_accelerate.py`; `scripts/evaluate_vlm_accelerate.py`. |
+| Perceiver compression | `src/encoders/perceiver.py` now implements the **executed V3-training architecture** (latent self-attention, in-attention pre-norms, mask support), canonicalized from `scripts/experiments/train_perceiver_v3.py`. | PARTIAL / **provenance-compromised historical result**. The historical Perceiver evaluation architecture differed from training and the checkpoint was loaded with `strict=False`; the near-random retained metric must not be interpreted as a valid architecture verdict. A controlled rerun is required. The historical number itself is preserved unchanged in the final CSVs. `AUDIT_LEDGER.md` (Perceiver canonicalization + evaluation-chain entries). |
+| Audio | Frozen Whisper encoder, optional Perceiver and prefix slicing; tri-modal loss scaffolding retained. | **Retained experimental support.** No retained artifact establishes audio retrieval, ASR preservation, or tri-modal results; audio results must not be inferred from vision–text results. `src/encoders/audio.py`; `src/models/losses.py` (tri-modal loss). |
+| Fusion | **Retired.** `MultimodalFusion` / cross-attention fusion were removed from the active tree. | Historical code only (archive branch). No retained result was ever attributable to fusion. |
+| Decoder Path C (`MultimodalProjector`) | **Retired.** The pooled 8-token prefix fork was never executed and was removed. | Historical code only (archive branch). No retained result came from Path C's forward. |
+| Qwen integration | Qwen2.5-3B is the configured VLM backbone (older Qwen 1.5B/1.8B/7B IDs persist in legacy configs). Qwen decoder supports 4/8-bit loading, LoRA, and prepended learned prefix embeddings. | VERIFIED_IMPLEMENTED as code/config; **UNVERIFIED** as an artifact-backed end-to-end evaluated result. `src/decoders/qwen.py`; configs. |
+| TRM / iterative refinement | **TRM-inspired iterative refinement** in `src/models/trm_qwen_vlm.py`: shared `TRMLayer` stack, fixed 4 y/z iterations over Qwen final hidden states, residual add, LM head. No standalone `TRMDecoder` exists (retired); `src/decoders/trm.py` retains only the `TRMLayer` building block. | PARTIAL. This is not a faithful TinyRecursiveModels implementation (no adaptive halting, fixed depth). It is not evidence of a reproduced "Tiny Recursive Model" result or deployed edge decoder. `src/models/trm_qwen_vlm.py`. |
+| Alignment training | `ImprovedMultimodalTrainer` contains warmup/cosine scheduling, gradient accumulation/clipping, optional DDP, checkpoint save/load, validation retrieval, W&B calls. | PARTIAL. Notebook-oriented trainer has evidence of past use and is the canonical alignment trainer; it has **no CLI**. The old trainer CLI family was retired. `src/training/improved_trainer.py`. |
+| Public alignment CLI | The old `scripts/train_alignment.py` / `trainer.py` CLI was retired (it was broken: `MultimodalTrainer` indexed the model's returned dataclass as a dict). | **No canonical alignment CLI currently exists.** Reproducing alignment training means driving `ImprovedMultimodalTrainer` from a notebook/script. `src/training/improved_trainer.py`; `AUDIT_LEDGER.md` (CLI retirement entry). |
+| VLM training/eval scripts | Accelerate + optional DeepSpeed scripts load an alignment checkpoint, Qwen, a QA Parquet dataset, and optional refinement. Checkpoint loading is now directory-aware (`src/models/checkpoint_loader.py`); adapter-only `checkpoint_best/` artifacts are explicitly rejected as incomplete. | PARTIAL. Scripts depend on unavailable checkpoint/data paths, and no provenance-clean persisted evaluation JSON/predictions is retained. `scripts/train/train_vlm_accelerate.py`; `scripts/eval/evaluate_vlm_accelerate.py`; `scripts/eval/inference_vlm.py`. |
 | Serving/deployment | No API/service, container, health check, deployment manifest, or retained device benchmark was found. | UNVERIFIED / not implemented as a product capability. |
-| Tests/CI | No project test suite or CI workflow was found under `edge_glass_modular/`. One file named `add_test_split_to_notebook.py` is a notebook-editing script, not a test. | UNVERIFIED. |
+| Tests/CI | `edge_glass_modular/tests/` now holds a 48-test permanent regression suite (generation, refinement EOS, checkpoint loading, device placement, Qwen prefix masking, alignment forward/loss, config parsing, best-checkpoint semantics). No CI workflow is configured. | VERIFIED_IMPLEMENTED (tests exist and pass); CI itself remains absent. |
 
 ### Deprecated / non-canonical architecture
 
-- `older_code_base/` and legacy code-base directories are historical material, not the current package.
-- Top-level and package READMEs still call the system “production-ready,” reference missing configs/notebooks, and overstate infrastructure readiness. They are **not authoritative** over the 2026 audit, current source, or persisted outputs.
-- The final Perceiver evaluation implementation differs from the packaged Perceiver module; treat it as a historical negative ablation, not a validated architecture comparison.
+- `older_code_base/`, legacy code-base directories, and the archive branch `archive/historical-code-pre-retirement` are historical material, not the current package. Retired from the active tree: the standalone TRM decoder, the fusion subsystem, decoder Path C / `MultimodalProjector`, and the broken trainer CLI family.
+- The package README has been rewritten as current documentation (no longer "production-ready" marketing); `reports/` files are historical snapshots carrying explicit historical headers. Neither overstates current capabilities.
+- The historical Perceiver result is a **provenance-compromised** historical outcome (evaluation architecture differed from training; `strict=False` checkpoint loading). Treat it as a recorded historical ablation, not a validated architecture comparison; a controlled rerun is required. The packaged Perceiver now matches the executed V3 training architecture.
 
 ---
 
@@ -98,9 +97,9 @@ Do **not** describe this as a completed edge deployment, a production VLM, an ag
 
 | Contribution | Why it mattered | Technology/method | Evidence | Status |
 |---|---|---|---|---|
-| Produced and committed the final paired PixMo retrieval tables for attention pooling and Perceiver variants at six embedding dimensions. | Provides the strongest surviving quantitative evidence. | Cosine retrieval; bidirectional Recall@K, MRR, median rank; MRL truncation ablation. | Commit `05479e3`; `outputs/alignment_eval_final/`; `notebooks/07_alignment_final_report.ipynb`. | VERIFIED_EXPERIMENT. |
-| Conducted a negative Perceiver ablation and documented likely failure modes. | Preserves a useful falsified direction rather than reporting only positive results. | Perceiver-style latent compression, loss/gradient diagnostics, hyperparameter analysis. | Final CSV; `notebooks/PERCEIVER_TRAINING_ISSUE_ANALYSIS.md`. | VERIFIED_EXPERIMENT for failure outcome; root-cause attribution is PARTIAL/hypothesis. |
-| Created retrieval evaluation utilities and visualization/report artifacts. | Enables analysis beyond one scalar: bidirectional recall, rank statistics, similarity plots, and t-SNE assets. | PyTorch similarity ranking, NumPy, Matplotlib/Seaborn/sklearn imports/plots. | `src/evaluation/metrics.py`; `outputs/alignment_eval_final/`; `outputs/pixmo_alignment_eval/visualizations/`. | VERIFIED_IMPLEMENTED; only final retrieval tables are resume-safe metrics. |
+| Produced and committed the final paired PixMo retrieval tables for attention pooling and Perceiver variants at six embedding dimensions. | Provides the strongest surviving quantitative evidence. | Cosine retrieval; bidirectional Recall@K, MRR, median rank; MRL truncation ablation. | Commit `05479e3`; `results/alignment/alignment_eval_final/`; `notebooks/experiments/07_alignment_final_report.ipynb`. | VERIFIED_EXPERIMENT. |
+| Conducted a negative Perceiver ablation and documented likely failure modes. | Preserves a useful falsified direction rather than reporting only positive results. | Perceiver-style latent compression, loss/gradient diagnostics, hyperparameter analysis. | Final CSV; `notebooks/experiments/PERCEIVER_TRAINING_ISSUE_ANALYSIS.md`. | VERIFIED_EXPERIMENT for failure outcome; root-cause attribution is PARTIAL/hypothesis; the train/eval provenance chain is compromised (see §3). |
+| Created retrieval evaluation utilities and visualization/report artifacts. | Enables analysis beyond one scalar: bidirectional recall, rank statistics, similarity plots, and t-SNE assets. | PyTorch similarity ranking, NumPy, Matplotlib/Seaborn/sklearn imports/plots. | `src/evaluation/metrics.py`; `results/alignment/`; `results/alignment/pixmo_alignment_eval/visualizations/`. | VERIFIED_IMPLEMENTED; only final retrieval tables are resume-safe metrics. |
 
 ### Data / Datasets
 
@@ -113,8 +112,7 @@ Do **not** describe this as a completed edge deployment, a production VLM, an ag
 
 | Contribution | Why it mattered | Technology/method | Evidence | Status |
 |---|---|---|---|---|
-| Implemented a learned multimodal-projector/prefix-token interface for decoder conditioning, including Qwen LoRA/quantization options. | Defines an architectural bridge from retrieval latents to language-model embeddings. | Hugging Face Transformers, PEFT/LoRA, BitsAndBytes, prefix embeddings. | `src/models/projector.py`; `src/decoders/qwen.py`; `src/models/alignment.py:116-155,262-325`. | VERIFIED_IMPLEMENTED; end-to-end generation quality UNVERIFIED. |
-| Implemented custom TRM-style decoder code and an optional recursive Qwen-VLM wrapper. | Explores a lower-capacity decoder interface in the architecture. | PyTorch, RMSNorm, RoPE, causal attention, autoregressive generation. | `src/decoders/trm.py`; `src/models/trm_qwen_vlm.py`. | PARTIAL; no artifact-backed resume claim of successful TRM improvement. |
+| Implemented Qwen LoRA/quantization prefix-conditioning interfaces and the **TRM-inspired iterative refinement** path (shared `TRMLayer`s, fixed 4-iteration y/z loop over Qwen hidden states). | Explores iterative refinement as a decoder-conditioning alternative; an inspired design, not a faithful TinyRecursiveModels implementation. | Hugging Face Transformers, PEFT/LoRA, BitsAndBytes, prefix embeddings, residual refinement loop. | `src/decoders/qwen.py`; `src/models/trm_qwen_vlm.py`; recent regression tests (`test_eos_stop.py`, `test_device_placement.py`, `test_checkpoint_loader_regression.py`). | VERIFIED_IMPLEMENTED (code + regression tests); end-to-end generation quality UNVERIFIED. |
 
 ---
 
@@ -124,21 +122,21 @@ Do **not** describe this as a completed edge deployment, a production VLM, an ag
 
 | Metric | Result | Experiment / dataset | Evidence | Confidence | Resume-safe wording |
 |---|---:|---|---|---|---|
-| I2T Recall@5 at 4096-d | **77.681%** | Attention-pooling vision–text model; PixMo validation split | `outputs/alignment_eval_final/alignment_metrics_all_models.csv:2` | High artifact confidence; moderate reproducibility confidence | “Achieved 77.7% image-to-text Recall@5 on a persisted PixMo validation retrieval evaluation.” |
+| I2T Recall@5 at 4096-d | **77.681%** | Attention-pooling vision–text model; PixMo validation split | `results/alignment/alignment_eval_final/alignment_metrics_all_models.csv:2` | High artifact confidence; moderate reproducibility confidence | “Achieved 77.7% image-to-text Recall@5 on a persisted PixMo validation retrieval evaluation.” |
 | T2I Recall@5 at 4096-d | **77.547%** | Same attention model / split | Same CSV:3 | High artifact confidence; moderate reproducibility confidence | “Achieved 77.5% text-to-image Recall@5 on the paired PixMo validation evaluation.” |
 | I2T/T2I Recall@1 at 4096-d | **50.871% / 50.871%** | Same | Same CSV:2–3 | High artifact confidence | Use only if room permits; clarify paired retrieval. |
 | I2T/T2I Recall@10 at 4096-d | **85.958% / 85.891%** | Same | Same CSV:2–3 | High artifact confidence | Use only alongside the protocol qualifier. |
 | I2T/T2I R@5 at 512-d | **73.727% / 74.933%** | Attention model prefix truncation, 8× smaller than 4096-d | Same CSV:8–9; `table_multiscale_combined.csv:5` | High artifact confidence | “Retained ~74% paired Recall@5 after truncating 4096-d embeddings to 512 dimensions.” |
 | I2T/T2I R@5 at 128-d | **62.936% / 64.042%** | Attention model prefix truncation, 32× smaller than 4096-d | Same CSV:12–13; `table_multiscale_combined.csv:7` | High artifact confidence | “Observed 62.9%/64.0% I2T/T2I Recall@5 at a 128-d prefix in the persisted multiscale retrieval evaluation.” |
 | Attention → 128-d R@5 absolute change | **−14.13 points I2T; −13.51 points T2I** vs. 4096-d | Same multiscale evaluation | Derived directly from persisted final CSV; summary CSV records I2T average-style drop. | High arithmetic/artifact confidence | “Quantified the retrieval–dimension trade-off across 4096→128-d nested prefixes.” |
-| Perceiver I2T/T2I R@5 | **0.201% / 0.168%** | Final notebook-local Perceiver V3 negative ablation | Final CSV:14–15; `table_4096_detailed.csv:4–5` | High outcome confidence; low architecture-provenance confidence | “Documented a failed Perceiver compression ablation (near-random paired R@5), motivating attention pooling as the retained path.” |
+| Perceiver I2T/T2I R@5 | **0.201% / 0.168%** | Final notebook-local Perceiver V3 negative ablation — **provenance-compromised** (eval architecture ≠ training architecture; `strict=False` loading; retained as recorded history, not an architecture verdict) | Final CSV:14–15; `table_4096_detailed.csv:4–5` | High outcome confidence; low architecture-provenance confidence | “Documented a historical failed Perceiver compression ablation (near-random paired R@5) with a provenance-compromised train/eval chain; a controlled rerun is required before reading it as an architecture comparison.” |
 
 ### Sample-size and baseline interpretation
 
 - Documentation says PixMo-Cap was split 14,000 / 3,000 / 3,000 train/validation/test (`CEREBRUS.pdf`, `reports/results_report.md`). The final CSV itself has **no explicit N**. The final notebook/audit reports 16 invalid validation images removed; the Perceiver R@1 of 0.033512% equals one hit out of **2,984**, consistent with 3,000 − 16. Treat **N≈2,984** as an inferred effective evaluation size, not a fully provenance-backed immutable count.
 - Baseline in the persisted comparison is attention pooling versus a failed Perceiver variant—not a published external benchmark or general CLIP baseline. The 4096-d full vector is the internal dimension baseline for prefix truncation.
-- `outputs/alignment_evaluation_results.csv` contains higher values (I2T/T2I R@5 85.69/86.80) plus CIFAR and MRL lines but lacks experiment provenance and conflicts with the final committed table. It is **not resume-safe**.
-- `notebooks/outputs/pixmo_alignment/metrics.csv` reports a single training-summary row including `best_r5=0.8190`, but no dataset/checkpoint/run identity makes it less authoritative than the final result tables. It is **not resume-safe**.
+- the previously deleted provenance-free `alignment_evaluation_results.csv` (removed; git-history recoverable) contains higher values (I2T/T2I R@5 85.69/86.80) plus CIFAR and MRL lines but lacks experiment provenance and conflicts with the final committed table. It is **not resume-safe**.
+- The historical `notebooks/outputs/pixmo_alignment/metrics.csv` (superseded by `results/train_history/pixmo_alignment/` after artifact curation) reports a single training-summary row including `best_r5=0.8190`, but no dataset/checkpoint/run identity makes it less authoritative than the final result tables. It is **not resume-safe**.
 - The paper’s TRM/Baseline BLEU and ROUGE-L values lack committed predictions, targets, evaluation JSON, checkpoint, and reconciled metric scale. They are **not resume-safe**.
 
 ---
@@ -155,7 +153,7 @@ Do **not** describe this as a completed edge deployment, a production VLM, an ag
 - **Result:** At 4096-d, I2T R@1/R@5/R@10 = 50.871/77.681/85.958%; T2I = 50.871/77.547/85.891%; MRR = 0.629/0.631; median rank = 1/1.
 - **Interpretation:** Strong paired retrieval within this specific retained evaluation artifact; it establishes an alignment result, **not** grounded QA/generation capability or deployment readiness.
 - **Limitations:** Checkpoints and datasets are absent; notebook has absolute paths and loads with `strict=False`; exact reproducibility is not supported by the repository.
-- **Artifacts:** `edge_glass_modular/outputs/alignment_eval_final/alignment_metrics_all_models.csv`; `table_4096_detailed.csv`; `notebooks/07_alignment_final_report.ipynb`.
+- **Artifacts:** `edge_glass_modular/results/alignment/alignment_eval_final/alignment_metrics_all_models.csv`; `table_4096_detailed.csv`; `notebooks/experiments/07_alignment_final_report.ipynb`.
 
 ### B. Matryoshka prefix-truncation retrieval study — `VERIFIED_EXPERIMENT`
 
@@ -167,7 +165,7 @@ Do **not** describe this as a completed edge deployment, a production VLM, an ag
 - **Result:** R@5 falls gradually from 77.681/77.547% (4096) to 73.727/74.933% (512), 70.409/70.643% (256), and 62.936/64.042% (128).
 - **Interpretation:** This is direct evidence of a dimension/retrieval trade-off in one aligned model. It supports saying prefixes remained useful on this evaluation; it does **not** establish measured storage cost, inference latency, edge-device throughput, or decoder quality.
 - **Limitations:** Prefix evaluation re-normalizes slices; there is no released checkpoint/data provenance or multi-seed confidence interval.
-- **Artifacts:** `outputs/alignment_eval_final/alignment_metrics_all_models.csv`; `table_multiscale_combined.csv`; `plot_r5_dim_comparison_all.png`.
+- **Artifacts:** `results/alignment/alignment_eval_final/alignment_metrics_all_models.csv`; `table_multiscale_combined.csv`; `plot_r5_dim_comparison_all.png`.
 
 ### C. Perceiver compression ablation — `VERIFIED_EXPERIMENT` (negative result)
 
@@ -179,7 +177,7 @@ Do **not** describe this as a completed edge deployment, a production VLM, an ag
 - **Result:** Perceiver I2T/T2I R@5 = 0.201/0.168%; I2T/T2I median rank = 1517/1555. This is near random and far below attention pooling.
 - **Interpretation:** Negative result: the evaluated Perceiver path did not learn usable retrieval alignment under this run/configuration. It justifies retaining attention pooling as the artifact-backed primary path.
 - **Limitations:** The final notebook model differs from reusable code; the suggested initialization/learning-rate/mean-pooling explanations are diagnostic hypotheses, not controlled causal proof; no rerun after proposed changes persists.
-- **Artifacts:** `outputs/alignment_eval_final/alignment_metrics_all_models.csv:14-25`; `notebooks/PERCEIVER_TRAINING_ISSUE_ANALYSIS.md`; `notebooks/07_alignment_final_report.ipynb`.
+- **Artifacts:** `results/alignment/alignment_eval_final/alignment_metrics_all_models.csv:14-25`; `notebooks/experiments/PERCEIVER_TRAINING_ISSUE_ANALYSIS.md`; `notebooks/experiments/07_alignment_final_report.ipynb`.
 
 ### D. Alignment training summary — `PARTIAL`
 
@@ -187,13 +185,13 @@ Do **not** describe this as a completed edge deployment, a production VLM, an ag
 - **Setup/evidence:** A one-row persisted `metrics.csv` lists a 4096-d run, MRL dimensions, final train loss, final validation loss, and retrieval values.
 - **Result:** `final_train_loss=1.11396`, `final_val_loss=0.76460`, `best_r1=0.56870`, `best_r5=0.81903`, `best_r10=0.89176`.
 - **Why not resume-safe:** The artifact does not record split, N, checkpoint, commit, seed, or the directionality/protocol behind `best_r*`; it conflicts with the final result table. Do not cite its numbers.
-- **Artifact:** `edge_glass_modular/notebooks/outputs/pixmo_alignment/metrics.csv`.
+- **Artifact:** the historical `notebooks/outputs/pixmo_alignment/metrics.csv` (superseded by `results/train_history/pixmo_alignment/`).
 
 ### E. Qwen/TRM/PixMo-QA work — `PARTIAL / UNVERIFIED`
 
 - **Evidence:** Multiple QA configs, training/evaluation scripts, notebook outputs, and a Qwen+optional-recursion code path exist. `03_trm_vlm_qa_training_FIXED.ipynb` shows execution traces of checkpoint/model loading and a configured 10-epoch run; `04_vlm_qa_evaluation.ipynb` also retains a `FileNotFoundError` for a missing VLM checkpoint.
 - **No verified claim:** No committed prediction set, raw targets, result JSON/CSV, usable checkpoint, defined test population, or reproducible decoder comparison was found. Do not cite paper Table VII BLEU/ROUGE-L, “grounded generation,” Qwen improvement, TRM improvement, decoder readiness, or QA accuracy.
-- **Artifacts/code:** `notebooks/03_trm_vlm_qa_training*.ipynb`; `scripts/train_vlm_accelerate.py`; `scripts/evaluate_vlm_accelerate.py`; `configs/trm_vlm_qa_*.yaml`.
+- **Artifacts/code:** `notebooks/experiments/03_trm_vlm_qa_training_FIXED.ipynb`; `scripts/train/train_vlm_accelerate.py`; `scripts/eval/evaluate_vlm_accelerate.py`; `configs/trm_vlm_qa_*.yaml`.
 
 ### F. Audio / tri-modal experiments — `UNVERIFIED`
 
@@ -204,14 +202,14 @@ Do **not** describe this as a completed edge deployment, a production VLM, an ag
 
 ## 7. Current Research / Engineering Bottlenecks
 
-1. **Canonical training entrypoint is broken.** `scripts/train_alignment.py` calls `MultimodalTrainer`, which passes a batch dict as one positional model argument and indexes a dataclass like a dictionary. This blocks a clean published/run-anywhere alignment command.
+1. **No polished canonical alignment CLI.** The broken `scripts/train_alignment.py` / `MultimodalTrainer` CLI family was retired; the canonical alignment trainer (`ImprovedMultimodalTrainer`) is notebook/script-driven only. A maintained alignment CLI remains unbuilt.
 2. **Reproducibility gap.** Final results lack source dataset/split manifest, sample count, seed, environment lock, commit SHA, checkpoint hash, runnable relative paths, and raw evaluation outputs. Final notebook relies on unavailable absolute paths and permissive `strict=False` loading.
-3. **Perceiver ambiguity and failure.** The package Perceiver differs from the notebook-local V3 evaluated in the negative table; reported table labeling obscures its 512-d implementation. No validated fix/rerun exists.
-4. **Decoder results unsubstantiated.** Qwen/TRM code/configurations do not substitute for validated generative metrics. The remaining evaluation notebook shows a missing checkpoint failure.
-5. **Audio/tri-modal gap.** Audio support exists in code but has no retained current result artifact. Audio representation normalization also differs from vision/text ordering (`audio.py:161-167`).
-6. **Data pipeline mismatch.** Primary config points to unavailable user-specific absolute Parquet paths. `MultimodalDataModule` calls legacy metadata-oriented `build_datasets`, while primary PixMo Parquet builders are separate; this reinforces that the advertised CLI path is not canonical.
-7. **Testing/quality gap.** No unit/integration test suite or CI was found. Audit-time `compileall` fails on `scripts/map_notebook.py` with an f-string backslash `SyntaxError`; all YAML configs did load successfully.
-8. **Dependency/packaging gaps.** `pyproject.toml` omits imports used by runtime/tooling paths (for example `requests`, `soundfile`, plotting/scikit-learn dependencies); README references missing configs/notebooks and unsupported downloader flags.
+3. **Perceiver provenance gap.** The historical Perceiver evaluation architecture differed from training and the checkpoint was loaded with `strict=False`; the near-random retained metric is provenance-compromised. The packaged Perceiver now matches the executed V3 training architecture, but no controlled rerun has validated it.
+4. **Decoder results unsubstantiated.** Qwen / TRM-inspired-refinement code and fixes (EOS stopping, device placement, checkpoint integrity) do not substitute for validated generative metrics; no provenance-clean QA evaluation result is retained.
+5. **Audio/tri-modal gap.** Retained experimental audio support exists in code but has no retained current result artifact; do not infer audio results from vision–text results.
+6. **Data pipeline paths.** Primary configs point to user-specific absolute Parquet paths (HPC cluster) that do not exist in the repository; a full local rerun requires rebuilding the parquet datasets via `src/data/parquet_builder.py` / `scripts/data/`.
+7. **Testing/quality status.** A 48-test permanent regression suite now exists and passes (`pytest tests/`), but there is no CI workflow wired up.
+8. **Dependency status.** `pyproject.toml` now declares validated compatibility ranges (transformers 4.57.x, PEFT 0.17–0.18, Accelerate 1.10–1.11, bnb 0.48.x, sentence-transformers 5.1.x); the repo-root lock files remain the exact-reproduction path. Some runtime/tooling dependencies (e.g. `requests`, `soundfile`) are still not declared.
 9. **No measured edge or production performance.** No benchmark artifact reports GPU count/type used, throughput, latency, memory footprint, quantized model size, device deployment, uptime, or serving reliability.
 
 ---
@@ -335,11 +333,11 @@ These are technically defensible if described with their limits:
 | “MRL learned a separate projection cascade/head” | MISLEADING | `MatryoshkaProjection` only slices and L2-normalizes an already learned projected vector. | “Supervised normalized nested prefixes of a learned 4096-d projection.” |
 | “MRL yielded 87.5% storage reduction / faster inference” | PARTIAL / unsupported outcome claim | 4096→512 is mathematically 87.5% fewer vector coordinates, but no storage-system, latency, cost, or throughput measurement persists. | “Evaluated 8× shorter embedding prefixes with ~74% paired R@5; no latency or storage-system benchmark was run.” |
 | “Qwen/TRM improved BLEU/ROUGE-L / converted an LLM into a VLM” | UNVERIFIED | Paper Table VII has no retained predictions, targets, checkpoint, result file, split protocol, or reconciled metric scale. | “Implemented Qwen/TRM prefix-conditioning paths; generation metrics require rerun and provenance.” |
-| “TRM is a validated recursive reasoning model” | UNVERIFIED / misleading | The custom decoder is causal transformer-like; recursion claims are ambiguous across separate code paths and no validated result remains. | “Implemented a custom lightweight decoder and a separate optional recursive Qwen-VLM wrapper.” |
+| “TRM is a validated recursive reasoning model” | UNVERIFIED / misleading | There is no standalone TRM decoder anymore; the VLM path is **TRM-inspired iterative refinement** (shared `TRMLayer`s, fixed 4 iterations) and is explicitly not a faithful TinyRecursiveModels implementation. No validated result remains. | “Implemented TRM-inspired iterative refinement over Qwen hidden states (fixed 4-iteration y/z loop); it is not a TinyRecursiveModels implementation and its quality impact is unverified.” |
 | “Used 2×H200 / H100/A100 clusters in completed training” | UNVERIFIED | Docs/configs contain hardware recommendations/claims, but no immutable run metadata or throughput evidence verifies hardware use. | “Implemented optional DDP/Accelerate/DeepSpeed-aware paths; do not cite hardware counts.” |
 | “Distributed training works” | PARTIAL | DDP code exists; `ImprovedMultimodalTrainer` conditionally wraps DDP, but no retained successful distributed run or test exists. | “Implemented optional DDP-aware training infrastructure.” |
 | “W&B-tracked experiments” | PARTIAL | W&B integration is coded; useful corresponding run summary/provenance is not retained in current package. | “Integrated optional W&B logging hooks.” |
-| “R@5 = 85.69/86.80” | UNVERIFIED / conflicting | `outputs/alignment_evaluation_results.csv` lacks provenance and conflicts with final committed table. | Use only final table’s 77.681/77.547% values with paired-retrieval qualifier. |
+| “R@5 = 85.69/86.80” | UNVERIFIED / conflicting | the previously deleted provenance-free `alignment_evaluation_results.csv` (removed; git-history recoverable) lacks provenance and conflicts with final committed table. | Use only final table’s 77.681/77.547% values with paired-retrieval qualifier. |
 | “PixMo dataset was 20k exactly for final evaluation” | PARTIAL | Docs specify 14k/3k/3k, but final result artifact omits actual post-filter count/split fingerprint. | “Documentation describes a 14k/3k/3k PixMo subset; final effective validation N is inferred at ~2,984 after filtering.” |
 | “Published/submitted paper” | UNVERIFIED | A local paper PDF exists; no venue submission, DOI, arXiv ID, acceptance, or publication evidence found. | “Authored a project paper/draft” only if applicable and accurate outside this repository. |
 | “No encoder fine-tuning” | VERIFIED for primary config, not global codebase | Main config freezes vision/text encoders; do not generalize to every future config/path. | “Primary PixMo alignment config freezes CLIP and MPNet backbones.” |
@@ -444,9 +442,9 @@ Emphasize implemented systems: PyTorch modules, YAML configs, Parquet/PIL data l
 
 ## 16. Interview Narrative
 
-I built CERBERUS/Edge Glass to test an alignment-first alternative to retraining a monolithic vision-language model. The core problem was turning frozen CLIP image-patch features and sentence-transformer caption embeddings into one fixed-size representation that supports paired retrieval and can later be passed to different decoders. I implemented the PyTorch pipeline: frozen encoders, trainable projections, learned attention pooling, normalized nested prefixes from 4096 to 128 dimensions, and a symmetric contrastive objective. I also built Parquet-based image/QA loaders, retrieval evaluation, configs, and optional Qwen-prefix and lightweight-decoder interfaces.
+I built CERBERUS/Edge Glass to test an alignment-first alternative to retraining a monolithic vision-language model. The core problem was turning frozen CLIP image-patch features and sentence-transformer caption embeddings into one fixed-size representation that supports paired retrieval and can later feed a VLM. I implemented the PyTorch pipeline: frozen encoders, trainable projections, learned attention pooling (the canonical alignment path), normalized nested prefixes from 4096 to 128 dimensions, and a symmetric contrastive objective. I also built Parquet-based image/QA loaders, retrieval evaluation, configs, and a Qwen2.5 VLM path with TRM-inspired iterative refinement (a fixed 4-iteration y/z refinement loop, not a faithful TinyRecursiveModels implementation).
 
-The strongest result is the persisted PixMo paired retrieval evaluation: 77.7% image-to-text and 77.5% text-to-image Recall@5 at 4096 dimensions. The most informative experiment was the prefix ablation: 512-dimensional prefixes still reached roughly 74% Recall@5, while 128 dimensions fell to about 63–64%. I also kept a negative result: the Perceiver-style compression arm was near random, so attention pooling is the validated path. The main limitation is reproducibility and scope: data/checkpoints and decoder metrics are not retained cleanly, the public alignment CLI needs repair, and audio/tri-modal and end-to-end generation remain ongoing rather than completed.
+The strongest result is the persisted PixMo paired retrieval evaluation: 77.7% image-to-text and 77.5% text-to-image Recall@5 at 4096 dimensions. The most informative experiment was the prefix ablation: 512-dimensional prefixes still reached roughly 74% Recall@5, while 128 dimensions fell to about 63–64%. I also kept a negative result: the historical Perceiver-style compression arm was near random — with the important caveat that its evaluation architecture differed from training and the checkpoint was loaded permissively, so the number is provenance-compromised and needs a controlled rerun before it can be read as an architecture verdict; attention pooling remains the artifact-backed primary path. The main limitation is reproducibility and scope: data/checkpoints and decoder metrics are not retained cleanly, there is no polished alignment CLI, and audio/tri-modal and end-to-end generation remain experimental rather than demonstrated.
 
 ---
 
@@ -467,27 +465,29 @@ The strongest result is the persisted PixMo paired retrieval evaluation: 77.7% i
 | Audio architecture | `edge_glass_modular/src/encoders/audio.py` |
 | Nested-prefix/MRL implementation | `edge_glass_modular/src/encoders/mrl.py` |
 | Contrastive and tri-modal losses | `edge_glass_modular/src/models/losses.py` |
-| Main model, fusion, and decoder prefix bridge | `edge_glass_modular/src/models/alignment.py`; `src/models/projector.py`; `src/models/fusion.py` |
+| Main model and decoder prefix bridge | `edge_glass_modular/src/models/alignment.py`; `src/models/trm_qwen_vlm.py` |
 | Qwen LoRA/quantization/prefix code | `edge_glass_modular/src/decoders/qwen.py` |
-| Custom lightweight decoder code | `edge_glass_modular/src/decoders/trm.py`; `src/models/trm_qwen_vlm.py` |
+| TRMLayer building block (refinement) | `edge_glass_modular/src/decoders/trm.py` (standalone TRMDecoder retired; building block only) |
 | Parquet/PixMo/PixMo-QA data loader behavior | `edge_glass_modular/src/data/dataset_builder.py` |
-| Data-module/primary CLI mismatch | `edge_glass_modular/src/data/datamodule.py`; `src/data/dataset_builder.py`; `scripts/train_alignment.py` |
-| Broken public trainer interface | `edge_glass_modular/src/training/trainer.py`; `src/models/alignment.py`; `scripts/train_alignment.py` |
+| Retired trainer CLI (historical reference) | archive branch `archive/historical-code-pre-retirement` |
 | Improved trainer/checkpoint/DDP/W&B implementation | `edge_glass_modular/src/training/improved_trainer.py` |
-| Accelerate/DeepSpeed QA scripts | `edge_glass_modular/scripts/train_vlm_accelerate.py`; `scripts/evaluate_vlm_accelerate.py` |
+| Accelerate/DeepSpeed QA scripts | `edge_glass_modular/scripts/train/train_vlm_accelerate.py`; `scripts/eval/evaluate_vlm_accelerate.py`; `scripts/eval/inference_vlm.py` |
+| Checkpoint loading / device placement / EOS semantics | `edge_glass_modular/src/models/checkpoint_loader.py`; regression tests in `edge_glass_modular/tests/` |
 | Retrieval evaluation semantics | `edge_glass_modular/src/evaluation/metrics.py` |
 | QA metric implementation and scale caveat | `edge_glass_modular/src/evaluation/qa_metrics.py` |
-| Final artifact-backed attention/Perceiver results | `edge_glass_modular/outputs/alignment_eval_final/alignment_metrics_all_models.csv` |
-| Final attention vs. Perceiver table | `edge_glass_modular/outputs/alignment_eval_final/table_4096_detailed.csv` |
-| Final multi-scale R@5 table | `edge_glass_modular/outputs/alignment_eval_final/table_multiscale_combined.csv` |
-| Final visualization assets | `edge_glass_modular/outputs/alignment_eval_final/plot_tsne_comparison.png`; `plot_r5_dim_comparison_all.png`; `plot_cosine_hist_comparison.png` |
-| Conflicting/noncanonical results to avoid | `edge_glass_modular/outputs/alignment_evaluation_results.csv`; `edge_glass_modular/notebooks/outputs/pixmo_alignment/metrics.csv` |
-| Final evaluation notebook/provenance caveats | `edge_glass_modular/notebooks/07_alignment_final_report.ipynb`; `AUDIT_REPORT.md:81-92` |
-| Perceiver negative-result diagnosis | `edge_glass_modular/notebooks/PERCEIVER_TRAINING_ISSUE_ANALYSIS.md` |
-| QA training/evaluation evidence and missing-checkpoint failure | `edge_glass_modular/notebooks/03_trm_vlm_qa_training_FIXED.ipynb`; `03_trm_vlm_qa_training_MODULAR.ipynb`; `04_vlm_qa_evaluation.ipynb`; `05_vlm_qualitative_inference.ipynb` |
-| Dataset construction intent / paths / limitations | `edge_glass_modular/reports/dataset_construction_report.md`; `reports/results_report.md` |
-| Stale production/readiness claims | `README.md`; `edge_glass_modular/README.md`; `PROJECT_SUMMARY.md`; `edge_glass_modular/COMPLETE_CODEBASE.md`; `QUICK_REFERENCE.md` |
-| Audit-time code/config checks | `python -m compileall -q edge_glass_modular/src edge_glass_modular/scripts` (failed only on `scripts/map_notebook.py` f-string syntax); all YAML configs loaded successfully through `load_config` |
+| Final artifact-backed attention/Perceiver results | `edge_glass_modular/results/alignment/alignment_eval_final/alignment_metrics_all_models.csv` |
+| Final attention vs. Perceiver table | `edge_glass_modular/results/alignment/alignment_eval_final/table_4096_detailed.csv` |
+| Final multi-scale R@5 table | `edge_glass_modular/results/alignment/alignment_eval_final/table_multiscale_combined.csv` |
+| Final visualization assets | `edge_glass_modular/results/alignment/alignment_eval_final/plot_tsne_comparison.png`; `plot_r5_dim_comparison_all.png`; `plot_cosine_hist_comparison.png` |
+| Noncanonical training-history metrics to avoid citing | `edge_glass_modular/results/train_history/pixmo_alignment/metrics.csv` (no run identity; conflicts with final table) |
+| Final evaluation notebook/provenance caveats | `edge_glass_modular/notebooks/experiments/07_alignment_final_report.ipynb`; `AUDIT_LEDGER.md` (evaluation-chain entries) |
+| Perceiver negative-result diagnosis (historical) | `edge_glass_modular/notebooks/experiments/PERCEIVER_TRAINING_ISSUE_ANALYSIS.md` |
+| Executed Perceiver V3 training code (provenance) | `edge_glass_modular/scripts/experiments/train_perceiver_v3.py` |
+| QA training/evaluation evidence and missing-checkpoint failure | `edge_glass_modular/notebooks/experiments/03_trm_vlm_qa_training_FIXED.ipynb`; `notebooks/analysis/05_vlm_qualitative_inference.ipynb` |
+| Dataset construction intent / paths / limitations | `edge_glass_modular/reports/dataset_construction_report.md` (historical snapshot); `reports/results_report.md` (historical snapshot) |
+| Dependency contract / reproducibility | `edge_glass_modular/pyproject.toml`; repo-root `requirements.txt` / `requirements.lock.txt` |
+| Provenance ledger (authoritative) | `AUDIT_LEDGER.md` |
+| Audit-time code/config checks | `pytest edge_glass_modular/tests/` → 48/48; `compileall src scripts tests` OK; all 9 YAML configs load through `load_config` |
 
 ---
 

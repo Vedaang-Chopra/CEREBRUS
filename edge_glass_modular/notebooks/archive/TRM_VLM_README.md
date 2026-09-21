@@ -1,3 +1,6 @@
+> **Historical snapshot — not the current canonical architecture.** Archived with the pre-retirement
+> notebooks; superseded by current source, `tests/`, and `AUDIT_LEDGER.md`.
+
 # TRM-Style Vision-Language Model (VLM) Implementation
 
 ## Overview

@@ -1,3 +1,9 @@
+> **Historical diagnostic note — not the current canonical architecture.** This analysis describes the
+> historical Perceiver training failure as diagnosed at the time. The retained Perceiver metric is
+> provenance-compromised (evaluation architecture differed from training; `strict=False` loading); see
+> `AUDIT_LEDGER.md`. The packaged Perceiver has since been canonicalized to the executed V3 training
+> architecture (`src/encoders/perceiver.py`); a controlled rerun is still required.
+
 # Perceiver MRL Alignment Training Issue - Root Cause Analysis
 
 ## Problem Summary

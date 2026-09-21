@@ -2057,3 +2057,112 @@ No warnings beyond pre-existing torch distributed-redirects notice on macOS.
    kept because retained configs use them.
 6. Git history carries large historical blobs (11.85 GiB pack); slimming is a
    history-rewrite decision, deliberately not performed.
+
+---
+
+## Documentation reconciliation — active docs rewritten to match maintained architecture (2026-09-21, executed)
+
+Task: documentation/provenance cleanup only. No source, config, test, or behavior changes.
+
+### 1. Rewritten as current documentation
+
+- `edge_glass_modular/README.md` — full rewrite as the primary entry point. Documents: project
+  overview (research prototype framing, not proven tri-modal); **canonical alignment path**
+  (CLIP → projection → SimpleAttentionPooling → normalized embedding → MRL prefixes) as the
+  producer of the authoritative retained alignment results; **Perceiver** as the canonicalized V3
+  architecture with the explicit **provenance-compromised historical result** caveat (eval
+  architecture ≠ training, `strict=False` loading, controlled rerun required — historical number
+  preserved unchanged); **VLM path** graph (aligned tokens → vision_proj → Qwen2.5-3B → final
+  hidden states → TRM-inspired y/z refinement, shared TRMLayers, fixed 4 iterations, residual add,
+  LM head) with the not-faithful-TinyRecursiveModels / no-standalone-TRMDecoder statements and no
+  quantitative VLM claim; **audio as retained experimental support** (no retained tri-modal result;
+  fusion retired); real repository tree + archive branch; install/reproducibility (pyproject ranges
+  vs lock files; validated transformers 4.57.x / PEFT 0.17–0.18 / Accelerate 1.10–1.11; no
+  unconstrained upgrades); `pytest tests/` with the 8 regression-coverage areas; honest training
+  story (canonical alignment ran through ImprovedMultimodalTrainer/notebook workflow; no polished
+  alignment CLI; old trainer CLI not resurrected; maintained accelerate VLM script documented);
+  checkpoint semantics (full-state `checkpoint_best/` via Accelerate save_state; LoRA-only
+  `checkpoint_best_adapter/`; historical adapter-only `checkpoint_best/` intentionally rejected);
+  results pointers to `results/{alignment,train_history,eda}` with authoritative-vs-compromised
+  attribution; known-debt list mirroring the sanity sweep.
+- `README.md` (repo root) — rewritten as a research-prototype entry point: pointers to the
+  maintained package, AUDIT_LEDGER, PROJECT_RESUME_CONTEXT, retained results; "production-ready" /
+  TRM-decoder / fusion / Qwen-14B / H100-A100 claims removed; quick start and highlights restated
+  with provenance qualifiers.
+- `edge_glass_modular/notebooks/system_architecture.md` — rewritten: previously contained broken
+  `%%`-commented and 3× duplicated stale mermaid graphs. Now one maintained-graph document with
+  three clearly separated sections: (1) canonical alignment path + Perceiver variant (labeled
+  experimental, provenance caveat), (2) VLM/TRM-inspired refinement graph, (3) retained
+  experimental audio. Fusion and Path C intentionally absent.
+
+### 2. Updated (current-facing claims only)
+
+- `PROJECT_RESUME_CONTEXT.md` — audited and corrected without touching the verified metric table:
+  - Perceiver: provenance-compromised framing added throughout (§2 differentiation, §3 subsystem
+    table, §7 bottleneck #3, contribution rows); canonicalization of `src/encoders/perceiver.py` to
+    the executed V3 architecture recorded; historical numbers preserved.
+  - TRM: all "TRM decoder / custom lightweight decoder" wording replaced with
+    **TRM-inspired iterative refinement** (shared TRMLayers, fixed 4 iterations, not a faithful
+    TinyRecursiveModels implementation, no standalone decoder); §12 "TRM is a validated recursive
+    reasoning model" correction updated accordingly.
+  - Fusion + Path C rows changed to **Retired** (no retained result attributable); references to
+    deleted `src/models/fusion.py` / `projector.py` / `trainer.py` / `scripts/train_alignment.py`
+    re-pointed to the archive branch.
+  - Tests/CI row updated: 48-test suite exists and passes; CI still absent. Bottleneck #7 updated.
+  - Dependency row updated to the tightened pyproject ranges; lock files remain exact-reproduction.
+  - CLI row updated: broken CLI retired; no polished canonical alignment CLI exists.
+  - All stale artifact paths re-pointed: `outputs/alignment_eval_final/` →
+    `results/alignment/alignment_eval_final/`; scripts → `scripts/{train,eval,data,experiments}/`;
+    notebooks → `notebooks/{experiments,analysis}/`; deleted
+    `alignment_evaluation_results.csv` described as removed (git-history recoverable); evidence
+    index adds checkpoint_loader/regression tests and the AUDIT_LEDGER as authoritative.
+  - Interview narrative updated to the same terminology.
+
+### 3. Marked historical (explicit header, content preserved)
+
+Header applied — `> **Historical snapshot — not the current canonical architecture.** ...`:
+
+- `edge_glass_modular/COMPLETE_CODEBASE.md` (was "100% complete and production-ready"; stale v3
+  merge claims, non-existent configs list)
+- `edge_glass_modular/reports/README.md`, `reports/SETUP_AND_RUN.md`,
+  `reports/implementation_report.md`, `reports/TRAINING_IMPLEMENTATION_REPORT.md`,
+  `reports/experiments_report.md`, `reports/SYSTEM_OVERVIEW_REPORT.md`,
+  `reports/IMPLEMENTATION_SUMMARY.md`, `reports/PIXMO_INTEGRATION_GUIDE.md`,
+  `reports/results_report.md`, `reports/MODEL_CONFIGS_AND_ABLATIONS_REPORT.md`,
+  `reports/dataset_construction_report.md` (all pre-cleanup architecture snapshots; content not
+  silently rewritten)
+- Root-level `QUICK_REFERENCE.md`, `PROJECT_SUMMARY.md`, `FINAL_STATUS.md`,
+  `IMPLEMENTATION_GUIDE.md` (older snapshots; stale file/config/command lists)
+- `edge_glass_modular/notebooks/archive/*.md` (7 files: TRM_VLM_README, TRM_VLM_QA_MODULAR_README,
+  QUICK_START, EVALUATION_README/SUMMARY, IMPLEMENTATION_SUMMARY, REFACTORING_SUMMARY)
+- `edge_glass_modular/notebooks/experiments/PERCEIVER_TRAINING_ISSUE_ANALYSIS.md` — historical
+  diagnostic header (diagnosis preserved; provenance-compromised caveat added in the header).
+
+No docs deleted: all retained files carry provenance value (experiment reports, dataset methodology,
+failure diagnosis). The previously deleted provenance-free `alignment_evaluation_results.csv`
+remains deleted (recorded in the archive-branch commit `134539e`).
+
+### 4. Terminology enforced
+
+Active docs use: `TRM-inspired iterative refinement`, `canonical alignment path`, `retained
+experimental audio support`, `historical / provenance-compromised Perceiver result`. Grep-verified
+no active-doc claims of: standalone TRMDecoder, active fusion, active `MultimodalProjector`,
+faithful TinyRecursiveModels implementation, or demonstrated tri-modal results.
+
+### 5. Validation (executed, edge_glass_env: torch 2.9.1, macOS arm64)
+
+- Stale-claim scan over active docs (README.md, edge_glass_modular/README.md,
+  PROJECT_RESUME_CONTEXT.md, notebooks/system_architecture.md): no active stale claims.
+- Documented paths existence check: all referenced paths exist; archive branch
+  `archive/historical-code-pre-retirement` (tip `134539e`) verified via git.
+- `pytest tests/` → 48/48 passed (4.4s). `compileall src scripts tests` → OK. All 9 configs load.
+- No source/config/test/artifact files touched by this task.
+
+### 6. Remaining documentation ambiguity
+
+1. Perceiver-vs-attention comparison remains pending until the controlled rerun; until then the
+   retained Perceiver number must keep its provenance qualifier in any retelling.
+2. `pixmo_alignment_1.yaml` is byte-identical to `pixmo_alignment.yaml` (verified `diff`); retained
+   as provenance for the notebook-07 evaluation chain, not a distinct configuration.
+3. Configs still carry user-specific HPC absolute parquet paths; documented, not changed (no
+   behavior edits allowed in this pass).

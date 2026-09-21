@@ -1,3 +1,10 @@
+> **Historical snapshot — not the current canonical architecture.** This document describes an earlier
+> architecture snapshot and is preserved for provenance only. Claims here are superseded by the current
+> source code, `tests/`, and `AUDIT_LEDGER.md`. The maintained architecture (canonical alignment path,
+> Perceiver, Qwen VLM with TRM-inspired iterative refinement, retained experimental audio) is documented in
+> `edge_glass_modular/README.md`. The standalone TRM decoder, fusion, and Path C / `MultimodalProjector`
+> subsystems referenced by some of these reports have been retired.
+
 # Edge Glass VLM: Implementation Report
 
 ## 1. System Architecture

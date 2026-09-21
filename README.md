@@ -1,67 +1,48 @@
-# Project CEREBRUS: Edge Glass Assistant
+# Project CERBERUS: Edge Glass Assistant
 
-**Production-ready, highly modular multimodal alignment framework (Vision-Lanuage Models)**
+A modular multimodal / VLM **research** repository (alignment of frozen encoders, multi-scale representations, and a Qwen VLM path with TRM-inspired iterative refinement). This is a research prototype, not a production or proven tri-modal system.
 
-This repository contains the complete research and implementation for **Project Cerebrus (Edge Glass)**, an advanced multimodal agent framework designed for efficient training and inference on edge-compatible architectures.
+The maintained code is [`edge_glass_modular/`](edge_glass_modular/README.md) — see that README for the current architecture, install/train/eval/test instructions, and result provenance. Provenance decisions for every retained result live in [`AUDIT_LEDGER.md`](AUDIT_LEDGER.md).
 
 ---
 
-## 📚 Key Resources
+## Key resources
 
 | Resource | Description | Link |
 | :--- | :--- | :--- |
-| **Research Paper** | The full scientific paper detailing the methodology and results. | [📄 **CEREBRUS.pdf**](CEREBRUS.pdf) |
-| **Production Code** | The final, modular, production-ready codebase. | [💻 **edge_glass_modular/**](edge_glass_modular/) |
-| **Final Status** | Detailed status report confirming completion of all objectives. | [✅ **FINAL_STATUS.md**](FINAL_STATUS.md) |
-| **Project Summary** | Comprehensive 18-page overview of the entire project. | [📖 **PROJECT_SUMMARY.md**](PROJECT_SUMMARY.md) |
-| **Implementation** | Technical guide for the modular architecture. | [🛠️ **IMPLEMENTATION_GUIDE.md**](IMPLEMENTATION_GUIDE.md) |
+| **Maintained code** | The active modular codebase (canonical alignment path, Perceiver, Qwen VLM with TRM-inspired iterative refinement, retained experimental audio). | [`edge_glass_modular/`](edge_glass_modular/README.md) |
+| **Provenance ledger** | Authoritative record of provenance decisions for all retained results. | [`AUDIT_LEDGER.md`](AUDIT_LEDGER.md) |
+| **Resume context** | Externally safe claims, verified metrics, and claims to avoid. | [`PROJECT_RESUME_CONTEXT.md`](PROJECT_RESUME_CONTEXT.md) |
+| **Research paper** | Historical project paper (claims in it are not authoritative over the audit). | [`CEREBRUS.pdf`](CEREBRUS.pdf) |
+| **Retained results** | Curated alignment / training-history / EDA artifacts. | [`edge_glass_modular/results/`](edge_glass_modular/results/) |
 
 ---
 
-## 🏗️ Codebase Structure
+## Repository layout
 
-The project has been consolidated into a single, modular package.
-
-### ✅ `edge_glass_modular/` (Primary)
-**This is the only code you need.** It contains:
-- **Source Code**: Fully modularized encoders (Vision, Audio, Text), decoders (Qwen, TRM), and fusion modules.
-- **Training**: Distributed Data Parallel (DDP) trainer, checkpointing, and mixed precision support.
-- **Configs**: YAML-based configuration for all 10 experiments.
-- **Documentation**: Its own standalone `README.md` and setup guides.
-
-### 🗃️ Archived Code
-The following directories contain legacy code and are **no longer needed**:
-- `v2_code_base/`: Early research prototypes.
-- `v3_code_base/`: Interim development version.
+- `edge_glass_modular/` — the maintained package (see its README).
+- `older_code_base/` (untracked) and the archive branch `archive/historical-code-pre-retirement` — historical material, not the current implementation. Retired subsystems (standalone TRM decoder, fusion, Path C / `MultimodalProjector`) live only there.
+- `requirements.txt` / `requirements.lock.txt` — exact-reproduction environment lock.
 
 ---
 
-## 🚀 Quick Start
-
-To start working with the project, navigate to the modular codebase and install it:
+## Quick start
 
 ```bash
-# 1. Enter the production codebase
 cd edge_glass_modular
-
-# 2. Install dependencies
-pip install -e .
-
-# 3. Follow the specific guide
-cat README.md
+pip install -e .          # validated compatibility ranges (see pyproject.toml)
+pytest tests/             # 48-test regression suite
+# For exact reproduction: pip install -r ../requirements.txt
 ```
 
-For detailed instructions on running experiments (e.g., Vision-Text Alignment, Tri-Modal Training), refer to **[edge_glass_modular/README.md](edge_glass_modular/README.md)**.
+See **[edge_glass_modular/README.md](edge_glass_modular/README.md)** for training, evaluation, inference, and checkpoint semantics.
 
 ---
 
-## 🏆 Project Highlights
+## Project highlights
 
-- **Matryoshka Representation Learning (MRL)**: Multi-scale embeddings for flexible retrieval.
-- **Perceiver Resampler**: Efficient compression of high-dimensional inputs (Audio/Vision).
-- **Modular Decoders**: Support for state-of-the-art **Qwen-14B** and custom lightweight **TRM** models.
-- **Production Infrastructure**: Built for stability on H100/A100 clusters with full crash recovery.
-
----
-
-*Generated for Project Cerebrus.*
+- **Canonical alignment path**: frozen CLIP ViT-L/14-336 + MPNet → Linear → SimpleAttentionPooling → L2-normalized 4096-d embeddings with MRL prefix representations (2048→128).
+- **Retained paired-retrieval results**: 77.7% I2T / 77.5% T2I Recall@5 at 4096-d on a persisted PixMo validation evaluation, with a 4096→128 multiscale ablation (see `results/alignment/alignment_eval_final/`; provenance in `AUDIT_LEDGER.md`).
+- **Perceiver (experimental)**: packaged implementation canonicalized to the executed V3 training architecture; the historical Perceiver metric is provenance-compromised pending a controlled rerun.
+- **Qwen VLM path**: aligned visual tokens → vision_proj → Qwen2.5-3B (LoRA) → TRM-inspired iterative refinement (fixed 4 iterations, shared TRMLayers) → LM head.
+- **48-test regression suite** covering generation, refinement EOS, checkpoint loading, device placement, prefix masking, alignment losses, config parsing, and checkpoint semantics.
