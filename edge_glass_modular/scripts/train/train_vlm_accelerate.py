@@ -71,7 +71,7 @@ def parse_args():
     parser.add_argument("--max_steps", type=int, default=None, help="Max training steps (for debugging)")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode (fewer steps, more logging)")
     parser.add_argument("--deepspeed_stage", type=int, default=2, choices=[0, 1, 2, 3], help="ZeRO stage for DeepSpeed")
-    parser.add_argument("--use_trm", action="store_true", help="Enable TRM recursion (overrides default True)")
+    parser.add_argument("--use_trm", action="store_true", help="Enable TRM-inspired iterative refinement (default: enabled)")
     parser.add_argument("--disable_trm", action="store_true", help="Disable TRM recursion")
     parser.add_argument("--run_name", type=str, default=None, help="WandB run name (overrides config)")
     return parser.parse_args()

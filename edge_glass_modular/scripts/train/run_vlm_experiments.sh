@@ -34,7 +34,8 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # 3. HEAVY PROPER RUN (PRODUCTION)
 # Run Name: production_run_3b_v4 (Updated for CPU OOM fix)
-# Note: This will save 'checkpoint_best' (best validation loss, WEIGHTS ONLY)
+# Note: This will save 'checkpoint_best' (best validation loss, FULL STATE via
+# accelerator.save_state; a LoRA-adapter-only export goes to checkpoint_best_adapter/)
 echo "Starting Heavy Proper Run (Batch Size 4 / Accum 4)..."
 accelerate launch --num_processes 4 edge_glass_modular/scripts/train/train_vlm_accelerate.py \
     --config edge_glass_modular/configs/trm_vlm_qa_qwen2.5-3b.yaml \
