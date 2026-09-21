@@ -71,6 +71,10 @@ edge_glass_modular/
     cd edge_glass_modular
     pip install -e .
     ```
+    `pip install -e .` installs dependencies within the validated compatibility
+    ranges declared in `pyproject.toml` (e.g. `transformers>=4.57,<4.58`).
+    For the exact reproducible environment, install the repository lock file
+    instead: `pip install -r ../requirements.txt`.
 
 ---
 

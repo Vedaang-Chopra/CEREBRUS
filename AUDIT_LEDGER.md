@@ -1867,3 +1867,55 @@ Batch-capable via a per-sequence `finished` bool tensor: a sequence finishes whe
 
 ### Commit
 `be7562d` — `src/models/trm_qwen_vlm.py`, `tests/test_eos_stop.py`, this ledger entry.
+
+## Dependency reproducibility contract — `pyproject.toml` (2026-09-20, executed)
+
+### Problem
+`pyproject.toml` used loose minimum-only bounds (`transformers>=4.35.0`,
+`peft>=0.6.0`, `accelerate>=0.24.0`, `bitsandbytes>=0.41.0`, `torch>=2.0.0`;
+no `safetensors`/`huggingface_hub` bounds) while all docs instruct
+`pip install -e .` — making pyproject the effective install contract. A real
+drift was observed: installing an unconstrained `sentence-transformers`
+upgraded transformers 4.57.1 → 5.17.0 in the working env.
+
+### Verified compatibility (not guessed)
+`sentence-transformers==5.1.2` (all three lock files agree) declares
+`transformers>=4.41.0,<5.0.0` and `huggingface-hub>=0.20.0` — compatible with
+transformers 4.57.x / hf-hub 0.36. (Its successor 5.7.0 relaxes to
+`transformers<6.0`, which would permit transformers 5.x for downstream
+consumers, so the pin was tightened to `<5.2` to match the lock exactly.)
+Resolver check: bitsandbytes publishes no macOS wheels (macOS dry-run failure
+is a platform artifact, not a metadata conflict; Linux-platform resolve
+succeeds at 0.48.2).
+
+### New ranges (previous → new)
+- transformers `>=4.35.0` → `>=4.57,<4.58` (validated 4.57.1/4.57.6; guards `generate(inputs_embeds=...)` prompt-echo semantics)
+- peft `>=0.6.0` → `>=0.17,<0.19` (validated 0.17.1/0.18.0; guards `save_pretrained` adapter filtering / `base_model.model.*` key layout)
+- accelerate `>=0.24.0` → `>=1.10,<1.12` (validated 1.10.1/1.11.0; guards `save_state` non-DeepSpeed layout: model.safetensors + optimizer.bin + scheduler.bin)
+- bitsandbytes `>=0.41.0` → `>=0.48,<0.49` (guards bnb nf4/double-quant + device_map behavior)
+- torch `>=2.0.0` → `>=2.8,<2.10` (validated 2.9.0/2.9.1)
+- safetensors (absent) → `>=0.6,<0.8` (validated 0.7.0)
+- huggingface_hub (absent) → `>=0.36,<1.0` (validated 0.36.0)
+- sentence-transformers `>=2.2.0` → `>=5.1,<5.2` (locks to the exact lock-file version, compatible with transformers 4.57.x)
+- torchvision bounded `<0.25` (0.24.x validated); torchaudio `<2.10`; datasets `<5.0` (4.4.1 validated)
+
+Lock files (`requirements.txt`, `requirements.lock.txt`, `requirements.top.txt`)
+UNCHANGED — internally coherent with each other and with the new ranges
+(only case/underscore naming cosmetics between the two full locks). They
+remain the exact-reproduction path; pyproject remains the compatibility-range
+contract. `edge_glass_modular/README.md` install section: 3-line clarification
+added (ranges vs lock file). No model behavior, tests, configs, or
+architecture touched.
+
+### Validation (edge_glass_env: torch 2.9.1, macOS arm64)
+1. `uv pip compile pyproject.toml --python-platform x86_64-unknown-linux-gnu`:
+   resolves transformers==4.57.6 (NOT 5.x), sentence-transformers==5.1.2,
+   peft==0.18.1, accelerate==1.11.0, bitsandbytes==0.48.2, safetensors==0.7.0,
+   huggingface-hub==0.36.2, torch==2.9.1 — all inside declared ranges. ✅
+2. sentence-transformers 5.1.2 `Requires-Dist` verified from wheel metadata:
+   `transformers<5.0.0,>=4.41.0` — no conflict with 4.57.x. ✅
+3. Lock coherence: normalized diff of requirements.txt vs requirements.lock.txt
+   differs only in package-name normalization. ✅
+4. `pytest tests/` → 22/22 pass. ✅
+5. `compileall src scripts tests` → OK. ✅
+6. All 9 `configs/*.yaml` load. ✅
