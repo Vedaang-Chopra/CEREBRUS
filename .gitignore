@@ -45,3 +45,10 @@ older_code_base/
 # Build metadata / transient tool artifacts
 *.egg-info/
 .pi-subagents/
+
+# Root-level local-only material (preserved locally, untracked on main)
+log_results.txt
+14.12.2011.001.wav
+GRA - Research Questions.pdf
+Papers/
+older_plots/

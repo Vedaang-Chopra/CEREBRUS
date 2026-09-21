@@ -1,3 +1,10 @@
+> **Historical audit (August 2026) — superseded in part.** This is the repository audit
+> produced 2026-08-17 (`4113a26`), before the release-verification and regression-test
+> work. Several release blockers and cleanup items documented here were subsequently
+> resolved (see `AUDIT_LEDGER.md`). `AUDIT_LEDGER.md`, the current source, `tests/`, and
+> the current README are authoritative for the present state. This report is retained for
+> its unique architecture/metrics provenance evidence, not as a current verdict.
+
 # CERBERUS code, claims, and release audit
 
 **Audit date:** 2026-08-17  

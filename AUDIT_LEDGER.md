@@ -2166,3 +2166,61 @@ faithful TinyRecursiveModels implementation, or demonstrated tri-modal results.
    as provenance for the notebook-07 evaluation chain, not a distinct configuration.
 3. Configs still carry user-specific HPC absolute parquet paths; documented, not changed (no
    behavior edits allowed in this pass).
+
+
+## Final root housekeeping — executed 2026-09-21
+
+Repository-root audit completed and approved cleanup applied as one commit. Git history
+and the archive branch (`archive/historical-code-pre-retirement`, tip `134539e`) preserve
+everything removed from `main`.
+
+### Deleted from main (git history retains all)
+
+`QUICK_REFERENCE.md`, `PROJECT_SUMMARY.md`, `FINAL_STATUS.md`, `IMPLEMENTATION_GUIDE.md`
+(banner-marked redundant historical docs), `edge_glass_structure.txt` (obsolete tree
+snapshot), `check_libs.py` (unreferenced one-off env check).
+
+### Untracked, preserved locally, ignored
+
+`log_results.txt` (only artifact of an early failed trimodal/Perceiver smoke run —
+CLIP+Whisper+Qwen2.5-7B, LibriSpeech+PixMo streaming; not represented in curated
+`results/`, retained locally), `14.12.2011.001.wav` (unreferenced LibriSpeech smoke-test
+sample), `GRA - Research Questions.pdf` (external academic doc), `Papers/` (~150 MB
+third-party reference PDFs). Local copies untouched; explicit `.gitignore` entries added
+(`Papers/`, `older_plots/`, and the three root files).
+
+### Historical plot trees
+
+Staged the 45 working-tree deletions of `images/`, `architectures/`,
+`runs_perceiver_mrl_qwen/` (tracked pre-relocation copies; equivalent content verified in
+git history `693e43b` and superseded by curated `edge_glass_modular/results/`).
+`older_plots/` (local duplicate) kept on disk and ignored.
+
+### Root items retained
+
+`README.md`, `AUDIT_LEDGER.md`, `PROJECT_RESUME_CONTEXT.md` (current),
+`AUDIT_REPORT.md` (historical banner added; body unchanged — retained for unique
+architecture/metrics provenance evidence), `requirements.txt` / `requirements.lock.txt` /
+`requirements.top.txt` (documented exact-reproduction env at root), `EdgeGlass_Midsem.pdf`,
+`CEREBRUS.pdf` (project provenance). `older_code_base/` and `wandb/` remain ignored/local.
+
+### data/instructions/metadata.json classification — KEEP TRACKED
+
+76 MB (largest tracked file): 40,000 records of Open-Orca/OpenOrca text-only instruction
+data (fields: instruction/input/output/sample_id). Consumer audit: written by
+`src/data/downloader.download_instruction_dataset()` and consumed by
+`scripts/data/download_datasets.py` (the `instructions` download target); unrelated to the
+`build_instruction_corpus` OpenOrca path, which writes `instruction.json`. No curated
+result artifact derives from it and it is re-downloadable/reconstructable from
+Open-Orca/OpenOrca (reconstructable, not unique evidence). Classification: **KEEP TRACKED
+for now** — it is dataset material, not implementation source, and untracking would
+narrow the exact-reproduction path without a matching `.gitignore` data decision;
+flagged for a future data-retention decision (candidate: untrack + ignore alongside a
+documented download recipe), deliberately not actioned in this commit.
+
+### Validation
+
+`pytest tests/` → 48/48 passed. `compileall src scripts tests` → OK. All 9 configs load.
+Stale-reference scan over active docs clean (removed root docs, Papers, old plot dirs not
+referenced by current README/AUDIT_LEDGER/PROJECT_RESUME_CONTEXT; all retained root paths
+resolve).
