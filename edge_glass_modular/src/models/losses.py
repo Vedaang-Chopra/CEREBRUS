@@ -144,6 +144,7 @@ class AlignmentLoss(nn.Module):
             Dictionary with 'total_loss', 'contrastive_loss', and optional MRL losses
         """
         losses = {}
+        mrl_losses = {}  # bound even when no MRL embeddings are provided
 
         # Main contrastive loss
         contrastive = contrastive_loss(embeddings_a, embeddings_b, temperature=self.temperature)

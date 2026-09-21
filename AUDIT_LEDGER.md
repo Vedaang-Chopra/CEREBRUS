@@ -1919,3 +1919,61 @@ architecture touched.
 4. `pytest tests/` → 22/22 pass. ✅
 5. `compileall src scripts tests` → OK. ✅
 6. All 9 `configs/*.yaml` load. ✅
+
+
+## Permanent regression coverage added — 4 maintained surfaces (2026-09-20, executed)
+
+Four highest-value coverage gaps from the audit closed. All tests CPU-only,
+network-free, no model downloads. Suite: 22 -> 48 tests, all passing.
+
+### 1. tests/test_qwen_prefix_masking.py (7 tests) — src/decoders/qwen.py
+Real QwenDecoder.forward/generate logic around stub model/tokenizer:
+prefix mask entries are 1; text attention mask preserved (left-padding stays
+masked, not promoted to valid); prefix+text mask concatenates to (B, P+T);
+labels prefix positions = -100 (ignored in LM loss); prefix-only generate
+builds dummy ids from pad_token_id; pad->eos fallback contract
+(pad_token_id == eos_token_id); caller pad/eos kwargs popped, tokenizer
+values re-supplied.
+
+### 2. tests/test_alignment_forward_loss.py (6 tests) — alignment.py + losses.py
+Real MultimodalAlignmentModel wiring + real AlignmentLoss around deterministic
+stub encoders ({pooled, mrl_embeddings}): bi-modal forward finite loss +
+(B, projection_dim) shapes; return_embeddings gating; canonical loss keys
+('total_loss'/'contrastive_loss'/'loss_clip'); NO retired surfaces
+('fused_emb', decoder outputs); MRL path with synthetic multi-dim dicts
+(all-dims + single-dim sampling); tri-modal loss wiring.
+
+### 3. tests/test_config_loading.py (8 tests) — src/config.py
+All 9 retained YAMLs parse; decoder/Qwen fields (model_name, type, LoRA,
+device_map) survive; retired surfaces absent from dataclass fields ('fusion',
+Path-C, standalone-TRM decoder fields); unknown/legacy keys silently filtered
+at decoder/encoder/top level (documented from_dict behavior); device_map +
+trainer fields incl. training->trainer cross-population; empty-config
+validation; no-decoder configs don't materialize a Qwen decoder;
+save->from_yaml roundtrip stays clean of retired surfaces.
+
+### 4. tests/test_best_checkpoint_save.py (5 tests) — train_vlm_accelerate.py
+Guards the checkpoint_best completeness fix without executing training:
+source-level assertions — best branch uses accelerator.save_state(...)
+(DeepSpeed save_model alternate), adapter export targets
+checkpoint_best_adapter/ exclusively, no save_pretrained call targets a
+canonical (non-adapter) best dir, epoch checkpoints use save_state;
+plus a behavioral simulation: stub save_state writes full-state
+model.safetensors to checkpoint_best/, adapter dir gets adapter-only content,
+and the REAL load_vlm_checkpoint restores vision_proj from the canonical dir
+while rejecting the adapter dir as incomplete.
+
+### Bug found and fixed by the new tests (behavior-neutral, latent)
+src/models/losses.py:171 — AlignmentLoss.forward referenced mrl_losses before
+assignment when MRL embeddings were not provided: UnboundLocalError on EVERY
+non-MRL bi-modal alignment call (e.g. pixmo_alignment forward/eval paths).
+Fix: mrl_losses = {} initialized before the optional MRL branch. No
+numerical-behavior change (MRL path semantics untouched; the 'if mrl_losses:'
+aggregate-logging branch now evaluates to False as intended instead of
+crashing).
+
+### Validation (edge_glass_env, torch 2.9.1, CPU, macOS arm64)
+- pytest tests/ -> 48 passed (~4.4s)
+- compileall src scripts tests -> OK
+- all 9 configs load -> OK
+- no dependency/config/architecture/generation changes; lock files untouched
