@@ -16,6 +16,7 @@ Public entry points: `adaloop/api.py`. Notebooks and `scripts/mvp.py` import onl
 | Audit | `wrong_predictions` (saved rows re-scored with the current scorers) | `orchestration/audit.py` |
 | Cost model (S6) | `cost_params` → `CostParams`, `flops_prefill`, `flops_partial`, `flops_readout`, `flops_decode`, `flops_vit`, `flops_total`, `cost_ref` (analytic); `time_prefill`, `time_throughput` (measured) | `core/cost/flops.py`, `orchestration/cost_timing.py` |
 | Figures and tables | `set_paper_style`, `METHOD_COLORS` (fixed Okabe-Ito colour per method), `VARIANT_LINESTYLES` (base solid, lora dashed), `save_figure` (PDF + PNG), `save_table` (CSV + LaTeX); drafts to `execution_results/`, finals (`final=True`) to `paper/` | `core/plots/style.py`, `core/plots/colors.py`, `core/plots/save.py`, `utils/paths.py` |
+| Paper figures | `plot_thinking_off` (F02), `plot_pass_state` (F03), `plot_cost_model` (F04), `plot_accuracy_vs_r` (F05): DataFrame in, figure out | `core/plots/` |
 | Full baseline | `shard_items`, `full_run_config`, `result_path`, `run_full` (one shard, all benchmark x split x R), `summarize_full` (all shards, de-duplicated) | `orchestration/full_run.py` |
 
 Notebooks: `01_huggingfaceload` (load, loops), `02_pruning` (tokens), `03_data_and_scoring` (S1 + runner), `04_thinking_off` (S2), `05_positions_and_loops` (S3, S3b), `06_full_baseline` (batch check, full run shards, summary, S6 cost model).

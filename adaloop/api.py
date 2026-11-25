@@ -18,9 +18,13 @@ from adaloop.core.model.inference import generate, generate_batch, last_logits
 from adaloop.core.model.load import load_model, unload_model
 from adaloop.core.model.loops import count_layer_calls, expected_layer_calls, set_loops
 from adaloop.core.model.prompting import prepare_inputs
+from adaloop.core.plots.accuracy_vs_r import plot_accuracy_vs_r
 from adaloop.core.plots.colors import METHOD_COLORS, VARIANT_LINESTYLES
+from adaloop.core.plots.cost_model import plot_cost_model
+from adaloop.core.plots.pass_state import plot_pass_state
 from adaloop.core.plots.save import save_figure, save_table
 from adaloop.core.plots.style import set_paper_style
+from adaloop.core.plots.thinking_off import plot_thinking_off
 from adaloop.core.tokens.prune import extract_visual_tokens, prune_inputs
 from adaloop.core.tokens.selectors import (
     question_embeddings,
@@ -83,6 +87,10 @@ __all__ = [
     "load_model",
     "load_textvqa",
     "make_splits",
+    "plot_accuracy_vs_r",
+    "plot_cost_model",
+    "plot_pass_state",
+    "plot_thinking_off",
     "prepare_inputs",
     "prune_inputs",
     "question_embeddings",
