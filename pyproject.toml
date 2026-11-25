@@ -21,7 +21,7 @@ dependencies = [
   "pyarrow==26.0.1",
   "scipy==1.18.1",
   "matplotlib==3.11.2",
-  "jinja2>=3.1",  # DataFrame.to_latex (save_table) needs it; pin to the learning_env version on Inara
+  "jinja2==3.1.6",  # DataFrame.to_latex (save_table) needs it
   "pillow==13.0.0",
   "pyyaml==6.0.3",
   "python-dotenv==1.2.4",

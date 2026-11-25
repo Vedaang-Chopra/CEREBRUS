@@ -18,7 +18,7 @@ from adaloop.core.model.inference import generate, generate_batch, last_logits
 from adaloop.core.model.load import load_model, unload_model
 from adaloop.core.model.loops import count_layer_calls, expected_layer_calls, set_loops
 from adaloop.core.model.prompting import prepare_inputs
-from adaloop.core.plots.colors import METHOD_COLORS
+from adaloop.core.plots.colors import METHOD_COLORS, VARIANT_LINESTYLES
 from adaloop.core.plots.save import save_figure, save_table
 from adaloop.core.plots.style import set_paper_style
 from adaloop.core.tokens.prune import extract_visual_tokens, prune_inputs
@@ -51,6 +51,7 @@ __all__ = [
     "Item",
     "LoadedVLM",
     "METHOD_COLORS",
+    "VARIANT_LINESTYLES",
     "build_gqa_splits",
     "build_textvqa_splits",
     "check_pass_state",

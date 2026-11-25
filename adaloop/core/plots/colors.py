@@ -23,6 +23,7 @@ METHOD_COLORS: dict[str, str] = {
     "upfront_15way": OKABE_ITO["reddish_purple"],
     "oracle": OKABE_ITO["black"],
     "noise_oracle": "#999999",
-    "base": OKABE_ITO["blue"],
-    "lora": OKABE_ITO["bluish_green"],
 }
+
+# Backbone is shown by line style, so a method keeps its colour on both (figure F11).
+VARIANT_LINESTYLES: dict[str, str] = {"base": "-", "lora": "--"}
