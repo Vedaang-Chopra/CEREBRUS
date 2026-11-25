@@ -1,4 +1,4 @@
-"""F02: thinking-off parse rate and accuracy per prefill variant, and TextVQA accuracy per image size."""
+"""F02: parse rate and accuracy per answer-path variant, and optionally TextVQA accuracy per image size."""
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -19,7 +19,7 @@ def _label_bars(ax: Axes, bars) -> None:
 
 
 def _variant_panel(ax: Axes, variants: pd.DataFrame, metric: str, title: str) -> None:
-    """Grouped bars: one group per prefill variant, one bar per benchmark."""
+    """Grouped bars: one group per variant, one bar per benchmark."""
     names = sorted(variants["variant"].unique())
     benches = sorted(variants["benchmark"].unique())
     width = 0.8 / len(benches)
@@ -31,33 +31,42 @@ def _variant_panel(ax: Axes, variants: pd.DataFrame, metric: str, title: str) ->
                       label=BENCH_LABELS.get(bench, bench))
         _label_bars(ax, bars)
     ax.set_xticks(range(len(names)), names)
-    ax.set_xlabel("prefill variant")
+    ax.set_xlabel("variant")
     ax.set_title(title)
     ax.set_ylim(0, 115)  # headroom for the value labels
     ax.set_yticks(range(0, 101, 25))
 
 
-def plot_thinking_off(variants: pd.DataFrame, resolution: pd.DataFrame) -> Figure:
+def plot_thinking_off(variants: pd.DataFrame, resolution: pd.DataFrame | None = None) -> Figure:
     """F02 figure.
 
     `variants` columns: variant (str), benchmark ("gqa" | "textvqa"), parse_rate (%), accuracy (%).
     `resolution` columns: res_px (int, long side), accuracy (%), n_vis_mean (visual tokens); TextVQA only.
+    Without it (None) the figure has panels (a) and (b) only.
     """
     require_columns(variants, ["variant", "benchmark", "parse_rate", "accuracy"], "variants",
                     "run nb04 with RUN_VARIANTS = True")
-    require_columns(resolution, ["res_px", "accuracy", "n_vis_mean"], "resolution",
-                    "run nb04 with RUN_RES_PX = True")
     require_unique(variants, ["variant", "benchmark"], "variants")
-    require_unique(resolution, ["res_px"], "resolution")
+    if resolution is not None:
+        require_columns(resolution, ["res_px", "accuracy", "n_vis_mean"], "resolution",
+                        "run nb04 with RUN_RES_PX = True")
+        require_unique(resolution, ["res_px"], "resolution")
     if variants["benchmark"].nunique() > len(BENCH_STYLES):
         raise ValueError(f"at most {len(BENCH_STYLES)} benchmarks, got {sorted(variants['benchmark'].unique())}")
 
-    fig = plt.figure(figsize=(ONE_COLUMN_WIDTH_IN, 3.4), layout="constrained")
-    axes = fig.subplot_mosaic([["parse", "acc"], ["res", "res"]], height_ratios=[1.25, 1])
+    rows, ratios = [["parse", "acc"]], [1.25]
+    if resolution is not None:
+        rows, ratios = [*rows, ["res", "res"]], [*ratios, 1]
+    height = 2.0 if resolution is None else 3.4
+    fig = plt.figure(figsize=(ONE_COLUMN_WIDTH_IN, height), layout="constrained")
+    axes = fig.subplot_mosaic(rows, height_ratios=ratios)
     _variant_panel(axes["parse"], variants, "parse_rate", "(a) parse rate (%)")
     _variant_panel(axes["acc"], variants, "accuracy", "(b) accuracy (%)")
     handles, labels = axes["parse"].get_legend_handles_labels()
     fig.legend(handles, labels, loc="outside upper center", ncols=len(labels))
+
+    if resolution is None:
+        return fig
 
     res = resolution.sort_values("res_px")
     ax = axes["res"]

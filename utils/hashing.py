@@ -4,8 +4,8 @@ import json
 import subprocess
 from pathlib import Path
 
-# placement only: which GPUs a run uses must not change its hash (or break resume)
-HASH_EXCLUDE = {"gpu_groups", "min_free_gib"}
+# placement and sample size: they must not change a run's hash (or break resume)
+HASH_EXCLUDE = {"gpu_groups", "min_free_gib", "n_copies", "sample_items"}
 
 
 def config_hash(cfg: dict) -> str:

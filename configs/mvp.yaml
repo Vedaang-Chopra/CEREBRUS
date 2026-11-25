@@ -7,6 +7,10 @@ device_map: balanced
 max_memory: {0: 35GiB, 1: 35GiB}
 # a gpu_group is picked only if each of its GPUs has this much free memory. Placement only: not hashed.
 min_free_gib: 38
+# notebooks: model copies loaded (2 = one per gpu_group, needs all of them free) and dev items per benchmark for
+# the sample runs. Neither changes one item's output, so neither is hashed.
+n_copies: 2
+sample_items: 20
 res_px: 512
 # system prompt and question suffix; the file's content replaces this value on load, so it is part of config_hash
 prompts: prompts.yaml

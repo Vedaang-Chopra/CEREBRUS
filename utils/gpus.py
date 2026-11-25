@@ -84,6 +84,13 @@ def select_gpu_group(config: str | Path | dict, group: int | str | None = None) 
     return chosen
 
 
+def select_for_notebook(config: str | Path) -> tuple[list[int], int]:
+    """Select the GPUs for the config's `n_copies` (1: one free group, more: all groups); return (ids, n_copies)."""
+    cfg = load_config(find_repo_root() / config)
+    n_copies = cfg["n_copies"]
+    return select_gpu_group(cfg, "all" if n_copies > 1 else None), n_copies
+
+
 def _visible_group(wanted: list[list[int]]) -> list[int]:
     """The GPU set CUDA was already started on; it must be one of `wanted`."""
     chosen = matching_group(wanted)
