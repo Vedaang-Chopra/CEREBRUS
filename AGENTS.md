@@ -8,6 +8,18 @@ then post-trained (PT-1 LoRA-insert, PT-2 question-aware encoder QAFE, PT-3 join
 measured latency, plus safety. **Master reference: `docs/IMPLEMENTATION.md`** (wins on conflicts; index in `docs/README.md`).
 Controller-feature cost is counted in FLOPs from day one.
 
+## Goal and priority
+1. **Dec 3 first:** build `docs/DEC3_MVP.md` (S0–S17) to a working POC plus the course paper. It wins over other docs until Dec 3.
+2. **Then the full project:** if time remains, continue with `docs/IMPLEMENTATION.md` steps not covered by the MVP, to add results to the paper.
+The agent builds everything, CORE items included; Vedaang reviews.
+
+## Notebooks are the tests
+- Python packages (`adaloop/`, `qafe/`, `utils/`) hold all logic. Notebooks import them through `api.py` and use them to run the features and the research.
+- **Every feature has a notebook** that runs it and checks it works: intermediate outputs shown, `assert` checks that print `PASS <feature>: <what>`.
+- **New feature → new notebook** (or a new section in the feature's existing notebook). **Changed feature → update its notebook in the same commit.**
+- A feature is done only when its notebook ran on the GPU host and the output was pasted back.
+- Notebook names: `notebooks/NN_<feature>.ipynb`, in build order. `notebooks/mvp_results.ipynb` only reads saved artifacts and shows the paper tables and figures.
+
 ## Branches
 | Branch / ref | Purpose | Rule |
 |---|---|---|
@@ -23,9 +35,9 @@ To see old code: `git show cerebrus-v0:<path>`; do not restore old trees into `m
 ## Layout (tracked)
 ```
 adaloop/ qafe/ utils/  packages, layered per docs/IMPLEMENTATION.md §4.2 (api → orchestration → core → schemas/utils)
-tests/              pytest; one test file per ported or new piece
+tests/              optional pytest for pure CPU logic; notebooks are the main tests (see below)
 configs/            YAML configs
-notebooks/          inspection only, no production logic
+notebooks/          one notebook per feature; they are the tests; no production logic
 scripts/            thin CLI entry points
 docs/               IMPLEMENTATION.md (master), README.md (index), decisions.md,
                     01_research/ 02_loop/ 03_encoder/ 04_prompts/ notes/ ai_context/
