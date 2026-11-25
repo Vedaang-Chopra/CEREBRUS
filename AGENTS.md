@@ -72,6 +72,17 @@ pyproject.toml, environment.yml
 - `Papers/` — PDFs (~500 MB). Canonical set: `Papers/Complete Papers List/Shortlisted_Literature/` (P0–P3 tiers; `Paper_Classification.csv` maps each ID to its file).
 - New wandb dirs, logs and run outputs go to `execution_results/` or `old_data/`, never the repo root.
 
+## Code style (Vedaang's pattern; reference: `reference_and_learning_content/deep_learning/model_training/framework/`)
+- **Prints, not logging.** Overrides the global observability rule (§6). No `logging` module and no entry/exit logs in new code. Library functions stay quiet. Where state helps understanding, one plain f-string print: counts, shapes, timings, a progress line every N items (`f"[{i}/{n}] R={R} | acc: {acc:.1f} | {dt:.2f}s"`). Errors: `raise ValueError/RuntimeError(f"...")` with a clear message, no log-then-raise.
+- **Small pieces.** One file per concept (~10–150 lines). Plain functions for stateless steps. Classes only for real state (`nn.Module`, loaders, hooks). Dataclasses for data contracts (`schemas/`). No base classes, registries or factories; a dict preset is fine.
+- **Returns:** a tuple for 2–3 values (`return logits, states`); a dataclass from `schemas/` only for a record that travels between stages.
+- **Signatures:** modern type hints (`X | None`, `tuple[...]`), one-line docstring, a config dict or object passed as one argument.
+- **Comments teach:** short why-comments, `### Step-N:- ...` inside longer functions, tensor-shape comments (`# (B, T, D)`). Paper/HF names for things (`n_layer`, `q_proj`), `B, T` for shapes.
+- **Asserts** for shape/sanity checks with a message; `try/except` only around network or file IO.
+- **Notebooks** guard expensive runs with a flag (`RUN_GRID = False`).
+- **Kept from this repo (differs from model_training):** notebooks import only `adaloop.api` (no deep paths); config values live in `configs/*.yaml` (not in cells or code).
+- **Don't copy:** commented-out code, unused imports, empty files, hard-coded paths/URLs, mixed spacing.
+
 ## Code rules
 - Port from old code only these: `qa_metrics`, bootstrap CI/stats utilities, trimmed config loading, LoRA/4-bit loading helpers. Do not port encoders, MRL, Perceiver, alignment, TRM, trainers.
 - Every ported file keeps a provenance comment (`# Ported from cerebrus-v0:<path> @ <commit>`).
