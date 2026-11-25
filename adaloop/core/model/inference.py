@@ -26,11 +26,20 @@ def token_id(vlm: LoadedVLM, token: str) -> int:
     return found
 
 
+def _answer_open(vlm: LoadedVLM, row: torch.Tensor) -> bool:
+    """True when the last `<|content_text|>` of a prompt row (T,) has no `<|end_message|>` after it."""
+    def last(marker: str) -> int:
+        found = (row == token_id(vlm, marker)).nonzero()
+        return int(found[-1]) if len(found) else -1
+
+    return last(ANSWER) > last(END)
+
+
 def _stop_ids(vlm: LoadedVLM, input_ids: torch.Tensor) -> tuple[list[int], dict]:
     """(stop token ids, extra `model.generate` kwargs) for prompts `input_ids` (B, T), padded on the left."""
     # Answer message already open: its <|end_message|> ends the answer, otherwise the model starts a new message.
     # Not open (thinking on): <|end_message|> also ends the thinking message, so the model's own stop is kept.
-    is_open = input_ids[:, -1] == token_id(vlm, ANSWER)  # (B,)
+    is_open = torch.tensor([_answer_open(vlm, row) for row in input_ids])  # (B,)
     if is_open.all():
         ids = [token_id(vlm, END), token_id(vlm, END_SAMPLING)]
         return ids, {"eos_token_id": ids}
@@ -42,13 +51,14 @@ def _stop_ids(vlm: LoadedVLM, input_ids: torch.Tensor) -> tuple[list[int], dict]
 
 def _message_counts(vlm: LoadedVLM, token_ids: torch.Tensor, input_ids: torch.Tensor) -> tuple[int, int]:
     """(thinking tokens, answer tokens) of one generated row for its unpadded prompt `input_ids` (1, T)."""
-    answer_id, thinking_id, last = token_id(vlm, ANSWER), token_id(vlm, THINKING), int(input_ids[0, -1])
+    answer_id, thinking_id = token_id(vlm, ANSWER), token_id(vlm, THINKING)
+    open_part = "answer" if _answer_open(vlm, input_ids[0]) else "think" if int(input_ids[0, -1]) == thinking_id else None
     return count_message_tokens(
         token_ids.tolist(),
         thinking_id=thinking_id,
         text_id=answer_id,
         end_ids={token_id(vlm, END), token_id(vlm, END_SAMPLING)},
-        open_part={answer_id: "answer", thinking_id: "think"}.get(last),
+        open_part=open_part,
     )
 
 

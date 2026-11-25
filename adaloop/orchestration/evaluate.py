@@ -11,7 +11,7 @@ from pathlib import Path
 
 import torch
 
-from adaloop.core.eval.extract import THINKING, answer_is_open, extract_answer, has_answer_format
+from adaloop.core.eval.extract import THINKING, answer_is_open, extract_answer, has_answer_format, prefill_answer_text
 from adaloop.core.eval.scorers import score, score_lmms
 from adaloop.core.eval.summary import summarize_rows
 from adaloop.core.model.budget import generate_answers
@@ -47,8 +47,13 @@ def read_answer(gen: GenerationResult, cfg: dict) -> str | None:
 
 
 def _full_reply(gen: GenerationResult, prefill: str | None) -> str:
-    """The raw output, led by the thinking marker when the prefill opened the thinking (so it is never searched)."""
-    return (THINKING if (prefill or "").endswith(THINKING) else "") + gen.raw_text
+    """The raw output, led by what the prefill already wrote of the reply and the model therefore does not repeat.
+
+    That is the answer text after `<|content_text|>` (e.g. "ANSWER:"), or the thinking marker when the prefill
+    opened the thinking (so it is never searched).
+    """
+    lead = THINKING if (prefill or "").endswith(THINKING) else prefill_answer_text(prefill)
+    return lead + gen.raw_text
 
 
 def _result_row(item: Item, cfg: dict, R: int, gen: GenerationResult, batch_size: int) -> dict:

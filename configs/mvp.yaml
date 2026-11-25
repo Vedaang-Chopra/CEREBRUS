@@ -30,9 +30,11 @@ forced_answer_tokens: 16
 # Option: start of the model reply, appended to the prompt. null = the model thinks first and stops by itself.
 # A prefill ending in <|content_text|> opens the answer message, and generation then also stops at <|end_message|>.
 answer_prefill: null
+# the no-thinking prefill (variant P): opens the answer message and writes the marker, so the model only adds the answer
+no_think_prefill: "<|message_model|><|content_text|>ANSWER:"
 out_dir: execution_results/mvp
 # bump when a code change alters outputs for the same config (generation, extraction, scoring)
-code_version: 5
+code_version: 6
 
 benchmarks:
   gqa:

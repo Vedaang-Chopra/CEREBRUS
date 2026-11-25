@@ -19,8 +19,14 @@ THINKING_BLOCK = re.compile(rf"{re.escape(THINKING)}.*?(?:{re.escape(END)}|\Z)",
 
 
 def answer_is_open(prefill: str | None) -> bool:
-    """True when the prefill ends with the answer marker, so generation starts inside the answer message."""
-    return (prefill or "").endswith(ANSWER)
+    """True when the prefill leaves the answer message open (its last `<|content_text|>` is not closed)."""
+    _, marker, tail = (prefill or "").rpartition(ANSWER)
+    return bool(marker) and END not in tail
+
+
+def prefill_answer_text(prefill: str | None) -> str:
+    """The start of the answer that the prefill already wrote into the open answer message ("" if none)."""
+    return prefill.rpartition(ANSWER)[2] if answer_is_open(prefill) else ""
 
 
 def _clean(text: str) -> str | None:
