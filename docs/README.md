@@ -5,6 +5,7 @@
 | Path | What it is | Read when |
 |---|---|---|
 | `STATUS.md` | **Progress tracker:** stage table, your next action, open decisions | Every day
+| `FIGURES.md` | Paper figures and tables: which notebook makes each, plotting rules | Before writing any results notebook
 | `DEC3_MVP.md` | **Course deadline build (Dec 3):** minimal version, stages S0–S17, one results notebook, agent prompt. Wins over other docs until Dec 3 | Now
 | `TEAM_PLAN.md` | Who does what: roles, step ownership, code ownership, handoffs, timeline, per-person agent prompts | Before assigning or starting work |
 | `IMPLEMENTATION.md` | Master to-do list, architecture, data contracts, gates, ablations, agent prompt | Always first |

@@ -32,6 +32,7 @@ The agent builds everything, CORE items included; Vedaang reviews.
 - **Sample run before the full run:** a tiny run (1 item / 1 batch) with checks, then the real run.
 - **Checks:** at the end of a step, plain `assert` lines then `print(f"✓ <what> ...")`. A `[STAGE] <name>` print starts a step that runs model work. No check-registry helpers or summary tables.
 - **Outputs** go to `ROOT / "execution_results" / ...`; never next to the notebook.
+- **Figures:** planned in `docs/FIGURES.md`. A results notebook ends with its `Figure Fxx` steps: plot function from `adaloop.api`, show inline, `api.save_figure(...)`. No plotting logic in cells.
 - **Don't copy:** deep imports into package internals (use `adaloop.api`), hard-coded hyperparameters in cells, commented-out code.
 - Notebook names: `notebooks/NN_<feature>.ipynb`, in build order. `notebooks/mvp_results.ipynb` only reads saved artifacts and shows the paper tables and figures.
 
