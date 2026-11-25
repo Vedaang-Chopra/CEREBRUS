@@ -7,44 +7,45 @@
 
 `smoke` and `eval` replace Jiaqi-Gao/adaloop-vlm:scripts/{smoke_test,run_grid}.py @ e870bff.
 `smoke` and `eval` pick a free GPU group; `splits` needs no GPU.
+The group is selected before `adaloop.api` is imported (that import initializes CUDA).
 `full` is resumable: rerun the same command after an interruption.
 """
 import argparse
 import json
 import sys
 from pathlib import Path
+from types import ModuleType
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from adaloop import api  # noqa: E402
+from utils.gpus import select_gpu_group  # noqa: E402
+from utils.io import load_config  # noqa: E402
 
-LOADERS = {"gqa": api.load_gqa, "textvqa": api.load_textvqa}
-SPLIT_BUILDERS = {"gqa": api.build_gqa_splits, "textvqa": api.build_textvqa_splits}
+BENCHMARKS = ["gqa", "textvqa"]
 
 
-def cmd_smoke(cfg: dict, args: argparse.Namespace) -> None:
+def cmd_smoke(api: ModuleType, cfg: dict, args: argparse.Namespace) -> None:
     """Load the model and answer one dev item at R=3."""
-    api.select_gpu_group(cfg)
     vlm = api.load_model(cfg)
     item = api.load_gqa(cfg, "dev", limit=1, root=ROOT)[0]
     row = api.evaluate_item(vlm, item, cfg, R=3)
     print(json.dumps({k: row[k] for k in ("question_type", "pred", "answers", "correct", "n_vis", "generate_s")}))
 
 
-def cmd_splits(cfg: dict, args: argparse.Namespace) -> None:
+def cmd_splits(api: ModuleType, cfg: dict, args: argparse.Namespace) -> None:
     """Create (or check) the split manifests and print their sizes."""
-    for benchmark, build in SPLIT_BUILDERS.items():
+    for benchmark, build in (("gqa", api.build_gqa_splits), ("textvqa", api.build_textvqa_splits)):
         manifest = build(cfg, ROOT)
         print(benchmark, {name: len(ids) for name, ids in manifest["splits"].items()}, "hash", manifest["hash"])
 
 
-def cmd_eval(cfg: dict, args: argparse.Namespace) -> None:
+def cmd_eval(api: ModuleType, cfg: dict, args: argparse.Namespace) -> None:
     """Evaluate one benchmark split at each requested R (full tokens), resumable."""
     if args.split == "test":
         raise SystemExit("the test split is frozen until stage S12")
-    items = LOADERS[args.benchmark](cfg, args.split, limit=args.limit, root=ROOT)
-    api.select_gpu_group(cfg)
+    load_items = {"gqa": api.load_gqa, "textvqa": api.load_textvqa}[args.benchmark]
+    items = load_items(cfg, args.split, limit=args.limit, root=ROOT)
     vlm = api.load_model(cfg)
     out_dir = ROOT / cfg["out_dir"] / "eval"
     for R in args.loops:
@@ -68,13 +69,21 @@ def parse_shard(text: str, cfg: dict) -> tuple[int, int]:
     return i, n
 
 
-def cmd_full(cfg: dict, args: argparse.Namespace) -> None:
+def cmd_full(api: ModuleType, cfg: dict, args: argparse.Namespace) -> None:
     """Run shard i of n of the full baseline on GPU group i, resumable."""
-    i, n = parse_shard(args.shard, cfg)
-    print(f"shard {i}/{n} | GPU group {i}")
-    api.select_gpu_group(cfg, group=i)
     vlm = api.load_model(cfg)
-    api.run_full(vlm, cfg, ROOT, shard=(i, n))
+    api.run_full(vlm, cfg, ROOT, shard=args.shard)
+
+
+def select_gpus(cfg: dict, args: argparse.Namespace) -> None:
+    """Pick the GPU group for the command; for `full`, also turn args.shard into (i, n)."""
+    if args.command == "full":
+        args.shard = parse_shard(args.shard, cfg)
+        i, n = args.shard
+        print(f"shard {i}/{n} | GPU group {i}")
+        select_gpu_group(cfg, group=i)
+    elif args.command in ("smoke", "eval"):
+        select_gpu_group(cfg)
 
 
 def main() -> None:
@@ -82,7 +91,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("command", choices=["smoke", "splits", "eval", "full"])
     parser.add_argument("--config", default=None, help="default: configs/full_baseline.yaml for full, else configs/mvp.yaml")
-    parser.add_argument("--benchmark", default="gqa", choices=sorted(LOADERS))
+    parser.add_argument("--benchmark", default="gqa", choices=BENCHMARKS)
     parser.add_argument("--split", default="dev")
     parser.add_argument("--loops", type=int, nargs="+", default=[3])
     parser.add_argument("--limit", type=int, default=None)
@@ -90,8 +99,12 @@ def main() -> None:
     args = parser.parse_args()
     if args.config is None:
         args.config = "configs/full_baseline.yaml" if args.command == "full" else "configs/mvp.yaml"
-    cfg = api.load_config(ROOT / args.config)
-    {"smoke": cmd_smoke, "splits": cmd_splits, "eval": cmd_eval, "full": cmd_full}[args.command](cfg, args)
+    cfg = load_config(ROOT / args.config)
+    select_gpus(cfg, args)
+
+    from adaloop import api  # only now: this import initializes CUDA
+
+    {"smoke": cmd_smoke, "splits": cmd_splits, "eval": cmd_eval, "full": cmd_full}[args.command](api, cfg, args)
 
 
 if __name__ == "__main__":

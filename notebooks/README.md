@@ -1,6 +1,6 @@
 # notebooks
 
-Stages are from `docs/DEC3_MVP.md`. Notebooks import only `adaloop.api`.
+Stages are from `docs/DEC3_MVP.md`. Notebooks import only `adaloop.api`, with one exception: `from utils.gpus import select_gpu_group`, called before `adaloop.api` is imported, because the GPU choice must precede CUDA init.
 
 | Notebook | DEC3 stage | `api` functions used |
 |---|---|---|

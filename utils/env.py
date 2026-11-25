@@ -1,5 +1,6 @@
 """Notebook environment setup."""
 import os
+import shutil
 import sys
 import warnings
 from pathlib import Path
@@ -8,7 +9,7 @@ import datasets
 import transformers
 from dotenv import load_dotenv
 
-from utils.gpus import select_gpu_group
+from utils.gpus import matching_group
 from utils.io import load_config
 
 
@@ -22,15 +23,27 @@ def _find_root() -> Path:
     raise FileNotFoundError(f"no pyproject.toml above {cwd} or {here}")
 
 
-def setup_notebook(config: str = "configs/mvp.yaml", gpu_group: int | None = None) -> tuple[Path, dict]:
+def _check_gpus(cfg: dict) -> None:
+    """Report whether CUDA_VISIBLE_DEVICES is one of cfg["gpu_groups"]; changes nothing."""
+    if shutil.which("nvidia-smi") is None:
+        return
+    visible = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if matching_group(cfg["gpu_groups"]) is None:
+        print(f"WARNING: CUDA_VISIBLE_DEVICES={visible or 'unset'} is not one of gpu_groups {cfg['gpu_groups']}. "
+              "Restart the kernel and call utils.gpus.select_gpu_group before importing adaloop.api.")
+    else:
+        print(f"CUDA_VISIBLE_DEVICES={visible}")
+
+
+def setup_notebook(config: str = "configs/mvp.yaml") -> tuple[Path, dict]:
     """Prepare a notebook session and return (repo root, loaded config).
 
     Changes into the repo root, puts it on sys.path, loads env.env if present
     (variables already set are kept),
     and silences transformers/datasets logs, FutureWarning and UserWarning.
     A relative `config` path is resolved against the repo root.
-    Restricts the process to one GPU group (`select_gpu_group`): `gpu_group` indexes cfg["gpu_groups"],
-    None picks a free one. Call it before anything touches CUDA (even `torch.cuda.is_available`).
+    Does not select GPUs (importing this module is already too late): it only checks
+    CUDA_VISIBLE_DEVICES, set earlier by `utils.gpus.select_gpu_group`.
     """
     root = _find_root()
     os.chdir(root)
@@ -44,5 +57,5 @@ def setup_notebook(config: str = "configs/mvp.yaml", gpu_group: int | None = Non
         warnings.filterwarnings("ignore", category=category)
     print(f"repo root: {root}")
     cfg = load_config(root / config)
-    select_gpu_group(cfg, gpu_group)
+    _check_gpus(cfg)
     return root, cfg

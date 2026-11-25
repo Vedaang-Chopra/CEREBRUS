@@ -4,7 +4,7 @@ Public entry points: `adaloop/api.py`. Notebooks and `scripts/mvp.py` import onl
 
 | Step | Functions | File |
 |---|---|---|
-| GPUs | `select_gpu_group` (one of `gpu_groups` with `min_free_gib` free per GPU; `setup_notebook(config, gpu_group=None)` calls it) | `utils/gpus.py` |
+| GPUs | `select_gpu_group` (one of `gpu_groups` with `min_free_gib` free per GPU; run it before `adaloop.api` is imported, from `utils.gpus` (the one notebook import outside `adaloop.api`: the GPU choice must precede CUDA init); `setup_notebook(config)` only checks the result) | `utils/gpus.py` |
 | Load | `setup_notebook`, `load_config`, `load_model` (reuses the loaded model in this process), `unload_model` | `utils/env.py`, `utils/io.py`, `core/model/load.py`, `core/model/cache.py` |
 | Inputs | `load_image`, `resize_long_side`, `prepare_inputs` | `utils/images.py`, `core/model/prompting.py` |
 | Loops | `set_loops`, `count_layer_calls`, `expected_layer_calls` | `core/model/loops.py` |

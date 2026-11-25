@@ -19,9 +19,9 @@ Kept current by the agent after every step (see `docs/IMPLEMENTATION.md` §0). L
 | `adaloop/data/` | L4 | `load_gqa`, `build_gqa_splits`, `load_textvqa`, `build_textvqa_splits`, `make_splits`, `load_manifest` | A | GQA, TextVQA |
 | `adaloop/schemas/` | L5 | `Item`, `LoadedVLM`, `GenerationResult`, `CostParams` | A | created |
 | `qafe/api.py` | L2 | — | A | not created |
-| `utils/gpus.py` | L5 | `select_gpu_group`, `free_gpu_mib` | A | picks one of `gpu_groups` by free memory before CUDA starts; not yet run on the GPU host |
-| `utils/` | L5 | `setup_notebook`, `select_gpu_group`, `load_config`, `load_image`, `resize_long_side`, `config_hash`, `git_hash`, timing helpers | A | created |
-| `scripts/mvp.py` | CLI | `smoke`, `splits`, `eval`, `full --shard i/n` | A | created; `full` uses `select_gpu_group(cfg, group=i)`, `smoke`/`eval` pick a free group |
+| `utils/gpus.py` | L5 | `select_gpu_group`, `free_gpu_mib` | A | picks one of `gpu_groups` by free memory before CUDA starts; torch-free import chain; notebooks import it from `utils.gpus` before `adaloop.api` (the one exception: GPU choice must precede CUDA init); fix not yet run on the GPU host |
+| `utils/` | L5 | `setup_notebook`, `select_gpu_group`, `load_config`, `load_image`, `resize_long_side`, `config_hash`, `git_hash`, timing helpers | A | created; `setup_notebook(config)` only checks `CUDA_VISIBLE_DEVICES` |
+| `scripts/mvp.py` | CLI | `smoke`, `splits`, `eval`, `full --shard i/n` | A | created; `full` uses `select_gpu_group(cfg, group=i)`, `smoke`/`eval` pick a free group; selection runs before `adaloop.api` is imported |
 | `utils/hashing.py` | L5 | `config_hash` (drops `HASH_EXCLUDE` = `gpu_groups`, `min_free_gib`), `git_hash` | A | placement is not hashed |
 
 Notebooks (they are the tests, see `AGENTS.md`): `01_huggingfaceload` (load, loops), `02_pruning` (visual tokens, selectors), `03_data_and_scoring` (S1 splits, items, scoring, evaluation runner), `04_thinking_off` (S2 answer prefill, `res_px`), `05_positions_and_loops` (S3 positions, S3b loop control and pass state), `06_full_baseline` (batch check, full run shards, summary, S6 cost model).
