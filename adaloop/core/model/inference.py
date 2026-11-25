@@ -2,7 +2,6 @@
 
 Timing and memory measurement adapted from Jiaqi-Gao/adaloop-vlm:adaloop/models/inference.py @ e870bff.
 """
-import logging
 import time
 from collections.abc import Mapping
 
@@ -11,8 +10,6 @@ import torch
 from adaloop.schemas.vlm import GenerationResult, LoadedVLM
 from utils.timing import FirstTokenTimer, cuda_sync, peak_memory_gb, reset_peak_memory
 
-logger = logging.getLogger(__name__)
-
 
 @torch.inference_mode()
 def generate(vlm: LoadedVLM, inputs: Mapping, max_new_tokens: int) -> GenerationResult:
@@ -20,7 +17,6 @@ def generate(vlm: LoadedVLM, inputs: Mapping, max_new_tokens: int) -> Generation
     input_ids = inputs["input_ids"]
     prompt_len = input_ids.shape[-1]
     n_visual = int((input_ids == vlm.model.config.image_token_id).sum())
-    logger.info("generating from %d tokens (%d visual), max_new_tokens=%d", prompt_len, n_visual, max_new_tokens)
 
     reset_peak_memory()
     timer = FirstTokenTimer()
@@ -45,15 +41,12 @@ def generate(vlm: LoadedVLM, inputs: Mapping, max_new_tokens: int) -> Generation
         generate_s=generate_s,
         peak_mem_gb=peak_memory_gb(),
     )
-    logger.info("generated %d tokens in %.2fs (ttft %s)", len(token_ids), generate_s, result.ttft_s)
     return result
 
 
 @torch.inference_mode()
 def last_logits(vlm: LoadedVLM, inputs: Mapping) -> torch.Tensor:
     """Logits at the last input position, float32 on CPU."""
-    logger.info("forward on %d tokens", inputs["input_ids"].shape[-1])
     out = vlm.model(**inputs, use_cache=False, logits_to_keep=1)
     logits = out.logits[0, -1].float().cpu()
-    logger.info("got logits over %d entries", logits.shape[-1])
     return logits

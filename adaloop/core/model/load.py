@@ -2,14 +2,10 @@
 
 Ported from notebooks/01_huggingfaceload.ipynb.
 """
-import logging
-
 import torch
 from transformers import AutoModelForMultimodalLM, AutoProcessor
 
 from adaloop.schemas.vlm import LoadedVLM
-
-logger = logging.getLogger(__name__)
 
 
 def load_model(cfg: dict) -> LoadedVLM:
@@ -18,7 +14,6 @@ def load_model(cfg: dict) -> LoadedVLM:
     The loop count is not set here (a load-time override is ignored); use `set_loops`.
     """
     model_id = cfg["model_id"]
-    logger.info("loading %s", model_id)
     processor = AutoProcessor.from_pretrained(model_id)
     model, loading_info = AutoModelForMultimodalLM.from_pretrained(
         model_id,
@@ -33,7 +28,6 @@ def load_model(cfg: dict) -> LoadedVLM:
     # Check from Jiaqi-Gao/adaloop-vlm:adaloop/models/load.py @ e870bff: offloading would distort timings.
     offloaded = {name: dev for name, dev in model.hf_device_map.items() if str(dev) in ("cpu", "disk", "meta")}
     if offloaded:
-        logger.error("modules offloaded off GPU: %s", offloaded)
-        raise RuntimeError(f"model not fully on GPU; offloaded: {list(offloaded)[:5]}")
-    logger.info("loaded %s, device map %s", model_id, model.hf_device_map)
+        raise RuntimeError(f"model not fully on GPU; offloaded: {offloaded}")
+    print(f"loaded {model_id} | device map {model.hf_device_map} | {model.get_memory_footprint() / 1024**3:.2f} GiB")
     return LoadedVLM(model=model, processor=processor, loading_info=loading_info)

@@ -5,12 +5,9 @@ Split method adapted from Jiaqi-Gao/adaloop-vlm:adaloop/benchmarks/gqa.py @ e870
 """
 import hashlib
 import json
-import logging
 import random
 from collections.abc import Sequence
 from pathlib import Path
-
-logger = logging.getLogger(__name__)
 
 
 def make_splits(
@@ -52,8 +49,8 @@ def make_splits(
         if size is not None and size > len(pool):
             raise ValueError(f"split {name}: wants {size} questions, pool has {len(pool)}")
         splits[name] = rng.sample(pool, len(pool) if size is None else size)
-        logger.info("split %s: %d questions from %d images", name, len(splits[name]),
-                    sum(1 for s in image_split.values() if s == name))
+        n_images = sum(1 for s in image_split.values() if s == name)
+        print(f"split {name}: {len(splits[name])} questions from {n_images} images")
     return splits
 
 
@@ -67,7 +64,6 @@ def save_manifest(path: str | Path, splits: dict[str, list[str]], meta: dict) ->
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({**meta, "hash": manifest_hash(splits), "splits": splits}, indent=1))
-    logger.info("saved split manifest %s (hash %s)", path, manifest_hash(splits))
 
 
 def build_manifest(
@@ -86,5 +82,4 @@ def load_manifest(path: str | Path) -> dict:
     manifest = json.loads(Path(path).read_text())
     if manifest_hash(manifest["splits"]) != manifest["hash"]:
         raise ValueError(f"split manifest {path} was edited: hash mismatch")
-    logger.info("loaded split manifest %s (hash %s)", path, manifest["hash"])
     return manifest

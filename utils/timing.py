@@ -2,13 +2,10 @@
 
 FirstTokenTimer ported from Jiaqi-Gao/adaloop-vlm:adaloop/eval/timing.py @ e870bff.
 """
-import logging
 import time
 from collections.abc import Callable
 
 import torch
-
-logger = logging.getLogger(__name__)
 
 
 def cuda_sync() -> None:

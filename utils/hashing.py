@@ -1,11 +1,8 @@
 """Run provenance: config hash and git commit."""
 import hashlib
 import json
-import logging
 import subprocess
 from pathlib import Path
-
-logger = logging.getLogger(__name__)
 
 
 def config_hash(cfg: dict) -> str:
@@ -26,6 +23,6 @@ def git_hash(repo: str | Path = ".") -> str:
             capture_output=True, text=True, check=True,
         ).stdout.strip()
     except (subprocess.CalledProcessError, FileNotFoundError) as exc:
-        logger.warning("git hash unavailable for %s: %s", repo, exc)
+        print(f"git hash unavailable for {repo}: {exc}")
         return "unknown"
     return f"{commit}-dirty" if dirty else commit

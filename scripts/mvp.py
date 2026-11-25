@@ -8,7 +8,6 @@
 """
 import argparse
 import json
-import logging
 import sys
 from pathlib import Path
 
@@ -17,7 +16,6 @@ sys.path.insert(0, str(ROOT))
 
 from adaloop import api  # noqa: E402
 
-logger = logging.getLogger("mvp")
 LOADERS = {"gqa": api.load_gqa, "textvqa": api.load_textvqa}
 SPLIT_BUILDERS = {"gqa": api.build_gqa_splits, "textvqa": api.build_textvqa_splits}
 
@@ -60,7 +58,6 @@ def main() -> None:
     parser.add_argument("--loops", type=int, nargs="+", default=[3])
     parser.add_argument("--limit", type=int, default=None)
     args = parser.parse_args()
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     cfg = api.load_config(ROOT / args.config)
     {"smoke": cmd_smoke, "splits": cmd_splits, "eval": cmd_eval}[args.command](cfg, args)
 

@@ -2,12 +2,9 @@
 
 Adapted from Jiaqi-Gao/adaloop-vlm:adaloop/eval/runner.py::summarize_results @ e870bff.
 """
-import logging
 from collections.abc import Sequence
 
 import numpy as np
-
-logger = logging.getLogger(__name__)
 
 
 def summarize_rows(rows: Sequence[dict]) -> dict:
@@ -31,6 +28,4 @@ def summarize_rows(rows: Sequence[dict]) -> dict:
         "generate_s_mean": mean("generate_s"),
         "peak_mem_gb_max": max(r["peak_mem_gb"] for r in rows),
     }
-    logger.info("summary over %d rows: accuracy %.1f, parse %.1f", len(rows), summary["accuracy"],
-                summary["parse_rate"])
     return summary

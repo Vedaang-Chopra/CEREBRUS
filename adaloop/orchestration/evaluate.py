@@ -4,7 +4,6 @@ Adapted from Jiaqi-Gao/adaloop-vlm:adaloop/eval/runner.py @ e870bff.
 Rows use the field names of `grid.parquet` (docs/DEC3_MVP.md §5) so later stages can reuse them.
 """
 import json
-import logging
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -20,8 +19,6 @@ from adaloop.schemas.items import Item
 from adaloop.schemas.vlm import LoadedVLM
 from utils.hashing import config_hash, git_hash
 from utils.images import resize_long_side
-
-logger = logging.getLogger(__name__)
 
 
 def evaluate_item(vlm: LoadedVLM, item: Item, cfg: dict, R: int) -> dict:
@@ -63,7 +60,7 @@ def _read_rows(path: Path) -> list[dict]:
         try:
             rows.append(json.loads(line))
         except json.JSONDecodeError:
-            logger.warning("dropping unreadable line in %s: %.80s", path, line)
+            print(f"dropping unreadable line in {path}: {line[:80]}")
     return rows
 
 
@@ -79,7 +76,6 @@ def run_evaluation(
     out_path.parent.mkdir(parents=True, exist_ok=True)
     run_meta = {"config_hash": config_hash(cfg), "git_hash": git_hash(), "seed": cfg["splits"]["seed"],
                 "gpu_type": torch.cuda.get_device_name(0)}
-    logger.info("evaluating %d items at R=%d -> %s (%s)", len(items), R, out_path, run_meta)
 
     rows = _read_rows(out_path) if out_path.exists() else []
     if rows and not resume:
@@ -88,7 +84,6 @@ def run_evaluation(
     if stale:
         raise ValueError(f"{out_path} has rows from other configs {stale}; use a new output path")
     done = {r["item_id"] for r in rows}
-    logger.info("resuming: %d of %d items already done", len(done), len(items))
 
     with out_path.open("w") as handle:  # rewrite clean rows, then append new ones
         for row in rows:
@@ -101,8 +96,8 @@ def run_evaluation(
             handle.flush()
             rows.append(row)
             if n == 0 or (n + 1) % 10 == 0:
-                logger.info("[%d/%d] R=%d accuracy so far %.1f", n + 1, len(items), R,
-                            100.0 * sum(r["correct"] for r in rows) / len(rows))
+                acc = 100.0 * sum(r["correct"] for r in rows) / len(rows)
+                print(f"[{n + 1}/{len(items)}] R={R} | acc: {acc:.1f}")
 
     summary = {**summarize_rows(rows), "R": R, **run_meta}
     out_path.with_suffix(".summary.json").write_text(json.dumps(summary, indent=1))

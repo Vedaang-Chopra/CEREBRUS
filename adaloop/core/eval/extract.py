@@ -3,10 +3,7 @@
 Ported from Jiaqi-Gao/adaloop-vlm:adaloop/eval/scorers.py @ e870bff.
 The model writes thinking after `<|content_thinking|>` and the answer after `<|content_text|>`.
 """
-import logging
 import re
-
-logger = logging.getLogger(__name__)
 
 THINKING = "<|content_thinking|>"
 ANSWER = "<|content_text|>"

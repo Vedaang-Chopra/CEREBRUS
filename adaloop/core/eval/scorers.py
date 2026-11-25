@@ -4,14 +4,11 @@ GQA scorer ported from Jiaqi-Gao/adaloop-vlm:adaloop/eval/scorers.py @ e870bff.
 TextVQA accuracy ported from EvolvingLMMs-Lab/lmms-eval:lmms_eval/tasks/textvqa/utils.py::textvqa_process_results
 @ 9134731f4f617e62ee80bcae9d0d5d9695ea55ef.
 """
-import logging
 import re
 import statistics
 from collections.abc import Sequence
 
 from adaloop.core.eval.vqa_normalize import process_vqa_answer
-
-logger = logging.getLogger(__name__)
 
 
 def normalize_answer(answer: str | None) -> str:

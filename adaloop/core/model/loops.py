@@ -2,15 +2,12 @@
 
 Ported from notebooks/01_huggingfaceload.ipynb.
 """
-import logging
 from collections import Counter
 from collections.abc import Mapping
 
 import torch
 
 from adaloop.schemas.vlm import LoadedVLM
-
-logger = logging.getLogger(__name__)
 
 MAX_LOOPS = 5  # upper limit of the varloop checkpoint, not a tunable
 
@@ -21,7 +18,6 @@ def set_loops(vlm: LoadedVLM, R: int) -> None:
         raise ValueError(f"R must be in 1..{MAX_LOOPS}, got {R}")
     vlm.model.config.text_config.loop_num_passes = R
     vlm.model.model.language_model.config.loop_num_passes = R
-    logger.info("loop passes set to %d", R)
 
 
 def expected_layer_calls(vlm: LoadedVLM) -> list[int]:
@@ -53,5 +49,4 @@ def count_layer_calls(vlm: LoadedVLM, inputs: Mapping) -> list[int]:
         for handle in handles:
             handle.remove()
     result = [calls[i] for i in range(len(layers))]
-    logger.info("total layer calls %d", sum(result))
     return result
