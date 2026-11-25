@@ -41,7 +41,7 @@ This file is the build spec for the course submission. It is a **subset** of `do
 
 ---
 
-## 1. Preregistration (write to `configs/prereg.yaml` before Stage S10 touches test)
+## 1. Preregistration (write to `configs/prereg.yaml` before any stage touches test, i.e. before S12)
 
 ```yaml
 metric: accuracy on test items (GQA testdev-balanced + TextVQA val, macro-average of the two) at mean FLOPs = 0.5 × cost(k=100%, R=3)
@@ -193,10 +193,10 @@ Owner columns match `docs/TEAM_PLAN.md` roles: **V** = Vedaang, **A** = data/eva
 | **S4** | B | `hooks.py` + `features.py`; selectors `text_mean` (notebook v0) and `crisp_lite` (spaCy nouns → decoder input embeddings, top-k by cosine + 25% spatially uniform fill) | Features saved for 5 items × 15 cells |
 | **S5** | B | Selector choice on dev at R = 3, k ∈ {25, 50}%: random vs text_mean vs crisp_lite. Freeze the winner in `mvp.yaml` | Small table in `decisions.md` |
 | **S6** | A | `flops.py` + timing; **throughput:** 50 dev items × 15 cells → s/item → final item counts | `test_flops.py` passes; budget line in `decisions.md` |
-| **S7** | A | **Base grid** on test + ctrl_train + dev, all 15 cells, features on. Shard by item over replicas; merge shards. Plus noise re-run: `n_rerun` items × 15 cells with `rerun_id=1` | `grid.parquet` complete; row counts checked |
+| **S7** | A | **Base grid** on ctrl_train + dev (test is added only after S12 is frozen, see §9 rule 2), all 15 cells, features on. Shard by item over replicas; merge shards. Plus noise re-run: `n_rerun` items × 15 cells with `rerun_id=1` | `grid.parquet` complete; row counts checked |
 | **S8** | V | Teacher cache on `lora_train`: full tokens, R = 3, greedy answer ids + top-32 log-probs per answer token | `teacher/*.pt` for all lora_train items; cached ≈ live on 20 items |
 | **S9** | V | **Budget-tolerance LoRA** (`train/lora_budget.py`, CORE): PEFT LoRA on core-layer attention projections (layers 6–17; confirm module names from the state dict). Per sample: k ~ `k_train` (10% k = 1.0 identity guard), R ~ U{1..5}, frozen selector; loss = KL(teacher top-32 ‖ student) on teacher answer ids, teacher-forced. HF `Trainer` with custom `compute_loss` or a short loop; model-parallel over 2 GPUs; log to wandb | Smoke: 50 items × 100 steps, loss falls. Full run: dev accuracy at k = 25% improves vs base; k = 100% at R = 3 drops ≤ 0.5 pts |
-| **S10** | A | **LoRA grid** (`model_variant=lora`): same items and cells as S7 (test + ctrl_train + dev) | `grid.parquet` has lora rows |
+| **S10** | A | **LoRA grid** (`model_variant=lora`): same items and cells as S7 (ctrl_train + dev; test only after S12 is frozen) | `grid.parquet` has lora rows |
 | **S11** | B | `tree.py`: leaves from the grid, per variant. k0 ∈ {25, 50}%, ≤ 1 look, look target = k = 100%. 5 exit leaves + 4 × 5 look leaves per k0. `test_tree.py`: costs and outcomes match the grid rows they come from | `tree.parquet` for base + lora |
 | **S12** | V + B | **Controller.** `objectives.py` (CORE, V): (a) supervised to the argmax-Q action; (b) full-information expected reward by exact backward recursion (`docs/02_loop/adaloop_build_spec.md` §5.3). `policy.py` (B): MLP `[F] → 512 → 512 → 3` with masks (LOOP forbidden at r = 5; LOOK only on the low-k branch and only once). Train on ctrl_train, select λ/epochs on dev, 3 seeds. `heuristic.py` (B): thresholds on `top1_prob`, `kl_prev`, `vis_attn_mass`, tuned on dev | `policy_eval.parquet` on test for every λ × seed |
 | **S13** | B | **Baselines** on the same items: best_fixed (per cost cap); early_exit_only (k = 100% branch, actions {EXIT, LOOP}, same MLP + features); tokens_only (3-way k at R = 3, features = mean visual token + mean question embedding, no decoder pass); upfront_15way (15-way chooser, same upfront features, expected-reward objective); oracle | All in `policy_eval.parquet` |
@@ -249,7 +249,7 @@ Inspection only: imports `adaloop.api`, loads `execution_results/mvp/*`, no GPU.
 ## 9. Rules for the agent
 
 1. One stage at a time. Before coding a stage: a layer plan (files, functions, signatures), then wait for approval.
-2. Never touch the **test** split before S12. `configs/prereg.yaml` is filled before S12 runs on test.
+2. Never touch the **test** split before S12. `configs/prereg.yaml` is filled before S12 runs on test. Test is sealed until the LoRA, selector, controller, λ and all thresholds are frozen; then the base and LoRA grids run on test once (S7/S10 test rows) and S12–S14 evaluate on them. No choice is changed after that.
 3. Every run row carries `git_hash`, `config_hash`, `seed`, `gpu_type`. All config values live in `configs/mvp.yaml`.
 4. Code doesn't run locally: give the exact GPU-host command and the expected output; don't report a pass without pasted output.
 5. Long jobs are sharded by item (`--shard i/n`), resumable (skip existing rows), and checkpointed.

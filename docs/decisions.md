@@ -29,3 +29,6 @@ One entry per gate or design decision. Newest at the bottom. Format:
 - Q3 encoder vs baselines: _pending_
 - P3 joint RL: _pending_
 - G3 final: _pending_
+
+## Nov 25, 2026 — test split sealed
+- Decision: the test split stays sealed until the LoRA, selector, controller, λ and thresholds are frozen. S7 and S10 grids run on ctrl_train + dev only; test rows are added once, after that freeze, before S12–S14 report on test. Reason: DEC3 S7/S10 ran on test, which conflicts with §9 rule 2 and would let test results steer choices. `configs/full_baseline.yaml` already uses `run_splits: [dev, ctrl_train]` and `full_run` refuses test.
