@@ -22,6 +22,17 @@ The agent builds everything, CORE items included; Vedaang reviews.
 - **Vedaang runs the notebooks himself**, step by step, on Inara. Agents write the code, say which notebook is ready, and wait for the output. Agents do not execute notebooks unless asked.
 - **Keep it simple.** Notebooks are for understanding the project: short cells, one call per step, plain prints. Code reused in two places moves to a small function in the package and is exposed through `api.py`. No clever abstractions.
 - Sometimes Vedaang builds a notebook himself: then guide (which `api` function, what to print, what to assert) instead of writing it.
+
+### Notebook style (Vedaang's pattern; reference: `model_training/post_training/03-sft/01_a_instruct_tuning.ipynb`, `pre_training/llm/02-multi-architecture/02_qwen3.ipynb`)
+- **Header cells, in order:** `%load_ext autoreload` + `%autoreload 2` → stdlib imports → `ROOT, cfg = api.setup_notebook(...)` printing the root → host check (`"inara" in socket.gethostname()`) + GPU list (name, GiB) → third-party imports (torch, pandas, matplotlib).
+- **Key settings visible near the top** as UPPER_CASE names read from `cfg` (e.g. `MODEL_ID = cfg["model_id"]`, `R = 3`, `N_ITEMS = 20`). Values still live in `configs/`.
+- **Sections:** markdown `### Step-N:- <Title>` with 1–3 sentences on *what* and *why* (the notebook teaches the project). Sub-steps `#### <Title>`.
+- **Many small cells:** one step per cell; show results by leaving the object as the last line (`items[0]`, `df.head()`, `summary`) rather than wrapping in prints. Import the `api` names used by a section at the start of that section if it helps reading.
+- **The notebook composes the workflow visibly:** load → prepare → run one sample → inspect → then the batch. The package provides the building blocks; don't hide a whole stage behind one call when its steps are worth seeing.
+- **Sample run before the full run:** a tiny run (1 item / 1 batch) with checks, then the real run.
+- **Checks:** at the end of a step, plain `assert` lines then `print(f"✓ <what> ...")`. A `[STAGE] <name>` print starts a step that runs model work. No check-registry helpers or summary tables.
+- **Outputs** go to `ROOT / "execution_results" / ...`; never next to the notebook.
+- **Don't copy:** deep imports into package internals (use `adaloop.api`), hard-coded hyperparameters in cells, commented-out code.
 - Notebook names: `notebooks/NN_<feature>.ipynb`, in build order. `notebooks/mvp_results.ipynb` only reads saved artifacts and shows the paper tables and figures.
 
 ## Branches
