@@ -1,0 +1,10 @@
+extends: mvp.yaml
+
+out_dir: execution_results/full_baseline
+# test stays off until stage S12 (DEC3 §9)
+run_splits: [dev, ctrl_train]
+run_benchmarks: [gqa, textvqa]
+k_grid: [1.0]
+R_grid: [1, 2, 3, 4, 5]
+# 1 is the reference path; notebooks/06 checks batched answers match first
+batch_size: 8
