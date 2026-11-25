@@ -16,7 +16,8 @@ The agent builds everything, CORE items included; Vedaang reviews.
 ## Notebooks are the tests
 - Python packages (`adaloop/`, `qafe/`, `utils/`) hold all logic. Notebooks import them through `api.py` and use them to run the features and the research.
 - **Every feature has a notebook** that runs it and checks it works: intermediate outputs shown, `assert` checks that print `PASS <feature>: <what>`.
-- **New feature → new notebook** (or a new section in the feature's existing notebook). **Changed feature → update its notebook in the same commit.**
+- **Keep the set small and fixed.** One notebook per build stage group (list in `docs/DEC3_MVP.md` / the plan), not one per change. A new feature goes into the matching notebook as a section; a changed feature updates that section in the same commit. Replace outdated cells; do not stack new checks on old ones.
+- Checks cover only the stage's Done-when, a few asserts each.
 - A feature is done only when its notebook ran on the GPU host and the output was pasted back.
 - Notebook names: `notebooks/NN_<feature>.ipynb`, in build order. `notebooks/mvp_results.ipynb` only reads saved artifacts and shows the paper tables and figures.
 
