@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Send committed `main` to the Inara clone and fast-forward it. Uncommitted work here is not sent.
 # Notebooks Vedaang ran on Inara (outputs saved, so "modified") that the incoming commits also change are
-# copied to execution_results/notebook_runs/<name>_<time>.ipynb first, then reset, so the merge never blocks.
+# copied to execution_results/notebook_runs/<name>_<time>.ipynb first, then reset. A notebook saved in the last 20 min
+# (a run may be open) aborts the sync instead.
 # Other uncommitted edits on Inara are kept. Needs passwordless `ssh inara` (~/.ssh/config).
 set -euo pipefail
 REMOTE_DIR=/coc/scratch/vchopra/cerberus_v2
@@ -13,6 +14,9 @@ ssh inara "cd $REMOTE_DIR && set -e
   incoming=\$(git diff --name-only HEAD mac/main)
   for f in \$(git diff --name-only -- '*.ipynb'); do
     if echo \"\$incoming\" | grep -qx \"\$f\"; then
+      if [ -n \"\$(find \"\$f\" -mmin -20)\" ]; then
+        echo \"ABORT: \$f changed on Inara in the last 20 min (a run may be open); nothing synced\"; exit 3
+      fi
       mkdir -p execution_results/notebook_runs
       cp \"\$f\" \"execution_results/notebook_runs/\$(basename \"\$f\" .ipynb)_\$stamp.ipynb\"
       git checkout -- \"\$f\"
