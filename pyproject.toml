@@ -2,29 +2,35 @@
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
+# Pins match the working Inara kernel `learning_env` (pip freeze, 2026-11-25).
 [project]
 name = "adaloop"
 version = "0.0.1"
 description = "Adaptive Looped VLM: controller picks visual-token budget k and loop count R"
-requires-python = ">=3.10,<3.14"
+requires-python = ">=3.13,<3.14"
 dependencies = [
-  "torch",
-  "transformers>=5",
-  "peft>=0.13,<0.19",
-  "accelerate>=1.0,<1.12",
-  "bitsandbytes>=0.43,<0.49",
-  "numpy",
-  "pyyaml",
-  "pillow",
-  "datasets",
+  "torch==2.14.1",
+  "transformers @ git+https://github.com/huggingface/transformers@2f1bc5e321b9a736200a590d6e7743ccdeb60772",
+  "accelerate==1.15.0",
+  "datasets==5.2.0",
+  "huggingface_hub==2.4.0",
+  "tokenizers==0.23.3",
+  "safetensors==0.8.0",
+  "numpy==2.5.4",
+  "pandas==3.1.1",
+  "pyarrow==26.0.1",
+  "scipy==1.18.1",
+  "matplotlib==3.11.2",
+  "pillow==13.0.0",
+  "pyyaml==6.0.3",
+  "python-dotenv==1.2.4",
   "requests",
+  "wandb==0.31.0",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+# Needed by later stages, not yet in learning_env: peft (S9 LoRA), spacy (S4 crisp_lite), statsmodels (S14).
+later = ["peft", "spacy", "statsmodels"]
 
 [tool.setuptools.packages.find]
 include = ["adaloop*", "utils*"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]

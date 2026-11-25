@@ -1,8 +1,9 @@
-# Create on Inara:  conda env create -f environment.yml && conda activate adaloop
+# The working env on Inara is the existing `learning_env` kernel (/coc/scratch/vchopra/learning_env).
+# To recreate it elsewhere:  conda env create -f environment.yml && conda activate adaloop
 name: adaloop
 channels: [conda-forge, defaults]
 dependencies:
-  - python=3.11
+  - python=3.13
   - pip
   - pip:
-      - -e .[dev]
+      - -e .
