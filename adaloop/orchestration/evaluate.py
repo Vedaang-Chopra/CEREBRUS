@@ -22,8 +22,12 @@ from utils.images import resize_long_side
 
 
 def item_prompt(item: Item, cfg: dict) -> str:
-    """The question text sent to the model: the question plus its benchmark's `prompt_suffix`."""
-    return item.question + cfg["benchmarks"][item.benchmark]["prompt_suffix"]
+    """The question text sent to the model (capitalized for TextVQA) plus its benchmark's `prompt_suffix`."""
+    # TextVQA: lmms-eval applies str.capitalize (first letter upper, the rest lower). Ported from
+    # EvolvingLMMs-Lab/lmms-eval:lmms_eval/tasks/textvqa/utils.py::textvqa_doc_to_text
+    # @ 9134731f4f617e62ee80bcae9d0d5d9695ea55ef.
+    question = item.question.capitalize() if item.benchmark == "textvqa" else item.question
+    return question + cfg["benchmarks"][item.benchmark]["prompt_suffix"]
 
 
 def item_inputs(vlm: LoadedVLM, item: Item, cfg: dict) -> Mapping:
