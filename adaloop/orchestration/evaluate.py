@@ -28,7 +28,8 @@ def evaluate_item(vlm: LoadedVLM, item: Item, cfg: dict, R: int) -> dict:
     """Answer one item at loop count R with all visual tokens; return its result row."""
     set_loops(vlm, R)
     prompt = item.question + cfg["prompt_suffix"]
-    inputs = prepare_inputs(vlm, prompt, resize_long_side(item.image, cfg["res_px"]))
+    image = resize_long_side(item.image, cfg["res_px"])
+    inputs = prepare_inputs(vlm, prompt, image, prefill=cfg.get("answer_prefill"))
     gen = generate(vlm, inputs, cfg["max_new_tokens"])
     pred = extract_answer(gen.raw_text, gen.hit_limit)
     return {

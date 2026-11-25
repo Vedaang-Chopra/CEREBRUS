@@ -13,10 +13,11 @@ Public entry points: `adaloop/api.py`. Notebooks and `scripts/mvp.py` import onl
 | Scoring | `extract_answer`, `normalize_answer`, `score`, `score_gqa`, `score_textvqa`, `summarize_rows` | `core/eval/` |
 | Evaluation | `evaluate_item`, `run_evaluation` (resumable JSONL), `read_results` | `orchestration/evaluate.py` |
 
-Notebooks: `01_huggingfaceload` (load, loops), `02_pruning` (tokens), `03_data_and_scoring` (S1 + runner).
+Notebooks: `01_huggingfaceload` (load, loops), `02_pruning` (tokens), `03_data_and_scoring` (S1 + runner), `04_thinking_off` (S2).
 CLI: `python scripts/mvp.py {smoke,splits,eval}`.
 
-Limits: one item, one image per batch; pruning packs positions; thinking is still on (S2).
+Limits: one item, one image per batch; pruning packs positions; thinking stays on until `answer_prefill` is set in the config (S2).
+`prepare_inputs(prefill=...)` appends the start of the model reply (the chat template adds none).
 `set_loops` changes model state until the next call.
 GQA loading, splits, extraction, scoring, timing and the runner are merged from Jiaqi-Gao/adaloop-vlm @ e870bff
 (provenance comment in each file). TextVQA accuracy is ported from lmms-eval @ 9134731. Its hard-coded FLOPs estimate was not merged; S6 replaces it.

@@ -4,6 +4,9 @@ max_memory: {0: 35GiB, 1: 35GiB}
 res_px: 512
 max_new_tokens: 128  # thinking is still on; stage S2 lowers this to 16
 prompt_suffix: "\nAnswer with a single word or short phrase."
+# Start of the model reply, appended to the prompt. Set after Vedaang picks a variant in notebooks/04_thinking_off
+# (log it in docs/decisions.md).
+answer_prefill: null
 out_dir: execution_results/mvp
 
 benchmarks:
