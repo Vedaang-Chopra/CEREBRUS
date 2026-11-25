@@ -1,54 +1,25 @@
-.ipynb_checkpoints/
+# local-only legacy / large material (old code lives on branch cerebrus-v0)
+/edge_glass_modular/
+/older_code_base/
+/older_plots/
+/Papers/
+/v2_code_base/
+/wandb/
+/log_results.txt
+/*.wav
+/*.pdf
+*.inetloc
+.DS_Store
+# python / env
 __pycache__/
-experiments/
-*.pt
-*.pth
-*.ckpt
-.env
-
-# Ignore Python Environment Folders
-venv/
-env/
-.idea/
-.vscode/
-.DS_Store
-logs/
-edge_glass_env/
-
-.DS_Store
-logs/
-
-
-code_base/notebooks/freeze_align_poc/data/
-code_base/additional_code/other_repo/
-
-code_base/v2_code_base/wandb/
-
-dataset/
-
-*run-*
-*wandb*
-*.bin
-*.pt
-
-edge_glass_modular/notebooks/ddsp_scripts/checkpoints/
-edge_glass_modular/outputs/
-edge_glass_modular/notebooks/ddsp_scripts/outputs/
-edge_glass_modular/data/
-code_base/v2_code_base/artifacts/
-code_base/v2_code_base/data/
-
-Papers/.DS_Store
-# Retired historical code (tracked source preserved on archive/historical-code-pre-retirement)
-older_code_base/
-
-# Build metadata / transient tool artifacts
 *.egg-info/
-.pi-subagents/
-
-# Root-level local-only material (preserved locally, untracked on main)
-log_results.txt
-14.12.2011.001.wav
-GRA - Research Questions.pdf
-Papers/
-older_plots/
+.venv/
+.env
+.env.*
+.pytest_cache/
+.ipynb_checkpoints/
+# run outputs
+execution_results/
+checkpoints/
+*.pt
+*.safetensors

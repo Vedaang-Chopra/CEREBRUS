@@ -1,0 +1,8 @@
+# Create on Inara:  conda env create -f environment.yml && conda activate adaloop
+name: adaloop
+channels: [conda-forge, defaults]
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - -e .[dev]
