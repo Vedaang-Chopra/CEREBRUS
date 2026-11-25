@@ -3,7 +3,10 @@ model_id: thinkingmachines/TML-d24-varloop-research
 # full_baseline.yaml may override this on another server. Placement only: not part of the config hash.
 gpu_groups: [[0, 1], [2, 3]]
 device_map: balanced
+# keys are visible-device indices (after CUDA_VISIBLE_DEVICES), not physical GPU ids
 max_memory: {0: 35GiB, 1: 35GiB}
+# a gpu_group is picked only if each of its GPUs has this much free memory. Placement only: not hashed.
+min_free_gib: 38
 res_px: 512
 max_new_tokens: 128  # thinking is still on; stage S2 lowers this to 16
 # Start of the model reply, appended to the prompt. Set after Vedaang picks a variant in notebooks/04_thinking_off

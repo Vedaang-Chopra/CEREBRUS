@@ -6,11 +6,11 @@
   python scripts/mvp.py full --shard 0/2        # configs/full_baseline.yaml; shard i of n on gpu_groups[i]
 
 `smoke` and `eval` replace Jiaqi-Gao/adaloop-vlm:scripts/{smoke_test,run_grid}.py @ e870bff.
+`smoke` and `eval` pick a free GPU group; `splits` needs no GPU.
 `full` is resumable: rerun the same command after an interruption.
 """
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -25,6 +25,7 @@ SPLIT_BUILDERS = {"gqa": api.build_gqa_splits, "textvqa": api.build_textvqa_spli
 
 def cmd_smoke(cfg: dict, args: argparse.Namespace) -> None:
     """Load the model and answer one dev item at R=3."""
+    api.select_gpu_group(cfg)
     vlm = api.load_model(cfg)
     item = api.load_gqa(cfg, "dev", limit=1, root=ROOT)[0]
     row = api.evaluate_item(vlm, item, cfg, R=3)
@@ -43,6 +44,7 @@ def cmd_eval(cfg: dict, args: argparse.Namespace) -> None:
     if args.split == "test":
         raise SystemExit("the test split is frozen until stage S12")
     items = LOADERS[args.benchmark](cfg, args.split, limit=args.limit, root=ROOT)
+    api.select_gpu_group(cfg)
     vlm = api.load_model(cfg)
     out_dir = ROOT / cfg["out_dir"] / "eval"
     for R in args.loops:
@@ -69,10 +71,8 @@ def parse_shard(text: str, cfg: dict) -> tuple[int, int]:
 def cmd_full(cfg: dict, args: argparse.Namespace) -> None:
     """Run shard i of n of the full baseline on GPU group i, resumable."""
     i, n = parse_shard(args.shard, cfg)
-    # set before anything initializes CUDA: this process sees only group i, in PCI bus order
-    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(gpu) for gpu in cfg["gpu_groups"][i])
-    print(f"shard {i}/{n} | physical GPUs {cfg['gpu_groups'][i]} | CUDA_VISIBLE_DEVICES={os.environ['CUDA_VISIBLE_DEVICES']}")
+    print(f"shard {i}/{n} | GPU group {i}")
+    api.select_gpu_group(cfg, group=i)
     vlm = api.load_model(cfg)
     api.run_full(vlm, cfg, ROOT, shard=(i, n))
 

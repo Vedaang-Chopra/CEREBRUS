@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 
 # placement only: which GPUs a run uses must not change its hash (or break resume)
-HASH_EXCLUDE = {"gpu_groups"}
+HASH_EXCLUDE = {"gpu_groups", "min_free_gib"}
 
 
 def config_hash(cfg: dict) -> str:

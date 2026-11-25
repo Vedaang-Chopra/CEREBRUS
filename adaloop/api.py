@@ -44,6 +44,7 @@ from adaloop.schemas.cost import CostParams
 from adaloop.schemas.items import Item
 from adaloop.schemas.vlm import GenerationResult, LoadedVLM
 from utils.env import setup_notebook
+from utils.gpus import select_gpu_group
 from utils.hashing import config_hash, git_hash
 from utils.images import load_image, resize_long_side
 from utils.io import load_config
@@ -106,6 +107,7 @@ __all__ = [
     "score",
     "score_gqa",
     "score_textvqa",
+    "select_gpu_group",
     "set_loops",
     "set_paper_style",
     "setup_notebook",
