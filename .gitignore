@@ -1,6 +1,6 @@
 # local-only legacy / large material (old code lives on branch cerebrus-v0)
-/edge_glass_modular/
 /old_data/
+/old_code/
 /Papers/
 /*.pdf
 *.inetloc

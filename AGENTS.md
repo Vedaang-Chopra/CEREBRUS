@@ -33,9 +33,14 @@ pyproject.toml, environment.yml
 ```
 
 ## Local-only (git-ignored, never commit)
-- `old_data/` — old checkpoints, wandb, plots, logs, old notebooks (26 GB).
-- `edge_glass_modular/` — local copy of old modular code; reference for porting only.
+- `old_code/` — all old code in one place, read-only reference for porting:
+  - `old_code/cerebrus-v0/` — git worktree of branch `cerebrus-v0` (CEREBRUS source, `edge_glass_modular/` etc.).
+  - `old_code/archive-v0-v2/` — git worktree of `archive/historical-code-pre-retirement` (V0/V1/V2 source).
+  - `old_code/third_party/TinyRecursiveModels/` — vendored upstream TRM repo (not ours, not in git).
+  - Do not commit from these worktrees. Remove with `git worktree remove old_code/<name>`.
+- `old_data/` — non-code leftovers (~25 GB): `legacy_data/` (v1/v2 datasets, checkpoints), `wandb/` (all wandb runs, by source), `logs/`, `plots/`, `v2_notebooks/`, `misc/`.
 - `Papers/` — PDFs (~500 MB). Canonical set: `Papers/Complete Papers List/Shortlisted_Literature/` (P0–P3 tiers; `Paper_Classification.csv` maps each ID to its file).
+- New wandb dirs, logs and run outputs go to `execution_results/` or `old_data/`, never the repo root.
 
 ## Code rules
 - Port from old code only these: `qa_metrics`, bootstrap CI/stats utilities, trimmed config loading, LoRA/4-bit loading helpers. Do not port encoders, MRL, Perceiver, alignment, TRM, trainers.
