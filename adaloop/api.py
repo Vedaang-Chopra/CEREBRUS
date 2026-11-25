@@ -1,4 +1,15 @@
 """Public entry points. Notebooks and scripts import only this module."""
+from adaloop.core.cost.flops import (
+    REF_R,
+    cost_params,
+    cost_ref,
+    flops_decode,
+    flops_partial,
+    flops_prefill,
+    flops_readout,
+    flops_total,
+    flops_vit,
+)
 from adaloop.core.eval.extract import extract_answer
 from adaloop.core.eval.scorers import normalize_answer, score, score_gqa, score_textvqa
 from adaloop.core.eval.summary import summarize_rows
@@ -17,9 +28,11 @@ from adaloop.core.tokens.selectors import (
 from adaloop.data.gqa import build_gqa_splits, load_gqa
 from adaloop.data.splits import load_manifest, make_splits
 from adaloop.data.textvqa import build_textvqa_splits, load_textvqa
-from adaloop.orchestration.evaluate import evaluate_item, read_results, run_evaluation
+from adaloop.orchestration.cost_timing import time_prefill, time_throughput
+from adaloop.orchestration.evaluate import evaluate_item, item_inputs, read_results, run_evaluation
 from adaloop.orchestration.full_run import full_run_config, result_path, run_full, shard_items, summarize_full
 from adaloop.orchestration.pass_state import check_pass_state
+from adaloop.schemas.cost import CostParams
 from adaloop.schemas.items import Item
 from adaloop.schemas.vlm import GenerationResult, LoadedVLM
 from utils.env import setup_notebook
@@ -28,6 +41,8 @@ from utils.images import load_image, resize_long_side
 from utils.io import load_config
 
 __all__ = [
+    "REF_R",
+    "CostParams",
     "GenerationResult",
     "Item",
     "LoadedVLM",
@@ -35,15 +50,24 @@ __all__ = [
     "build_textvqa_splits",
     "check_pass_state",
     "config_hash",
+    "cost_params",
+    "cost_ref",
     "count_layer_calls",
     "evaluate_item",
     "expected_layer_calls",
     "extract_answer",
     "extract_visual_tokens",
+    "flops_decode",
+    "flops_partial",
+    "flops_prefill",
+    "flops_readout",
+    "flops_total",
+    "flops_vit",
     "full_run_config",
     "generate",
     "generate_batch",
     "git_hash",
+    "item_inputs",
     "last_logits",
     "load_config",
     "load_gqa",
@@ -72,6 +96,8 @@ __all__ = [
     "summarize_full",
     "summarize_rows",
     "text_mean_selector",
+    "time_prefill",
+    "time_throughput",
     "uniform_selector",
     "unload_model",
 ]

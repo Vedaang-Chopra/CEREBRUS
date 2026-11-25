@@ -12,14 +12,17 @@ Public entry points: `adaloop/api.py`. Notebooks and `scripts/mvp.py` import onl
 | Pruning | `extract_visual_tokens`, selectors, `prune_inputs` | `core/tokens/` |
 | Data | `build_gqa_splits`, `load_gqa`, `build_textvqa_splits`, `load_textvqa` → `Item`; `make_splits`, `load_manifest` | `data/gqa.py`, `data/textvqa.py`, `data/splits.py` |
 | Scoring | `extract_answer`, `normalize_answer`, `score`, `score_gqa`, `score_textvqa`, `summarize_rows` | `core/eval/` |
-| Evaluation | `evaluate_item`, `run_evaluation` (resumable JSONL; `batch_size` > 1 batches generation), `read_results` | `orchestration/evaluate.py` |
+| Evaluation | `item_inputs`, `evaluate_item`, `run_evaluation` (resumable JSONL; `batch_size` > 1 batches generation), `read_results` | `orchestration/evaluate.py` |
+| Cost model (S6) | `cost_params` → `CostParams`, `flops_prefill`, `flops_partial`, `flops_readout`, `flops_decode`, `flops_vit`, `flops_total`, `cost_ref` (analytic); `time_prefill`, `time_throughput` (measured) | `core/cost/flops.py`, `orchestration/cost_timing.py` |
 | Full baseline | `shard_items`, `full_run_config`, `result_path`, `run_full` (one shard, all benchmark x split x R), `summarize_full` (all shards, de-duplicated) | `orchestration/full_run.py` |
 
-Notebooks: `01_huggingfaceload` (load, loops), `02_pruning` (tokens), `03_data_and_scoring` (S1 + runner), `04_thinking_off` (S2), `05_positions_and_loops` (S3, S3b), `06_full_baseline` (batch check, full run shards, summary).
+Notebooks: `01_huggingfaceload` (load, loops), `02_pruning` (tokens), `03_data_and_scoring` (S1 + runner), `04_thinking_off` (S2), `05_positions_and_loops` (S3, S3b), `06_full_baseline` (batch check, full run shards, summary, S6 cost model).
 CLI: `python scripts/mvp.py {smoke,splits,eval,full}`. `full --shard i/n` runs shard i on `gpu_groups[i]` (physical GPUs 0-3 only on Inara; `gpu_groups` is not hashed).
 
 Limits: one image per item; `batch_size` 1 is the reference (batched rows have no TTFT or peak memory, and `generate_s` is batch time / size; batched logits are not bit-exact with batch 1); pruning packs positions (the model does not support original ones, `docs/notes/modeling_code.md`); thinking stays on until `answer_prefill` is set in the config (S2).
 `prepare_inputs(prefill=...)` appends the start of the model reply (the chat template adds none).
 `set_loops` changes model state until the next call.
 GQA loading, splits, extraction, scoring, timing and the runner are merged from Jiaqi-Gao/adaloop-vlm @ e870bff
-(provenance comment in each file). TextVQA accuracy is ported from lmms-eval @ 9134731. Its hard-coded FLOPs estimate was not merged; S6 replaces it.
+(provenance comment in each file). TextVQA accuracy is ported from lmms-eval @ 9134731. Its hard-coded FLOPs estimate was not merged; `core/cost/flops.py` replaces it.
+FLOPs are analytic (2 per multiply-add) for dense bf16 weights, count causal attention pairs (eager attention executes more),
+and include the message gates of passes after the first. `flops_total` includes the vision tower.

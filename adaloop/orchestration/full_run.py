@@ -59,22 +59,23 @@ def run_full(vlm: LoadedVLM, cfg: dict, root: str | Path, shard: tuple[int, int]
 
 
 def summarize_full(cfg: dict, root: str | Path) -> list[dict]:
-    """One row per benchmark x R over all shard files of this run config (run splits pooled, de-duplicated)."""
+    """One row per benchmark x split x R over all shard files of this run config, de-duplicated."""
     _check_scope(cfg)
     batch_size = cfg["batch_size"]
     digest = config_hash(full_run_config(cfg, batch_size))
     folder = Path(root) / cfg["out_dir"]
     table = []
     for benchmark in cfg["run_benchmarks"]:
-        for R in cfg["R_grid"]:
-            rows = {}
-            for split in cfg["run_splits"]:
+        for split in cfg["run_splits"]:
+            for R in cfg["R_grid"]:
+                rows = {}
                 for path in sorted(folder.glob(f"{benchmark}_{split}_res{cfg['res_px']}_R{R}_*_{digest}.jsonl")):
                     for row in read_results(path):
-                        rows[(row["benchmark"], row["split"], row["R"], row["item_id"])] = row
-            if not rows:
-                continue
-            summary = summarize_rows(list(rows.values()))
-            table.append({"benchmark": benchmark, "R": R, "n": summary["n"], "accuracy": summary["accuracy"],
-                          "parse_rate": summary["parse_rate"], "s_per_item": summary["generate_s_mean"]})
+                        rows[row["item_id"]] = row
+                if not rows:
+                    continue
+                summary = summarize_rows(list(rows.values()))
+                table.append({"benchmark": benchmark, "split": split, "R": R, "n": summary["n"],
+                              "accuracy": summary["accuracy"], "parse_rate": summary["parse_rate"],
+                              "s_per_item": summary["generate_s_mean"]})
     return table
