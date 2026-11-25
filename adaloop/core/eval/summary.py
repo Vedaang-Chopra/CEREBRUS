@@ -26,6 +26,8 @@ def summarize_rows(rows: Sequence[dict]) -> dict:
         "n_out_tokens_mean": mean("n_out_tokens"),
         "ttft_s_mean": mean("ttft_s"),
         "generate_s_mean": mean("generate_s"),
-        "peak_mem_gb_max": max(r["peak_mem_gb"] for r in rows),
+        # None for batched rows (not a per-item quantity)
+        "peak_mem_gb_max": max((r["peak_mem_gb"] for r in rows if r.get("peak_mem_gb") is not None),
+                               default=float("nan")),
     }
     return summary

@@ -3,7 +3,7 @@ from adaloop.core.eval.extract import extract_answer
 from adaloop.core.eval.scorers import normalize_answer, score, score_gqa, score_textvqa
 from adaloop.core.eval.summary import summarize_rows
 from adaloop.core.model.hooks import record_pass_states
-from adaloop.core.model.inference import generate, last_logits
+from adaloop.core.model.inference import generate, generate_batch, last_logits
 from adaloop.core.model.load import load_model, unload_model
 from adaloop.core.model.loops import count_layer_calls, expected_layer_calls, set_loops
 from adaloop.core.model.prompting import prepare_inputs
@@ -40,6 +40,7 @@ __all__ = [
     "extract_answer",
     "extract_visual_tokens",
     "generate",
+    "generate_batch",
     "git_hash",
     "last_logits",
     "load_config",

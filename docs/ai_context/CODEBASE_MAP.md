@@ -5,7 +5,8 @@ Kept current by the agent after every step (see `docs/IMPLEMENTATION.md` §0). L
 | Module | Layer | Public entry points | Owner | Status |
 |---|---|---|---|---|
 | `adaloop/api.py` | L2 | see `adaloop/README.md` | A | model, pruning, GQA + TextVQA data, scoring, evaluation, answer prefill (S2), pass states (S3b) |
-| `adaloop/orchestration/evaluate.py` | L3 | `evaluate_item`, `run_evaluation`, `read_results` | A | created (merged from Jiaqi's repo) |
+| `adaloop/orchestration/evaluate.py` | L3 | `evaluate_item`, `run_evaluation` (`batch_size`), `read_results` | A | created (merged from Jiaqi's repo); batched accuracy runs not yet checked on real weights |
+| `adaloop/core/model/inference.py` | L4 | `generate`, `generate_batch`, `last_logits` | A | batch 1 is the reference; left-padded batch added |
 | `adaloop/core/model/hooks.py` | L4 | `record_pass_states` | B | last core layer state per pass |
 | `adaloop/orchestration/pass_state.py` | L3 | `check_pass_state` | B | S3b check |
 | `adaloop/core/eval/` | L4 | `extract_answer`, `score`, `score_gqa`, `score_textvqa`, `summarize_rows` | A | GQA, TextVQA |

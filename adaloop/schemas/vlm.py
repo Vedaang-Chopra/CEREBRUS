@@ -20,6 +20,7 @@ class GenerationResult:
 
     `raw_text` keeps special tokens (needed for answer extraction); `text` drops them.
     Times are wall-clock seconds with GPUs synchronized; `peak_mem_gb` is summed over GPUs.
+    From `generate_batch`, `generate_s` is batch time / batch size and `ttft_s`, `peak_mem_gb` are None.
     """
 
     token_ids: torch.Tensor
@@ -30,4 +31,4 @@ class GenerationResult:
     hit_limit: bool
     ttft_s: float | None
     generate_s: float
-    peak_mem_gb: float
+    peak_mem_gb: float | None
