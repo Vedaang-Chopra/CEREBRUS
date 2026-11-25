@@ -8,6 +8,21 @@ Updated by main-discussion after every stage. Last update: **Wed Nov 25, 2026**.
 2. **You run the notebook** on Inara (VS Code, `learning_env` kernel, GPUs 2–3), save it, and say "NN done".
 3. main-discussion reads the saved outputs, checks the Done-when, and asks you for any decision. Decisions go into `docs/decisions.md`.
 
+## The plan now (Vedaang, Nov 25 evening): small steps, 20 samples, then post-training
+
+One step at a time. Each step = one notebook run on ~20 items per benchmark, read by main-discussion, one decision.
+No code is written for a step before the previous step's result is in. Infrastructure for full-scale runs goes to teammates.
+
+| # | Step | Notebook | Question it answers | State |
+|---|---|---|---|---|
+| 1 | S2 answer format | 04 | P (no thinking) or T (thinking, 256 budget)? Parse ≥95%? | code finishing |
+| 2 | S3/S3b checks | 05 | k=100% pruning exact? pass p of R=5 = fresh R=p? | code ready |
+| 3 | Loops at full tokens | 06 (Step-1..3 on 20 items) | does accuracy change with R = 1..5? batched = batch 1? | code ready |
+| 4 | Tokens × loops, small | small k × R table on 20 items (k ∈ 25/50/100%, R ∈ 1/3/5) | how much does accuracy drop at low k? (this is what the LoRA must fix) | not built: one small addition after step 3 |
+| 5 | Post-training (S8 teacher cache, S9 budget-tolerance LoRA) | 10 | does LoRA recover accuracy at low k without hurting k=100%? | after step 4; draft code parked on branch `wip/post-training` |
+
+**For teammates (later, full scale):** S7 grid runner at scale, S4/S5 features + selectors, S6 cost ledger details, S11–S13 controller + baselines (draft on branch `wip/controller-teammates`), S14–S15 analysis. Roles in `docs/TEAM_PLAN.md`.
+
 ## Stages (DEC3_MVP §7)
 
 | Stage | What | Notebook | State | Next action |
