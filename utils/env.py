@@ -1,8 +1,11 @@
 """Notebook environment setup."""
 import os
 import sys
+import warnings
 from pathlib import Path
 
+import datasets
+import transformers
 from dotenv import load_dotenv
 
 from utils.io import load_config
@@ -22,7 +25,8 @@ def setup_notebook(config: str = "configs/mvp.yaml") -> tuple[Path, dict]:
     """Prepare a notebook session and return (repo root, loaded config).
 
     Changes into the repo root, puts it on sys.path, loads env.env if present
-    (variables already set are kept).
+    (variables already set are kept),
+    and silences transformers/datasets logs, FutureWarning and UserWarning.
     A relative `config` path is resolved against the repo root.
     """
     root = _find_root()
@@ -30,6 +34,11 @@ def setup_notebook(config: str = "configs/mvp.yaml") -> tuple[Path, dict]:
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
     load_dotenv(root / "env.env")
+    # Keep notebook output readable: drop library warnings (tqdm progress bars stay).
+    transformers.logging.set_verbosity_error()
+    datasets.logging.set_verbosity_error()
+    for category in (FutureWarning, UserWarning):
+        warnings.filterwarnings("ignore", category=category)
     print(f"repo root: {root}")
     cfg = load_config(root / config)
     return root, cfg
