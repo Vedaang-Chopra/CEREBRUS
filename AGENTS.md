@@ -3,8 +3,9 @@
 Project overrides only. Universal rules: `~/agent-governance/AGENTS.md` (read it first; do not duplicate it here).
 
 ## Project
-Adaptive Looped VLM: a controller picks visual-token budget `k` and loop count `R` on the
-varloop backbone. Reported as accuracy vs FLOPs, plus safety. Spec: `docs/proposal/Proposal_v2.docx`.
+AdaLoop-VLM: a looped VLM (varloop backbone) whose loop state decides after each pass to exit, loop again, or look again;
+then post-trained (PT-1 LoRA-insert, PT-2 question-aware encoder QAFE, PT-3 joint RL). Reported as accuracy vs FLOPs and
+measured latency, plus safety. **Master reference: `docs/IMPLEMENTATION.md`** (wins on conflicts; index in `docs/README.md`).
 Controller-feature cost is counted in FLOPs from day one.
 
 ## Branches
@@ -21,12 +22,14 @@ To see old code: `git show cerebrus-v0:<path>`; do not restore old trees into `m
 
 ## Layout (tracked)
 ```
-adaloop/            package: load.py, hooks.py, controller/, data/, eval/
+adaloop/ qafe/ utils/  packages, layered per docs/IMPLEMENTATION.md §4.2 (api → orchestration → core → schemas/utils)
 tests/              pytest; one test file per ported or new piece
 configs/            YAML configs
 notebooks/          inspection only, no production logic
 scripts/            thin CLI entry points
-docs/proposal/      Proposal_v2.docx, GRA research questions
+docs/               IMPLEMENTATION.md (master), README.md (index), decisions.md,
+                    01_research/ 02_loop/ 03_encoder/ 04_prompts/ notes/ ai_context/
+docs/proposal/      Proposal_v2.docx (superseded), GRA research questions
 docs/cerebrus/      AUDIT_LEDGER.md, PROJECT_RESUME_CONTEXT.md, RESUME_PROJECT_BRIEF.md
 docs/literature/    paper classification CSVs, reading notes, model cards (varloop card here)
 pyproject.toml, environment.yml
