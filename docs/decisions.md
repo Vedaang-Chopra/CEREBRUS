@@ -36,3 +36,8 @@ One entry per gate or design decision. Newest at the bottom. Format:
 ## Nov 25, 2026 — S4/S5 revised: compression baselines from official code
 - Decision: S4 integrates official code of CDPruner, ReDiPrune, TRIM, ToMe (+ DivPrune) instead of crisp_lite; S5 compares them at R = 3, k ∈ {25, 50, 100}% on dev with accuracy, FLOPs, latency, compression time and token count. Details, commits, licenses, glue and blockers: `docs/notes/compression_baselines.md`.
 - Blockers: faithful TRIM and CDPruner relevance need a CLIP text tower our model lacks → `TRIM-style`, `CDPruner-style`. ToMe merges 2×2 units (the merger needs 2×2 groups). CRISP and HQAP have no official code → excluded.
+
+## Nov 25, 2026 · S2 · answer path: no thinking for the POC (git 1e456ae, nb04)
+- Dev n=20 per benchmark, R=3, res_px 512, batch 1. P (no thinking, prefill "ANSWER:"): GQA 60.0, TextVQA 59.0, parse 100%, 1.5-2.6 s/item. T (thinking, effort 0.9, budget 256): GQA 60.0, TextVQA 63.0, parse 100%, 30-35% forced, 89-98 s/item.
+- Decision (Vedaang): build and test the whole pipeline (S4 onward, incl. LoRA) with **no thinking** (`answer_prefill` = `no_think_prefill`). Final results add a **thinking** evaluation with a larger budget (forcing cut 30-35% of answers at 256) and the strict parser.
+- Open for the final runs: think budget size; LoRA is trained without thinking, so base vs LoRA under thinking must be compared in the same format; thinking costs ~50x time per item. res_px stays 512 (768/1024 not compared).

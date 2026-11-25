@@ -15,7 +15,7 @@ No code is written for a step before the previous step's result is in. Infrastru
 
 | # | Step | Notebook | Question it answers | State |
 |---|---|---|---|---|
-| 1 | S2 answer format | 04 | P (no thinking) or T (thinking, 256 budget)? Parse ≥95%? | code finishing |
+| 1 | S2 answer format | 04 | P (no thinking) or T (thinking, 256 budget)? Parse ≥95%? | **done: P for the POC**, thinking for final results |
 | 2 | S3/S3b checks | 05 | k=100% pruning exact? pass p of R=5 = fresh R=p? | code ready |
 | 3 | Loops at full tokens | 06 (Step-1..3 on 20 items) | does accuracy change with R = 1..5? batched = batch 1? | code ready |
 | 4 | Tokens × loops, small | small k × R table on 20 items (k ∈ 25/50/100%, R ∈ 1/3/5) | how much does accuracy drop at low k? (this is what the LoRA must fix) | not built: one small addition after step 3 |
@@ -29,7 +29,7 @@ No code is written for a step before the previous step's result is in. Infrastru
 |---|---|---|---|---|
 | S0 | Env, package, model load, loop control, pruning port | 01, 02 | code done; env pinned to `learning_env` | archive 01/02 once you commit your edits; `scripts/mvp.py smoke` not run yet |
 | S1 | GQA + TextVQA loaders, splits, scorers, eval runner | 03 | **data checks PASS** (splits frozen, `configs/splits/`) | you: finish the evaluation section |
-| S2 | Thinking off, `res_px` | 04 | code ready, not run | **you: run 04 → pick `answer_prefill`, `res_px`, `max_new_tokens`** |
+| S2 | Thinking off, `res_px` | 04 | **done**: no thinking for the POC (P: GQA 60, TextVQA 59 on 20 items, ~2 s/item) | thinking with a larger budget only for final results |
 | S3 | Original positions after pruning | 05 | code done: **original positions not supported by the model** (distances, masks, convs use token index; see `docs/notes/modeling_code.md`) → pruning stays packed (DEC3 fallback) | you: run 05, confirm k=100% bit-exact |
 | S3b | Layer-call count, pass-p state vs fresh R=p run | 05 | code done (theory: pass p of R=5 equals R=p) | you: run 05 Step-8 table on real weights |
 | S4 | Per-pass features + compression baselines from official code (CDPruner-style, ReDiPrune, TRIM-style, ToMe, DivPrune) | 07 | planned (`docs/notes/compression_baselines.md`) | awaiting your OK to implement |

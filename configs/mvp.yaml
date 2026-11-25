@@ -29,7 +29,7 @@ answer_extra_tokens: 32
 forced_answer_tokens: 16
 # Option: start of the model reply, appended to the prompt. null = the model thinks first and stops by itself.
 # A prefill ending in <|content_text|> opens the answer message, and generation then also stops at <|end_message|>.
-answer_prefill: null
+answer_prefill: "<|message_model|><|content_text|>ANSWER:"  # S2 decision (Nov 25): no thinking (= no_think_prefill) for the POC; thinking only for final results
 # the no-thinking prefill (variant P): opens the answer message and writes the marker, so the model only adds the answer
 no_think_prefill: "<|message_model|><|content_text|>ANSWER:"
 out_dir: execution_results/mvp
