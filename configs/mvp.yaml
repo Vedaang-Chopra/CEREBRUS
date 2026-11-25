@@ -11,6 +11,8 @@ prompt_suffix: "\nAnswer with a single word or short phrase."
 # (log it in docs/decisions.md).
 answer_prefill: null
 out_dir: execution_results/mvp
+# bump when a code change alters outputs for the same config (generation, extraction, scoring)
+code_version: 2
 
 benchmarks:
   gqa:

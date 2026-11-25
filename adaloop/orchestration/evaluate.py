@@ -9,7 +9,7 @@ from pathlib import Path
 
 import torch
 
-from adaloop.core.eval.extract import extract_answer
+from adaloop.core.eval.extract import answer_is_open, extract_answer
 from adaloop.core.eval.scorers import score
 from adaloop.core.eval.summary import summarize_rows
 from adaloop.core.model.inference import generate, generate_batch
@@ -21,7 +21,7 @@ from utils.hashing import config_hash, git_hash
 from utils.images import resize_long_side
 
 
-def _item_inputs(vlm: LoadedVLM, item: Item, cfg: dict) -> Mapping:
+def item_inputs(vlm: LoadedVLM, item: Item, cfg: dict) -> Mapping:
     """Model inputs for one item: resized image, question plus suffix, answer prefill."""
     prompt = item.question + cfg["prompt_suffix"]
     image = resize_long_side(item.image, cfg["res_px"])
@@ -30,7 +30,7 @@ def _item_inputs(vlm: LoadedVLM, item: Item, cfg: dict) -> Mapping:
 
 def _result_row(item: Item, cfg: dict, R: int, gen: GenerationResult, batch_size: int) -> dict:
     """Score one generation and lay it out as a result row."""
-    pred = extract_answer(gen.raw_text, gen.hit_limit)
+    pred = extract_answer(gen.raw_text, gen.hit_limit, prefilled=answer_is_open(cfg.get("answer_prefill")))
     return {
         "item_id": item.item_id,
         "benchmark": item.benchmark,
@@ -59,14 +59,14 @@ def _result_row(item: Item, cfg: dict, R: int, gen: GenerationResult, batch_size
 def evaluate_item(vlm: LoadedVLM, item: Item, cfg: dict, R: int) -> dict:
     """Answer one item at loop count R with all visual tokens; return its result row."""
     set_loops(vlm, R)
-    gen = generate(vlm, _item_inputs(vlm, item, cfg), cfg["max_new_tokens"])
+    gen = generate(vlm, item_inputs(vlm, item, cfg), cfg["max_new_tokens"])
     return _result_row(item, cfg, R, gen, batch_size=1)
 
 
 def _evaluate_batch(vlm: LoadedVLM, items: Sequence[Item], cfg: dict, R: int) -> list[dict]:
     """Like `evaluate_item` for several items generated as one batch."""
     set_loops(vlm, R)
-    inputs_list = [_item_inputs(vlm, item, cfg) for item in items]
+    inputs_list = [item_inputs(vlm, item, cfg) for item in items]
     gens = generate_batch(vlm, inputs_list, cfg["max_new_tokens"])
     return [_result_row(item, cfg, R, gen, batch_size=len(items)) for item, gen in zip(items, gens)]
 

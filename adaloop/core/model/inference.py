@@ -7,10 +7,35 @@ from collections.abc import Mapping, Sequence
 
 import torch
 
+from adaloop.core.eval.extract import ANSWER, END
 from adaloop.schemas.vlm import GenerationResult, LoadedVLM
 from utils.timing import FirstTokenTimer, cuda_sync, peak_memory_gb, reset_peak_memory
 
 IMAGE_KEYS = ("pixel_values", "image_grid_thw")  # one row per image token / image, not per sequence
+END_SAMPLING = "<|content_model_end_sampling|>"
+
+
+def _token_id(vlm: LoadedVLM, token: str) -> int:
+    """Id of a special token, looked up by its string."""
+    tokenizer = vlm.processor.tokenizer
+    token_id = tokenizer.convert_tokens_to_ids(token)
+    if token_id is None or token_id == tokenizer.unk_token_id:
+        raise ValueError(f"tokenizer has no token {token!r}")
+    return token_id
+
+
+def _stop_ids(vlm: LoadedVLM, input_ids: torch.Tensor) -> tuple[list[int], dict]:
+    """(stop token ids, extra `model.generate` kwargs) for prompts `input_ids` (B, T), padded on the left."""
+    # Answer message already open: its <|end_message|> ends the answer, otherwise the model starts a new message.
+    # Not open (thinking on): <|end_message|> also ends the thinking message, so the model's own stop is kept.
+    is_open = input_ids[:, -1] == _token_id(vlm, ANSWER)  # (B,)
+    if is_open.all():
+        ids = [_token_id(vlm, END), _token_id(vlm, END_SAMPLING)]
+        return ids, {"eos_token_id": ids}
+    if is_open.any():
+        raise ValueError("a batch cannot mix prompts with and without an open answer message")
+    eos = vlm.model.generation_config.eos_token_id
+    return [] if eos is None else [eos] if isinstance(eos, int) else list(eos), {}
 
 
 @torch.inference_mode()
@@ -20,13 +45,14 @@ def generate(vlm: LoadedVLM, inputs: Mapping, max_new_tokens: int) -> Generation
     prompt_len = input_ids.shape[-1]
     n_visual = int((input_ids == vlm.model.config.image_token_id).sum())
 
+    _, stop_kwargs = _stop_ids(vlm, input_ids)
     reset_peak_memory()
     timer = FirstTokenTimer()
     cuda_sync()
     start = time.perf_counter()
     timer.start()
     outputs = vlm.model.generate(
-        **inputs, max_new_tokens=max_new_tokens, do_sample=False, use_cache=True, streamer=timer
+        **inputs, max_new_tokens=max_new_tokens, do_sample=False, use_cache=True, streamer=timer, **stop_kwargs
     )
     cuda_sync()
     generate_s = time.perf_counter() - start
@@ -74,15 +100,16 @@ def generate_batch(vlm: LoadedVLM, inputs_list: Sequence[Mapping], max_new_token
     For accuracy runs. `generate` (batch 1) is the reference and the only path with per-item measurements:
     here `generate_s` is batch time / batch size, and `ttft_s` and `peak_mem_gb` are None.
     """
-    gen_cfg = vlm.model.generation_config
-    batch = _left_pad(inputs_list, gen_cfg.pad_token_id)
+    batch = _left_pad(inputs_list, vlm.model.generation_config.pad_token_id)
     prompt_width = batch["input_ids"].shape[1]
-    eos = gen_cfg.eos_token_id
-    eos_ids = torch.tensor([] if eos is None else [eos] if isinstance(eos, int) else eos, dtype=torch.long)
+    stop_ids, stop_kwargs = _stop_ids(vlm, batch["input_ids"])
+    eos_ids = torch.tensor(stop_ids, dtype=torch.long)
 
     cuda_sync()
     start = time.perf_counter()
-    outputs = vlm.model.generate(**batch, max_new_tokens=max_new_tokens, do_sample=False, use_cache=True)
+    outputs = vlm.model.generate(
+        **batch, max_new_tokens=max_new_tokens, do_sample=False, use_cache=True, **stop_kwargs
+    )
     cuda_sync()
     batch_s = time.perf_counter() - start
     new_ids = outputs[:, prompt_width:].cpu()  # (B, new)
