@@ -32,3 +32,7 @@ One entry per gate or design decision. Newest at the bottom. Format:
 
 ## Nov 25, 2026 — test split sealed
 - Decision: the test split stays sealed until the LoRA, selector, controller, λ and thresholds are frozen. S7 and S10 grids run on ctrl_train + dev only; test rows are added once, after that freeze, before S12–S14 report on test. Reason: DEC3 S7/S10 ran on test, which conflicts with §9 rule 2 and would let test results steer choices. `configs/full_baseline.yaml` already uses `run_splits: [dev, ctrl_train]` and `full_run` refuses test.
+
+## Nov 25, 2026 — S4/S5 revised: compression baselines from official code
+- Decision: S4 integrates official code of CDPruner, ReDiPrune, TRIM, ToMe (+ DivPrune) instead of crisp_lite; S5 compares them at R = 3, k ∈ {25, 50, 100}% on dev with accuracy, FLOPs, latency, compression time and token count. Details, commits, licenses, glue and blockers: `docs/notes/compression_baselines.md`.
+- Blockers: faithful TRIM and CDPruner relevance need a CLIP text tower our model lacks → `TRIM-style`, `CDPruner-style`. ToMe merges 2×2 units (the merger needs 2×2 groups). CRISP and HQAP have no official code → excluded.

@@ -32,8 +32,8 @@ No code is written for a step before the previous step's result is in. Infrastru
 | S2 | Thinking off, `res_px` | 04 | code ready, not run | **you: run 04 → pick `answer_prefill`, `res_px`, `max_new_tokens`** |
 | S3 | Original positions after pruning | 05 | code done: **original positions not supported by the model** (distances, masks, convs use token index; see `docs/notes/modeling_code.md`) → pruning stays packed (DEC3 fallback) | you: run 05, confirm k=100% bit-exact |
 | S3b | Layer-call count, pass-p state vs fresh R=p run | 05 | code done (theory: pass p of R=5 equals R=p) | you: run 05 Step-8 table on real weights |
-| S4 | Per-pass features, `crisp_lite` selector | — | not started | |
-| S5 | Selector choice (R=3, k 25/50%) | — | not started | |
+| S4 | Per-pass features + compression baselines from official code (CDPruner-style, ReDiPrune, TRIM-style, ToMe, DivPrune) | 07 | planned (`docs/notes/compression_baselines.md`) | awaiting your OK to implement |
+| S5 | Compression comparison (R=3, k 25/50/100%, accuracy + FLOPs + latency) | 07 | planned | after S4 |
 | S6 | FLOPs model + throughput → item counts | — | not started | can start now (no dependency on S2) |
 | S7 | Base grid 15 cells + noise re-run | — | not started | needs S2–S6 |
 | S8 | Teacher cache | — | not started | needs S2, S5 |

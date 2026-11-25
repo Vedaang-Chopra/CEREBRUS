@@ -84,7 +84,7 @@ adaloop/
     splits.py               # image-disjoint splits, frozen to configs/splits/mvp_*.json
   core/
     model/   load.py  loops.py (set_loops, call counter)  prompting.py (thinking off)  hooks.py (per-pass last-token state, visual attention mass)
-    tokens/  selectors.py (random, text_mean, crisp_lite)  prune.py (prune_inputs with original positions)
+    tokens/  selectors.py (random, uniform, text_mean)  methods/ (cdpruner, rediprune, trim_style, tome, divprune: official code + glue, docs/notes/compression_baselines.md)  prune.py (prune_inputs with original positions)
     cost/    flops.py       # analytic FLOPs per (n_tokens, R, partial_pass) from the model config
     eval/    extract.py  scorers.py (GQA exact match, TextVQA VQA-acc)  oracle.py
     controller/
@@ -120,7 +120,7 @@ prompt: configs/prompts.yaml#short_answer
 max_new_tokens: 16
 k_grid: [0.25, 0.5, 1.0]
 R_grid: [1, 2, 3, 4, 5]
-selector: <text_mean | crisp_lite>       # frozen after S5
+compressor: <none | random | uniform | text_mean | cdpruner_style | rediprune | trim_style | tome | divprune>   # frozen after S5
 benchmarks:
   gqa:     {source: <HF_ID verified in S1>, split: testdev_balanced}
   textvqa: {source: <HF_ID verified in S1>, split: validation}
@@ -190,8 +190,8 @@ Owner columns match `docs/TEAM_PLAN.md` roles: **V** = Vedaang, **A** = data/eva
 | **S2** | A | **Thinking off.** Inspect chat template + special tokens; prefill an empty thinking block + answer start. Pick `res_px` (768 vs 1024 on 50 TextVQA dev items) | ≥ 95% parseable short answers on 20 GQA + 20 TextVQA. Decision in `docs/decisions.md`. **Deadline: Wed noon.** |
 | **S3** | B | Original positions: read the modeling code for `position_ids` / `relative_distance`; `prune.py` keeps original positions if supported. Compare packed vs positioned at k = 50% on 50 dev items | Decision logged; `test_prune_positions.py` + `test_identity.py` (k = 100% bit-exact) pass |
 | **S3b** | B | Loop control test (calls = 6 + 12R + 6). **Pass-state check:** h_last at pass p from hooks in an R = 5 run vs an R = p run, cosine + answer agreement over p, 30 items | Numbers in `decisions.md`. Drives the tree assumption. |
-| **S4** | B | `hooks.py` + `features.py`; selectors `text_mean` (notebook v0) and `crisp_lite` (spaCy nouns → decoder input embeddings, top-k by cosine + 25% spatially uniform fill) | Features saved for 5 items × 15 cells |
-| **S5** | B | Selector choice on dev at R = 3, k ∈ {25, 50}%: random vs text_mean vs crisp_lite. Freeze the winner in `mvp.yaml` | Small table in `decisions.md` |
+| **S4** | A | **(a)** `hooks.py` + `features.py` (loop-state extraction, unchanged). **(b) Compression baselines from official code** (revised Nov 25, `docs/notes/compression_baselines.md`): clone ReDiPrune, CDPruner, TRIM, ToMe (+ DivPrune) at pinned commits; copy their core functions verbatim with provenance; write glue to our vision tower / projected tokens. One interface `compress(vlm, inputs, question, k, cfg)`, chosen by `compressor` in config, `none` = bypass. Methods whose scorer had to change are named `-style`. No official code → excluded (CRISP, HQAP). Controls: random, uniform, text_mean | Each method: exact kept-token count at k = 25/50%, k = 100% bit-exact with no compression, 1 item per benchmark runs end to end (nb07). Features saved for 5 items × 15 cells |
+| **S5** | A | **Compression comparison** on dev (frozen model, R = 3, k ∈ {25, 50, 100}%, GQA + TextVQA): every integrated method + controls. Metrics: accuracy, FLOPs (ViT + decoder + compression overhead), latency, compression time, actual token count. 20 items per benchmark first, then full dev. Freeze the winner as `compressor` in `mvp.yaml` | Table + accuracy-vs-FLOPs figure (F06) in `decisions.md`; S9 smoke may start with text_mean and switch to the winner |
 | **S6** | A | `flops.py` + timing; **throughput:** 50 dev items × 15 cells → s/item → final item counts | `test_flops.py` passes; budget line in `decisions.md` |
 | **S7** | A | **Base grid** on ctrl_train + dev (test is added only after S12 is frozen, see §9 rule 2), all 15 cells, features on. Shard by item over replicas; merge shards. Plus noise re-run: `n_rerun` items × 15 cells with `rerun_id=1` | `grid.parquet` complete; row counts checked |
 | **S8** | V | Teacher cache on `lora_train`: full tokens, R = 3, greedy answer ids + top-32 log-probs per answer token | `teacher/*.pt` for all lora_train items; cached ≈ live on 20 items |

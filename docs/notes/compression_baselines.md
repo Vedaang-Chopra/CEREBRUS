@@ -1,0 +1,49 @@
+# Visual-token compression baselines (S4 / S5)
+
+Decided Nov 25, 2026 (Vedaang). Goal: strong training-free baselines for QAFE, built from the **official code** of each
+method. No method is replaced by a simplified version without saying so: a method whose scorer had to change is named
+`<method>-style` in code, tables and the paper. Methods without official code stay in the literature review only.
+
+## Our vision tower (what the methods plug into)
+`Inkling2VisionModel` (transformers `models/inkling2/modeling_inkling2.py` @ `2f1bc5e321b9`): 23 pre-norm ViT layers,
+hidden 1024, 16 heads, patch 20, one CLS per image, learned 32×32 absolute positions + axial 2D RoPE, eager/sdpa/flash.
+No final norm. Then `Inkling2VisionMerger`: groups of **4 adjacent patches (2×2)** → Linear 4096→4096, GELU, → 2304 =
+one decoder token. **No aligned text encoder** (no CLIP text tower, no `visual_projection`).
+
+Consequences:
+- Selecting whole 2×2 units before the merger = selecting projected tokens after it. Pre- vs post-projector changes
+  only the features a method **scores** on, not what the decoder sees.
+- Only in-ViT methods (ToMe) save vision-tower FLOPs. All others save decoder FLOPs only.
+- Methods that need a CLIP text tower cannot run as published: their relevance term is replaced (→ `-style`).
+
+## Methods
+
+| Method | Official code @ commit | License | Reused verbatim | Glue we write | Runs as |
+|---|---|---|---|---|---|
+| random, uniform, text_mean | ours | — | — | — | controls |
+| **CDPruner** | Theia-4869/CDPruner @ `9541616c40fc` | Apache-2.0 | DPP kernel `L = diag(r) S diag(r)` + greedy MAP (`llava/model/llava_arch.py` `encode_images` l.141-187) | relevance `r` = cosine to mean question input embedding, min-max normalized (upstream uses the CLIP text tower); also `r = 1` (DPP diversity only) | **CDPruner-style**, post-projector |
+| **ReDiPrune** | UA-CVML/ReDiPrune @ `ba04aa4427f7` | Apache-2.0 | `_select_text_cond` (l.38-127) and `extract_question_embedding` (~l.293) of `LLaVA-NeXT/llavavid/model/llava_arch.py`, incl. its query-dimension matching | k instead of env vars; features = pre-merger 2×2 units (mean of the 4 patch states, 1024-d), as upstream scores before the projector | **ReDiPrune** (pre-merger units); note: upstream is LLaVA-NeXT-Video only |
+| **TRIM** | FreedomIntelligence/TRIM @ `f2032236583b` | Apache-2.0 | selection + one mean token of the unselected (`clip_encoder.py` `token_reduction` l.67-134) | scorer = question input embeddings vs projected tokens (not CLIP-aligned); k fixed (no IQR) | **TRIM-style**; faithful TRIM **blocked** (needs CLIP text tower). Outputs keep + 1 tokens |
+| **ToMe** | facebookresearch/ToMe @ `af95e4b1befa` | CC BY-NC 4.0 | `tome/merge.py` (`bipartite_soft_matching`, `merge_wavg`, `merge_source`), `parse_r` | our ViT layer/attention forward with size-weighted proportional attention, per-image loop, merged positions; **merges 2×2 units, not patches**, so the merger gets the input it was trained on and the final count is exact | **ToMe (unit-level)**; per-patch ToMe at exact 25/50% is not possible with a 2×2 merger |
+| DivPrune | vbdi/divprune @ `799e2d950aa0` | CC BY-NC 4.0 | max-min diversity selection | none (post-projector) | optional, cheap; ReDiPrune builds on it |
+| CRISP / crisp_lite | none found | — | — | — | **excluded**, literature only |
+| HQAP | none found | — | — | — | **excluded**, literature only |
+
+Not added for Dec 3 (official code, but they prune inside the decoder or need ViT attention): FastV, SparseVLM, DART,
+VisionZip, PruMerge. Candidates for the full paper.
+CC BY-NC code (ToMe, DivPrune): fine for the course paper; check before any public release.
+
+## Code layout
+- Upstream repos cloned read-only to `old_code/third_party/<name>/` (git-ignored), at the commits above.
+- Reused code copied to `adaloop/core/tokens/methods/<name>.py` with a provenance header
+  (`# Ported from <repo>:<path> @ <commit>, <license>`), the copied part unchanged, glue below it.
+- One interface for every method: `compress(vlm, inputs, question, k, cfg) -> (mm_encoder_outputs, info)`;
+  `info` = kept token count, compression time, extra FLOPs. Selected by `cfg["compressor"]`; `none` = bypass (k = 100%).
+- Loop-state extraction (`record_pass_states`, per-pass features) is unchanged: it reads decoder states after
+  compression.
+
+## S5 protocol
+Frozen model, dev split, GQA + TextVQA, R = 3, answer format from S2, k ∈ {25, 50, 100}%.
+Per method × k: accuracy, FLOPs (ViT + decoder + compression overhead), latency, compression time, actual visual
+token count. 20 items per benchmark first (check), then the full dev split (100 per benchmark).
+Winner = best accuracy at k = 25% and 50% within noise, ties broken by cost. Frozen in `configs/mvp.yaml` → used by S7–S10.
