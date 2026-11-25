@@ -1,0 +1,1446 @@
+Original source: https://thinkingmachines.ai/model-card/tml-d24-varloop-research/
+
+TML-d24-varloop-research Model Card
+1. General information
+Model name
+TML-d24-varloop-research
+Legal name of the model provider
+Thinking Machines Lab, Inc.
+Date of release
+Nov 20, 2026
+License
+Apache 2.0
+Intended uses
+TML-d24-varloop-research is a multimodal research model that accepts text and image inputs and generates text outputs. It is a variable-looped counterpart to Inkling 2 Mini: whereas Inkling 2 Mini always runs its looped layers a fixed number of times, the number of loops in this model can be chosen at inference time. We are releasing it with open weights to support research on looped models. Because the number of loops can be varied on a single set of weights, the model allows cleaner comparisons of how additional looped computation affects a model’s internal computation and overall capabilities.
+Model Acceptable Use Policy
+Languages
+English, general multilingual support
+2. Model properties
+Model type
+Multimodal autoregressive looped transformer
+Architecture type
+A 24-layer decoder-only transformer with sparse Mixture-of-Experts (MoE) feed-forward layers. The middle 12 layers run a variable number of times with shared weights, chosen at inference time; the model was trained with 1 to 5 passes. In each layer, each token is routed to 8 of 128 experts. Attention is a hybrid of local and global layers. The model is natively multimodal – images are encoded via a vision transformer – with image and text inputs projected into a shared hidden space and processed jointly by the decoder.
+Parameters
+26.4B, 3.4B active
+Note: each extra pass through the looped layers adds about 1.0B effective active parameters per token. This corresponds to 3.4B active parameters at 1 pass, 5.4B at 3 passes, and 7.4B at 5 passes.
+Numerics support
+NVFP4 and MXFP8
+Input modalities
+Text: UTF-8 encoded text
+Image: Any pixel-based image input. For optimal performance, each image dimension should be between 40px to 4096px.
+TML-d24-varloop-research supports a context window of up to 1M tokens.
+Output modalities
+Text
+3. Methods of distribution
+The weights are available for download through Hugging Face
+here
+.
+API access to the model
+The model is not available through an API, including Tinker. It is distributed as open weights only.
+Running the open weights model on your own system
+Required hardware
+The model is distributed as a single checkpoint of about 20GB. Its expert layers are NVFP4, the last four use MXFP8, and the remaining weights are BF16.
+The checkpoint requires a single machine with at least 32GB of GPU or unified memory. This can be met with any of the following example configurations:
+1x NVIDIA DGX Spark
+1x NVIDIA GPU with 32GB or more of VRAM (for example, GeForce RTX 5090 or RTX PRO 6000 Blackwell)
+Apple silicon Mac with 32GB or more of unified memory (for example, Mac mini)
+The model uses the same mixed NVFP4 and MXFP8 precision it was trained in, so this checkpoint is its native precision and needs no further quantization.
+Required software
+Running the model directly on your own hardware requires an inference deployment framework:
+For macOS: Ollama, Exo Labs
+For NVIDIA: SGLang, vLLM, Unsloth, Hugging Face, along with all of their respective dependency libraries.
+4. Training
+Data types
+Training data includes a broad variety of content types, including text, images, video.
+Data provenance
+Training data for the model was drawn from publicly available sources, acquired from third-parties, generated internally, or synthetically generated or augmented. Publicly available data includes content from the public internet and publicly accessible repositories.
+Curation methodologies
+Data curation includes cleaning, processing, and modifying datasets. These processing steps, which vary by data type, may include deduplication and filtering to remove junk or other low-quality data, or to advance safety or other objectives.
+Training with variable looping
+TML-d24-varloop-research shares its pretraining and first stage of midtraining with Inkling 2 Mini. For the rest of midtraining, it was trained with 1 to 5 passes through the looped layers, sampled in a 1:2:6:2:1 ratio, and it was then post-trained with 3 passes. Because 3 passes dominated training once looping was introduced, performance at other pass counts may understate what models trained specifically at those counts could achieve. The two models’ later training stages differ, so we caution against comparing TML-d24-varloop-research directly to Inkling 2 Mini.
+5. Evaluations
+Each chart shows one benchmark score for TML-d24-varloop-research run at 1 to 5 passes through its looped layers, beside Inkling 2 Mini, which always runs 3 passes.
+Agentic Coding
+DeepSWE v1.1
+mini-swe-agent v2.4.6
+0%
+20%
+40%
+60%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+48.2
+0.7
+28.3
+47.4
+46.9
+48.2
+SWEBench Pro v2 (Hard)
+mini-swe-agent v2.4.6
+20%
+40%
+60%
+80%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+77.9
+39.7
+69.1
+78.9
+76.0
+78.4
+SWEBench Multilingual
+bash only
+40%
+50%
+60%
+70%
+80%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+73.7
+40.8
+68.5
+71.8
+72.8
+72.0
+SWEBench Verified
+bash only
+50%
+60%
+70%
+80%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+79.2
+56.3
+76.5
+78.7
+79.3
+79.6
+SWEBench Multimodal v2
+mini-swe-agent (vals)
+20%
+30%
+40%
+50%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+37.9
+23.1
+32.9
+34.8
+35.4
+36.0
+PMPP-Hard (AUC, 0–10h)
+pi v0.83.0
+0
+200
+400
+600
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+455.8
+49.5
+315.3
+401.8
+437.2
+424.0
+Agentic Search, Tool Use, and Knowledge Work
+BrowseComp
+original, no context management
+20%
+40%
+60%
+80%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+76.0
+29.4
+53.8
+65.7
+69.4
+71.0
+DeepSearchQA
+with compaction
+50%
+60%
+70%
+80%
+90%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+85.3
+58.5
+74.8
+78.9
+83.4
+83.0
+MCP Atlas
+Public
+60%
+70%
+80%
+90%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+82.7
+70.0
+77.6
+79.4
+79.7
+80.0
+JobBench
+20%
+40%
+60%
+80%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+49.6
+22.8
+55.1
+63.8
+61.8
+63.3
+EnterpriseOps-Gym
+LangChain ReAct loop
+20%
+30%
+40%
+50%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+36.7
+25.7
+34.4
+36.6
+36.5
+37.6
+Diligence Bench
+Loop
+10%
+20%
+30%
+40%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+31.7
+16.1
+22.2
+27.9
+29.4
+32.3
+Vision Interpretation and Creation
+GDP.pdf
+0%
+10%
+20%
+30%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+16.8
+4.6
+11.2
+19.6
+18.0
+20.0
+PerceptionBench
+40%
+50%
+60%
+70%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+57.5
+45.5
+51.3
+53.9
+53.7
+52.7
+MMMU Pro
+Standard 10
+50%
+60%
+70%
+80%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+74.9
+63.6
+69.8
+71.4
+72.1
+73.2
+OmniDocBench v1.6
+70%
+80%
+90%
+100%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+92.8
+86.6
+90.5
+92.1
+91.8
+92.5
+BabyVision
+original
+30%
+40%
+50%
+60%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+53.4
+32.7
+44.9
+50.3
+50.3
+49.2
+BabyVision
+with Python
+60%
+70%
+80%
+90%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+88.8
+67.2
+84.1
+88.9
+88.8
+89.5
+ScreenSpot Pro
+original
+50%
+60%
+70%
+80%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+76.5
+54.4
+66.0
+72.0
+73.4
+73.1
+ScreenSpot Pro
+with Python
+70%
+80%
+90%
+100%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+87.7
+80.7
+86.5
+87.7
+87.2
+88.1
+Charxiv RQ
+original
+60%
+70%
+80%
+90%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+80.6
+75.0
+78.3
+79.9
+79.2
+80.4
+Charxiv RQ
+with Python
+70%
+80%
+90%
+100%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+88.3
+84.7
+87.7
+87.6
+89.3
+87.9
+Chartography
+original
+0%
+10%
+20%
+30%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+22.1
+14.5
+17.8
+21.6
+21.4
+22.6
+Chartography
+with Python
+40%
+50%
+60%
+70%
+80%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+72.5
+49.1
+69.1
+72.3
+73.7
+72.3
+ZeroBench (main)
+original
+0%
+10%
+20%
+30%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+17.0
+9.0
+13.0
+19.0
+18.0
+17.0
+ZeroBench (main)
+with Python
+10%
+20%
+30%
+40%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+34.0
+16.0
+31.0
+40.0
+35.0
+37.0
+Humanity’s Sixth Sense
+10%
+20%
+30%
+40%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+23.8
+22.4
+24.8
+25.5
+26.5
+27.0
+MathVision
+70%
+80%
+90%
+100%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+89.0
+74.8
+84.9
+86.6
+87.8
+88.1
+MuirBench
+60%
+70%
+80%
+90%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+77.5
+73.6
+76.1
+77.1
+76.4
+77.8
+BVB
+50%
+60%
+70%
+80%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+68.4
+58.1
+64.4
+68.5
+69.2
+69.5
+Reasoning, Knowledge, and Epistemics
+HLE-Diamond
+0%
+10%
+20%
+30%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+15.2
+6.3
+8.5
+9.5
+9.7
+11.1
+HLE (text only)
+10%
+20%
+30%
+40%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+30.7
+10.5
+20.0
+24.9
+25.4
+25.9
+GPQA Diamond
+60%
+70%
+80%
+90%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+86.6
+69.6
+79.2
+84.2
+81.9
+83.1
+Apex 2025
+0%
+10%
+20%
+30%
+40%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+34.4
+3.1
+10.4
+19.8
+15.6
+18.8
+ComplexConstraints v1.1
+openhands v1.45.0
+0%
+10%
+20%
+30%
+40%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+33.4
+4.5
+26.0
+37.9
+39.6
+38.9
+SimpleQA Verified
+0%
+5%
+10%
+15%
+20%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+8.4
+6.3
+6.5
+7.3
+6.8
+6.7
+AA-Omniscience v1.1 (Public)
+accuracy
+0%
+10%
+20%
+30%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+21.3
+15.5
+16.3
+18.4
+18.0
+17.4
+AA-Omniscience v1.1 (Public)
+non-hallucination rate
+60%
+70%
+80%
+90%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+64.6
+79.3
+85.0
+84.0
+85.7
+85.9
+SimpleVQA
+30%
+40%
+50%
+60%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+45.4
+39.0
+41.8
+42.4
+42.9
+41.3
+WorldVQA
+0%
+10%
+20%
+30%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+15.2
+11.3
+13.0
+14.2
+14.3
+13.5
+AA-LCR v1.1
+50%
+60%
+70%
+80%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+80.0
+55.5
+73.5
+74.8
+75.5
+76.8
+LongBench v2
+40%
+50%
+60%
+70%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+66.9
+50.6
+61.8
+66.5
+66.2
+66.4
+GraphWalks BFS
+256K
+20%
+40%
+60%
+80%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+69.7
+21.1
+54.5
+63.2
+64.3
+64.9
+GraphWalks BFS
+1M
+0%
+20%
+40%
+60%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+50.0
+5.7
+39.4
+52.1
+56.2
+57.8
+MRCR v2
+8-needle 256K–512K
+20%
+40%
+60%
+80%
+100%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+46.4
+26.2
+65.2
+89.2
+93.4
+92.1
+MRCR v2
+8-needle 512K–1M
+20%
+40%
+60%
+80%
+100%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+37.7
+20.6
+49.7
+72.3
+81.4
+79.9
+ARC-AGI-1
+Public
+20%
+40%
+60%
+80%
+100%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+90.5
+29.5
+59.3
+71.5
+72.6
+75.3
+ARC-AGI-2
+Public
+0%
+20%
+40%
+60%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+51.3
+0.8
+12.2
+22.1
+20.3
+27.1
+Safety and Alignment
+FORTRESS (adversarial)
+Public
+70%
+80%
+90%
+100%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+89.5
+89.0
+90.4
+90.0
+89.9
+89.4
+FORTRESS (benign)
+Public
+80%
+85%
+90%
+95%
+100%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+96.4
+95.0
+95.9
+95.3
+95.7
+95.0
+StrongREJECT (none)
+80%
+85%
+90%
+95%
+100%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+97.8
+98.8
+98.4
+98.2
+99.4
+98.4
+PatchEval
+50%
+60%
+70%
+80%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+60.9
+55.7
+73.9
+73.9
+75.2
+73.5
+Destructive actions (Internal) ↓
+0%
+10%
+20%
+30%
+(3 passes)
+(3 passes)
+1 pass
+1 pass
+2 passes
+2
+3 passes
+3
+4 passes
+4
+5 passes
+5
+Inkling 2 Mini
+TML-d24-varloop-research
+10.2
+26.6
+16.4
+7.8
+3.1
+7.0
+6. Safety
+We evaluated this model with the same pre-release process as Inkling 2 Mini. It is less capable than models whose weights we have already released on CBRN and cyber evaluations, and it refuses harmful requests about as reliably as Inkling 2 Small.
+For production use, we recommend Inkling 2 Mini as it generally performs better on capabilities and alignment evaluations. We do not intend TML-d24-varloop-research for production use.
+Across all areas, we concluded that TML-d24-varloop-research did not present risk of material uplift beyond what’s already available in the open-weight ecosystem.
+7. Bias, risks and limitations
+TML-d24-varloop-research is a research model, not a production model. It may exhibit general limitations common to foundation models, including hallucination (generating plausible but factually incorrect or unsupported content), occasional failures to follow instructions precisely, and degraded performance in long multi-turn conversations. As with other large-scale models trained on web-derived and synthetic data, TML-d24-varloop-research may reflect biases present in its training data, including demographic, cultural, or linguistic biases, and may perform unevenly across languages, dialects, or subject domains that were less represented during training.
+TML-d24-varloop-research’s knowledge is limited to information available as of its training cutoff, and it may not reflect events, developments, or changes that occurred afterward.
+TML-d24-varloop-research is intended to be a research artifact. It has not been carefully tuned for deployment, and may behave unpredictably at pass counts other than 3. We do not recommend deploying this model in production or user-facing applications.
+8. Legal
+Training Data Documentation

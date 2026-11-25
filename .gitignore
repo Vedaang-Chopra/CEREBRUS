@@ -1,12 +1,7 @@
 # local-only legacy / large material (old code lives on branch cerebrus-v0)
 /edge_glass_modular/
-/older_code_base/
-/older_plots/
+/old_data/
 /Papers/
-/v2_code_base/
-/wandb/
-/log_results.txt
-/*.wav
 /*.pdf
 *.inetloc
 .DS_Store
