@@ -1,5 +1,5 @@
 """Pass-state check (stage S3b): is pass p of a long run the same as the end of an R = p run?"""
-import logging
+import time
 from collections.abc import Sequence
 
 import torch
@@ -15,13 +15,11 @@ from adaloop.schemas.items import Item
 from adaloop.schemas.vlm import GenerationResult, LoadedVLM
 from utils.images import resize_long_side
 
-logger = logging.getLogger(__name__)
-
 
 def _run_with_states(
     vlm: LoadedVLM, inputs, max_new_tokens: int, R: int
 ) -> tuple[list[torch.Tensor], GenerationResult]:
-    """Generate at loop count R; return the R pass states of the prompt forward and the generation."""
+    """Generate at loop count R; return (the R pass states of the prompt forward, the generation)."""
     set_loops(vlm, R)
     with record_pass_states(vlm) as states:
         gen = generate(vlm, inputs, max_new_tokens)
@@ -30,38 +28,47 @@ def _run_with_states(
     return states, gen
 
 
-def check_pass_state(vlm: LoadedVLM, items: Sequence[Item], cfg: dict) -> list[dict]:
-    """Compare one R = MAX_LOOPS run per item with a fresh run at every R = p; return one row per (item, p).
+def _compare(
+    item: Item, p: int, long_run: tuple[torch.Tensor, GenerationResult], short_run: tuple[torch.Tensor, GenerationResult]
+) -> dict:
+    """Build the result row for pass p; each run is (state to compare, generation)."""
+    long_h, long_gen = long_run  # (hidden_size,)
+    short_h, short_gen = short_run
+    pred_p = extract_answer(short_gen.raw_text, short_gen.hit_limit)
+    pred_full = extract_answer(long_gen.raw_text, long_gen.hit_limit)
+    return {
+        "item_id": item.item_id,
+        "p": p,
+        "cosine": F.cosine_similarity(long_h, short_h, dim=0).item(),
+        "rel_l2": ((long_h - short_h).norm() / short_h.norm()).item(),  # relative to the R = p state
+        "h_equal": torch.equal(long_h, short_h),
+        "pred_p": pred_p,
+        "pred_full": pred_full,
+        "parsed_both": pred_p is not None and pred_full is not None,
+        "answer_agree": pred_p is not None and pred_p == pred_full,
+        "tokens_equal": torch.equal(short_gen.token_ids, long_gen.token_ids),
+        "correct_p": score(item.benchmark, pred_p, item.answers),
+        "correct_full": score(item.benchmark, pred_full, item.answers),
+    }
 
-    `cosine` and `rel_l2` compare the pass-p state of the long run with the final state of the R = p run
-    (`rel_l2` is relative to the R = p state). The long run has no answer at pass p, so `pred_p` is the
-    answer of the R = p run and `pred_full` the answer of the long run. At p = MAX_LOOPS the two runs are
-    identical, so that row shows the rerun noise.
-    """
+
+def check_pass_state(vlm: LoadedVLM, items: Sequence[Item], cfg: dict) -> list[dict]:
+    """Compare one R = MAX_LOOPS run per item with a fresh run at every R = p; one row per (item, p)."""
+    # The long run has no answer at pass p, so `pred_p` is the R = p answer and `pred_full` the long run's answer.
+    # At p = MAX_LOOPS both runs use the same setting, so that row shows the rerun noise.
     rows = []
     for n, item in enumerate(items):
+        start = time.perf_counter()
+        ### Step-1:- One prompt per item, shared by every run
         image = resize_long_side(item.image, cfg["res_px"])
         prompt = item.question + cfg["prompt_suffix"]
         inputs = prepare_inputs(vlm, prompt, image, prefill=cfg.get("answer_prefill"))
-        full_states, full = _run_with_states(vlm, inputs, cfg["max_new_tokens"], MAX_LOOPS)
-        pred_full = extract_answer(full.raw_text, full.hit_limit)
+        ### Step-2:- The long run records the state of every pass
+        long_states, long_gen = _run_with_states(vlm, inputs, cfg["max_new_tokens"], MAX_LOOPS)
+        ### Step-3:- A fresh run per p; compare its final state with pass p of the long run
         for p in range(1, MAX_LOOPS + 1):
             states, gen = _run_with_states(vlm, inputs, cfg["max_new_tokens"], p)
-            long_h, short_h = full_states[p - 1], states[-1]
-            pred = extract_answer(gen.raw_text, gen.hit_limit)
-            rows.append({
-                "item_id": item.item_id,
-                "p": p,
-                "cosine": F.cosine_similarity(long_h, short_h, dim=0).item(),
-                "rel_l2": ((long_h - short_h).norm() / short_h.norm()).item(),
-                "h_equal": torch.equal(long_h, short_h),
-                "pred_p": pred,
-                "pred_full": pred_full,
-                "parsed_both": pred is not None and pred_full is not None,
-                "answer_agree": pred is not None and pred == pred_full,
-                "tokens_equal": torch.equal(gen.token_ids, full.token_ids),
-                "correct_p": score(item.benchmark, pred, item.answers),
-                "correct_full": score(item.benchmark, pred_full, item.answers),
-            })
-        logger.info("pass-state check %d/%d done", n + 1, len(items))
+            rows.append(_compare(item, p, (long_states[p - 1], long_gen), (states[-1], gen)))
+        worst = max(r["rel_l2"] for r in rows[-MAX_LOOPS:])
+        print(f"[{n + 1}/{len(items)}] {item.item_id} | max rel L2: {worst:.2e} | {time.perf_counter() - start:.1f}s")
     return rows
