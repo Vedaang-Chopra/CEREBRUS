@@ -4,7 +4,7 @@ Public entry points: `adaloop/api.py`. Notebooks and `scripts/mvp.py` import onl
 
 | Step | Functions | File |
 |---|---|---|
-| Load | `setup_notebook`, `load_config`, `load_model` | `utils/env.py`, `utils/io.py`, `core/model/load.py` |
+| Load | `setup_notebook`, `load_config`, `load_model` (reuses the loaded model in this process), `unload_model` | `utils/env.py`, `utils/io.py`, `core/model/load.py`, `core/model/cache.py` |
 | Inputs | `load_image`, `resize_long_side`, `prepare_inputs` | `utils/images.py`, `core/model/prompting.py` |
 | Loops | `set_loops`, `count_layer_calls`, `expected_layer_calls` | `core/model/loops.py` |
 | Pass states | `record_pass_states` (last core layer, last prompt position, per pass), `check_pass_state` | `core/model/hooks.py`, `orchestration/pass_state.py` |
