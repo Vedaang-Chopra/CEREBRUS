@@ -6,22 +6,27 @@ device_map: balanced
 max_memory: {0: 35GiB, 1: 35GiB}
 res_px: 512
 max_new_tokens: 128  # thinking is still on; stage S2 lowers this to 16
-prompt_suffix: "\nAnswer with a single word or short phrase."
 # Start of the model reply, appended to the prompt. Set after Vedaang picks a variant in notebooks/04_thinking_off
 # (log it in docs/decisions.md).
 answer_prefill: null
 out_dir: execution_results/mvp
 # bump when a code change alters outputs for the same config (generation, extraction, scoring)
-code_version: 2
+code_version: 3
 
+# prompt_suffix = the lmms-eval post_prompt of the task ("\nAnswer the question using a single word or phrase.")
+# plus " Output only the answer." (added here). Sources, EvolvingLMMs-Lab/lmms-eval @ 9134731f4f617e62ee80bcae9d0d5d9695ea55ef:
+#   gqa:     lmms_eval/tasks/gqa/gqa.yaml, lmms_eval_specific_kwargs.default.post_prompt
+#   textvqa: lmms_eval/tasks/textvqa/_default_template_textvqa_yaml, lmms_eval_specific_kwargs.default.post_prompt
 benchmarks:
   gqa:
+    prompt_suffix: "\nAnswer the question using a single word or phrase. Output only the answer."
     source: lmms-lab-encoder/GQA
     questions_config: testdev_balanced_instructions
     images_config: testdev_balanced_images
     hf_split: testdev
     manifest: configs/splits/mvp_gqa.json
   textvqa:
+    prompt_suffix: "\nAnswer the question using a single word or phrase. Output only the answer."
     source: lmms-lab-encoder/textvqa
     hf_split: validation
     manifest: configs/splits/mvp_textvqa.json

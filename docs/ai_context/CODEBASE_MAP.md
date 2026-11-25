@@ -10,9 +10,10 @@ Kept current by the agent after every step (see `docs/IMPLEMENTATION.md` §0). L
 | `adaloop/core/plots/` | L4 | `set_paper_style`, `METHOD_COLORS`, `save_figure`, `save_table` (exposed via `api.py`) | A | paper style, method colours, figure/table output (drafts `execution_results/`, finals `paper/`); plot functions per figure not yet written |
 | `utils/paths.py` | L5 | `find_repo_root` | A | nearest folder above this file with `pyproject.toml` (`utils/env.py` has its own cwd-first finder) |
 | `adaloop/orchestration/cost_timing.py` | L3 | `time_prefill`, `time_throughput` | A | S6; not yet run on the GPU host |
-| `adaloop/orchestration/evaluate.py` | L3 | `item_inputs`, `evaluate_item`, `run_evaluation` (`batch_size`), `read_results` | A | created (merged from Jiaqi's repo); batched accuracy runs not yet checked on real weights |
+| `adaloop/orchestration/evaluate.py` | L3 | `item_prompt`, `item_inputs`, `evaluate_item`, `run_evaluation` (`batch_size`), `read_results` | A | created (merged from Jiaqi's repo); batched accuracy runs not yet checked on real weights |
 | `adaloop/core/model/inference.py` | L4 | `generate`, `generate_batch`, `last_logits` | A | batch 1 is the reference; left-padded batch added |
 | `adaloop/core/model/hooks.py` | L4 | `record_pass_states` | B | last core layer state per pass |
+| `adaloop/orchestration/audit.py` | L3 | `wrong_predictions` | B | re-scores saved rows; used by notebook 03 |
 | `adaloop/orchestration/pass_state.py` | L3 | `check_pass_state` | B | S3b check |
 | `adaloop/core/eval/` | L4 | `extract_answer`, `score`, `score_gqa`, `score_textvqa`, `summarize_rows` | A | GQA, TextVQA |
 | `adaloop/data/` | L4 | `load_gqa`, `build_gqa_splits`, `load_textvqa`, `build_textvqa_splits`, `make_splits`, `load_manifest` | A | GQA, TextVQA |
@@ -32,7 +33,7 @@ Runs happen on Inara in the `learning_env` kernel (repo at `/coc/scratch/vchopra
 graph LR
   NB[notebooks/*.ipynb] --> API[adaloop/api.py]
   CLI[scripts/mvp.py] --> API
-  API --> ORCH[orchestration: evaluate, full_run, pass_state, cost_timing]
+  API --> ORCH[orchestration: evaluate, full_run, pass_state, cost_timing, audit]
   ORCH --> CORE[core: model + hooks, tokens, eval, cost]
   ORCH --> DATA[data: gqa, textvqa, splits]
   CORE --> SCHEMAS[schemas]

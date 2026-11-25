@@ -21,11 +21,15 @@ from utils.hashing import config_hash, git_hash
 from utils.images import resize_long_side
 
 
+def item_prompt(item: Item, cfg: dict) -> str:
+    """The question text sent to the model: the question plus its benchmark's `prompt_suffix`."""
+    return item.question + cfg["benchmarks"][item.benchmark]["prompt_suffix"]
+
+
 def item_inputs(vlm: LoadedVLM, item: Item, cfg: dict) -> Mapping:
-    """Model inputs for one item: resized image, question plus suffix, answer prefill."""
-    prompt = item.question + cfg["prompt_suffix"]
+    """Model inputs for one item: resized image, prompt, answer prefill."""
     image = resize_long_side(item.image, cfg["res_px"])
-    return prepare_inputs(vlm, prompt, image, prefill=cfg.get("answer_prefill"))
+    return prepare_inputs(vlm, item_prompt(item, cfg), image, prefill=cfg.get("answer_prefill"))
 
 
 def _result_row(item: Item, cfg: dict, R: int, gen: GenerationResult, batch_size: int) -> dict:

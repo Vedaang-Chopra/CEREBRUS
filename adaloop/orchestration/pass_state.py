@@ -10,10 +10,9 @@ from adaloop.core.eval.scorers import score
 from adaloop.core.model.hooks import record_pass_states
 from adaloop.core.model.inference import generate
 from adaloop.core.model.loops import MAX_LOOPS, set_loops
-from adaloop.core.model.prompting import prepare_inputs
+from adaloop.orchestration.evaluate import item_inputs
 from adaloop.schemas.items import Item
 from adaloop.schemas.vlm import GenerationResult, LoadedVLM
-from utils.images import resize_long_side
 
 
 def _run_with_states(
@@ -65,9 +64,7 @@ def check_pass_state(vlm: LoadedVLM, items: Sequence[Item], cfg: dict) -> list[d
     for n, item in enumerate(items):
         start = time.perf_counter()
         ### Step-1:- One prompt per item, shared by every run
-        image = resize_long_side(item.image, cfg["res_px"])
-        prompt = item.question + cfg["prompt_suffix"]
-        inputs = prepare_inputs(vlm, prompt, image, prefill=cfg.get("answer_prefill"))
+        inputs = item_inputs(vlm, item, cfg)
         ### Step-2:- The long run records the state of every pass
         long_states, long_gen = _run_with_states(vlm, inputs, cfg["max_new_tokens"], MAX_LOOPS)
         ### Step-3:- A fresh run per p; compare its final state with pass p of the long run

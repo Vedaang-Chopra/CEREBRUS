@@ -1,28 +1,30 @@
-"""Answer normalization and per-benchmark scorers.
+"""Per-benchmark scorers.
 
-GQA scorer ported from Jiaqi-Gao/adaloop-vlm:adaloop/eval/scorers.py @ e870bff.
+GQA exact match ported from EvolvingLMMs-Lab/lmms-eval:lmms_eval/api/metrics.py::exact_match_hf_evaluate
+(ignore_case, ignore_punctuation, as set in lmms_eval/tasks/gqa/gqa.yaml; the prediction is stripped first, as in
+lmms_eval/api/task.py::ConfigurableTask.process_results) @ 9134731f4f617e62ee80bcae9d0d5d9695ea55ef.
 TextVQA accuracy ported from EvolvingLMMs-Lab/lmms-eval:lmms_eval/tasks/textvqa/utils.py::textvqa_process_results
 @ 9134731f4f617e62ee80bcae9d0d5d9695ea55ef.
 """
-import re
 import statistics
+import string
 from collections.abc import Sequence
 
 from adaloop.core.eval.vqa_normalize import process_vqa_answer
 
 
-def normalize_answer(answer: str | None) -> str:
-    """Lowercase, collapse whitespace, strip trailing punctuation."""
-    if answer is None:
-        return ""
-    answer = re.sub(r"\s+", " ", str(answer).strip().lower())
-    return answer.rstrip(".!?").strip()
+NO_PUNCTUATION = str.maketrans("", "", string.punctuation)  # deletes ASCII punctuation
 
 
 def score_gqa(prediction: str | None, answers: Sequence[str]) -> float:
-    """1.0 if the normalized prediction equals the (single) reference answer, else 0.0."""
-    pred = normalize_answer(prediction)
-    return float(bool(pred) and pred == normalize_answer(answers[0]))
+    """1.0 if prediction and the (single) reference match, ignoring case and ASCII punctuation, else 0.0.
+
+    Articles, inner whitespace and number words are compared as written. A missing prediction scores 0.0.
+    """
+    if prediction is None:
+        return 0.0
+    pred = prediction.strip().lower().translate(NO_PUNCTUATION)  # strip comes before punctuation removal, as upstream
+    return float(pred == answers[0].lower().translate(NO_PUNCTUATION))
 
 
 def score_textvqa(prediction: str | None, answers: Sequence[str]) -> float:
