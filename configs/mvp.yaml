@@ -1,0 +1,5 @@
+model_id: thinkingmachines/TML-d24-varloop-research
+device_map: balanced
+max_memory: {0: 35GiB, 1: 35GiB}
+res_px: 512
+max_new_tokens: 128  # thinking is still on; stage S2 lowers this to 16
