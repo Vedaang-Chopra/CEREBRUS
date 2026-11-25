@@ -30,15 +30,17 @@ def extract_answer(raw_output: str, hit_limit: bool, prefilled: bool = False) ->
 
     `raw_output` must be decoded with special tokens kept. `hit_limit` is True when generation stopped at
     `max_new_tokens`; an answer cut off before `<|end_message|>` counts as unparseable.
-    `prefilled` is True when the prompt ended with `<|content_text|>`: the answer is the text before the first
-    special token, and anything after it (a later message of the model) is ignored.
+    `prefilled` is True when the prompt ended with `<|content_text|>`: the answer ends at the first special token
+    or newline, and anything after it (a later message, or reasoning written after the answer) is ignored. Only an
+    output with neither that hit the limit counts as cut off.
     """
     if not raw_output:
         return None
     if prefilled:
-        if hit_limit and not SPECIAL.search(raw_output):
+        first_line, newline, _ = raw_output.lstrip().partition("\n")
+        if hit_limit and not newline and not SPECIAL.search(first_line):
             return None  # the answer itself was cut
-        return _clean(raw_output)
+        return _clean(first_line)
     if ANSWER in raw_output:
         answer = raw_output.rsplit(ANSWER, 1)[1]
     elif THINKING in raw_output:
