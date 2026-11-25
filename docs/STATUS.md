@@ -15,8 +15,8 @@ Updated by main-discussion after every stage. Last update: **Wed Nov 25, 2026**.
 | S0 | Env, package, model load, loop control, pruning port | 01, 02 | code done; env pinned to `learning_env` | archive 01/02 once you commit your edits; `scripts/mvp.py smoke` not run yet |
 | S1 | GQA + TextVQA loaders, splits, scorers, eval runner | 03 | **data checks PASS** (splits frozen, `configs/splits/`) | you: finish the evaluation section |
 | S2 | Thinking off, `res_px` | 04 | code ready, not run | **you: run 04 → pick `answer_prefill`, `res_px`, `max_new_tokens`** |
-| S3 | Original positions after pruning | 05 | code in progress | agent finishing |
-| S3b | Layer-call count, pass-p state vs fresh R=p run | 05 | code in progress | agent finishing |
+| S3 | Original positions after pruning | 05 | code done: **original positions not supported by the model** (distances, masks, convs use token index; see `docs/notes/modeling_code.md`) → pruning stays packed (DEC3 fallback) | you: run 05, confirm k=100% bit-exact |
+| S3b | Layer-call count, pass-p state vs fresh R=p run | 05 | code done (theory: pass p of R=5 equals R=p) | you: run 05 Step-8 table on real weights |
 | S4 | Per-pass features, `crisp_lite` selector | — | not started | |
 | S5 | Selector choice (R=3, k 25/50%) | — | not started | |
 | S6 | FLOPs model + throughput → item counts | — | not started | can start now (no dependency on S2) |
@@ -36,7 +36,7 @@ Updated by main-discussion after every stage. Last update: **Wed Nov 25, 2026**.
 
 ## Open decisions (yours)
 - S2: `answer_prefill`, `res_px`, `max_new_tokens` (after notebook 04).
-- S3: packed vs original positions (after notebook 05).
+- S3: log "pruning packed; original positions unsupported" + the S3b table in `docs/decisions.md` (after notebook 05).
 - Sync rule: let implementation sessions run `scripts/sync_inara.sh` themselves?
 - Hermes: approve the install in the `basic-code-changes` session; commit `.claude/skills/` or keep local?
 - `configs/prereg.yaml`: the "what changed since Oct 1" sentence (needed before S12).
