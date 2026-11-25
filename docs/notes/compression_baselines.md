@@ -1,5 +1,11 @@
 # Visual-token compression baselines (S4 / S5)
 
+**Final set for the Dec 3 POC (Vedaang, Nov 25 evening):** controls `random`, `uniform`, `text_mean`, `lowres`; methods
+`crisp_lite` (reimplemented, no official code), `rediprune`, `divprune`, `visionzip` (official code). Optional
+`cdpruner_style`. ToMe and TRIM later. They form a 2×2: question relevance only (crisp_lite), relevance + diversity
+(rediprune), diversity only (divprune), visual saliency without the question (visionzip). Build brief:
+`docs/04_prompts/s4_s7_build.md`. The table below is the full research record.
+
 Decided Nov 25, 2026 (Vedaang). Goal: strong training-free baselines for QAFE, built from the **official code** of each
 method. No method is replaced by a simplified version without saying so: a method whose scorer had to change is named
 `<method>-style` in code, tables and the paper. Methods without official code stay in the literature review only.
