@@ -20,6 +20,7 @@ The agent builds everything, CORE items included; Vedaang reviews.
 - Checks cover only the stage's Done-when, a few asserts each.
 - A feature is done only when its notebook ran on the GPU host and the output was pasted back.
 - **Vedaang runs the notebooks himself**, step by step, on Inara. Agents write the code, say which notebook is ready, and wait for the output. Agents do not execute notebooks unless asked.
+- **Sync + results:** main-discussion reviews each commit and syncs it to Inara (`scripts/sync_inara.sh`; it backs up executed notebooks to `execution_results/notebook_runs/`). Vedaang runs notebooks on Inara and saves them; results are read over ssh with `scripts/nb_report.py`.
 - **Keep it simple.** Notebooks are for understanding the project: short cells, one call per step, plain prints. Code reused in two places moves to a small function in the package and is exposed through `api.py`. No clever abstractions.
 - Sometimes Vedaang builds a notebook himself: then guide (which `api` function, what to print, what to assert) instead of writing it.
 
