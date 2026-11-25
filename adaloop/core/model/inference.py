@@ -46,15 +46,16 @@ def generate(vlm: LoadedVLM, inputs: Mapping, max_new_tokens: int) -> Generation
     n_visual = int((input_ids == vlm.model.config.image_token_id).sum())
 
     _, stop_kwargs = _stop_ids(vlm, input_ids)
-    reset_peak_memory()
+    devices = vlm.devices  # only this copy's GPUs: another copy may be running in another thread
+    reset_peak_memory(devices)
     timer = FirstTokenTimer()
-    cuda_sync()
+    cuda_sync(devices)
     start = time.perf_counter()
     timer.start()
     outputs = vlm.model.generate(
         **inputs, max_new_tokens=max_new_tokens, do_sample=False, use_cache=True, streamer=timer, **stop_kwargs
     )
-    cuda_sync()
+    cuda_sync(devices)
     generate_s = time.perf_counter() - start
 
     token_ids = outputs[0, prompt_len:].cpu()
@@ -67,7 +68,7 @@ def generate(vlm: LoadedVLM, inputs: Mapping, max_new_tokens: int) -> Generation
         hit_limit=len(token_ids) >= max_new_tokens,
         ttft_s=timer.ttft_s,
         generate_s=generate_s,
-        peak_mem_gb=peak_memory_gb(),
+        peak_mem_gb=peak_memory_gb(devices),
     )
     return result
 
@@ -105,12 +106,12 @@ def generate_batch(vlm: LoadedVLM, inputs_list: Sequence[Mapping], max_new_token
     stop_ids, stop_kwargs = _stop_ids(vlm, batch["input_ids"])
     eos_ids = torch.tensor(stop_ids, dtype=torch.long)
 
-    cuda_sync()
+    cuda_sync(vlm.devices)
     start = time.perf_counter()
     outputs = vlm.model.generate(
         **batch, max_new_tokens=max_new_tokens, do_sample=False, use_cache=True, **stop_kwargs
     )
-    cuda_sync()
+    cuda_sync(vlm.devices)
     batch_s = time.perf_counter() - start
     new_ids = outputs[:, prompt_width:].cpu()  # (B, new)
 

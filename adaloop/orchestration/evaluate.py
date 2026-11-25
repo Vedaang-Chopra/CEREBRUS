@@ -4,7 +4,9 @@ Adapted from Jiaqi-Gao/adaloop-vlm:adaloop/eval/runner.py @ e870bff.
 Rows use the field names of `grid.parquet` (docs/DEC3_MVP.md §5) so later stages can reuse them.
 """
 import json
-from collections.abc import Mapping, Sequence
+from collections import deque
+from collections.abc import Iterator, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import torch
@@ -79,6 +81,53 @@ def _evaluate_batch(vlm: LoadedVLM, items: Sequence[Item], cfg: dict, R: int) ->
     return [_result_row(item, cfg, R, gen, batch_size=len(items)) for item, gen in zip(items, gens)]
 
 
+def _run_chunk(vlm: LoadedVLM, items: Sequence[Item], cfg: dict, R: int, batch_size: int) -> list[dict]:
+    """Rows of one chunk on one model copy: the batch-1 reference path, or one left-padded batch."""
+    if batch_size == 1:
+        return [evaluate_item(vlm, items[0], cfg, R)]
+    return _evaluate_batch(vlm, items, cfg, R)
+
+
+def check_distinct_copies(vlms: Sequence[LoadedVLM]) -> None:
+    """Threads need their own model (loop count is model state) and processor (tokenizers are not shareable)."""
+    for name in ("model", "processor"):
+        if len({id(getattr(v, name)) for v in vlms}) != len(vlms):
+            raise ValueError(f"every copy needs its own {name}; pass the list from load_models")
+
+
+def run_chunks(vlms: Sequence[LoadedVLM], items: Sequence[Item], cfg: dict, R: int,
+               batch_size: int = 1) -> Iterator[tuple[int, list[dict]]]:
+    """Yield (copy index, rows) for consecutive chunks of `batch_size` items, in item order.
+
+    One copy runs in the calling thread. Several copies take the chunks round-robin, one thread each, so
+    the chunks (and so the batch padding) are the same as with one copy. An error in a chunk is raised when
+    its turn comes: earlier chunks were already yielded, later ones are dropped.
+    """
+    chunks = [items[first : first + batch_size] for first in range(0, len(items), batch_size)]
+    if len(vlms) == 1:
+        for chunk in chunks:
+            yield 0, _run_chunk(vlms[0], chunk, cfg, R, batch_size)
+        return
+
+    check_distinct_copies(vlms)
+    pools = [ThreadPoolExecutor(max_workers=1) for _ in vlms]  # a copy is only ever used by its own thread
+    try:
+        waiting: deque = deque()  # (copy index, future), oldest chunk first
+        for n, chunk in enumerate(chunks):
+            j = n % len(vlms)
+            waiting.append((j, pools[j].submit(_run_chunk, vlms[j], chunk, cfg, R, batch_size)))
+            # at most 2 chunks per copy are in flight, which bounds the finished work a killed process loses
+            if len(waiting) >= 2 * len(vlms):
+                j, future = waiting.popleft()
+                yield j, future.result()
+        while waiting:
+            j, future = waiting.popleft()
+            yield j, future.result()
+    finally:
+        for pool in pools:  # queued chunks are cancelled; a running one is waited for
+            pool.shutdown(wait=True, cancel_futures=True)
+
+
 def _read_rows(path: Path) -> list[dict]:
     """Rows already written to a JSONL file (a half-written last line is dropped)."""
     rows = []
@@ -91,13 +140,14 @@ def _read_rows(path: Path) -> list[dict]:
 
 
 def run_evaluation(
-    vlm: LoadedVLM,
+    vlm: LoadedVLM | None,
     items: Sequence[Item],
     cfg: dict,
     R: int,
     out_path: str | Path,
     resume: bool = True,
     batch_size: int = 1,
+    vlms: Sequence[LoadedVLM] | None = None,
 ) -> dict:
     """Evaluate `items` at loop count R, appending rows to `out_path`; return the summary.
 
@@ -105,9 +155,18 @@ def run_evaluation(
     config hash are an error. The summary is also written next to the JSONL as `.summary.json`.
     `batch_size` 1 is the reference path; larger values batch the generation of the pending items, for
     accuracy runs only (no per-item time to first token or memory).
+
+    `vlms` (from `load_models`) splits the pending chunks over several copies, one thread each; `vlm` must
+    then be None or vlms[0]. Outputs, hash and resume are the same as with one copy; rows record `copy` and
+    `n_copies`, and with n_copies > 1 their times include contention between the copies. This thread writes
+    the rows, in item order. After an error, rows before the failed chunk are on disk; finished later chunks
+    are dropped and rerun on resume (a killed process loses at most 2 chunks per copy).
     """
     if batch_size < 1:
         raise ValueError(f"batch_size must be >= 1, got {batch_size}")
+    if vlms and vlm is not None and vlm is not vlms[0]:
+        raise ValueError("with vlms, pass vlm=None or vlms[0]")
+    copies = list(vlms) if vlms else [vlm]
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     # the batch size actually used is hashed (padding can shift numerics); plain batch-1 configs keep their hash
@@ -127,14 +186,11 @@ def run_evaluation(
         for row in rows:
             handle.write(json.dumps(row) + "\n")
         pending = [(n, item) for n, item in enumerate(items) if item.item_id not in done]
-        for first in range(0, len(pending), batch_size):
-            chunk = pending[first : first + batch_size]
-            if batch_size == 1:
-                results = [evaluate_item(vlm, chunk[0][1], cfg, R)]
-            else:
-                results = _evaluate_batch(vlm, [item for _, item in chunk], cfg, R)
-            for (n, _), result in zip(chunk, results):
-                row = {**result, **run_meta}
+        positions = iter(n for n, _ in pending)  # place of each pending item in `items`, for the progress line
+        for copy, results in run_chunks(copies, [item for _, item in pending], cfg, R, batch_size):
+            for result in results:
+                n = next(positions)
+                row = {**result, "copy": copy, "n_copies": len(copies), **run_meta}
                 handle.write(json.dumps(row) + "\n")
                 handle.flush()
                 rows.append(row)

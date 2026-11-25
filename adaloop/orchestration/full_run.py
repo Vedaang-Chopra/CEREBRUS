@@ -43,8 +43,12 @@ def _check_scope(cfg: dict) -> None:
         raise ValueError(f"k_grid must be [1.0] until pruning is wired in, got {cfg['k_grid']}")
 
 
-def run_full(vlm: LoadedVLM, cfg: dict, root: str | Path, shard: tuple[int, int] = (0, 1)) -> None:
-    """Run this shard's items for every benchmark x split x R in the config; resumable."""
+def run_full(vlm: LoadedVLM | None, cfg: dict, root: str | Path, shard: tuple[int, int] = (0, 1),
+             vlms: Sequence[LoadedVLM] | None = None) -> None:
+    """Run this shard's items for every benchmark x split x R in the config; resumable.
+
+    `vlms` uses several copies in this process (see `run_evaluation`); file names do not change.
+    """
     _check_scope(cfg)
     shard_i, n_shards = shard
     batch_size = cfg["batch_size"]
@@ -55,7 +59,7 @@ def run_full(vlm: LoadedVLM, cfg: dict, root: str | Path, shard: tuple[int, int]
             for R in cfg["R_grid"]:
                 out = result_path(cfg, root, benchmark, split, R, batch_size, shard)
                 print(f"[{benchmark} {split}] R={R} | shard {shard_i}/{n_shards} | {len(items)} items | {out.name}")
-                run_evaluation(vlm, items, run_cfg, R, out, resume=True, batch_size=batch_size)
+                run_evaluation(vlm, items, run_cfg, R, out, resume=True, batch_size=batch_size, vlms=vlms)
 
 
 def summarize_full(cfg: dict, root: str | Path) -> list[dict]:

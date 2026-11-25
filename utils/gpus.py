@@ -24,6 +24,11 @@ def free_gpu_mib() -> dict[int, int] | None:
     return {int(index): int(free) for index, free in (line.split(",") for line in out.strip().splitlines())}
 
 
+def all_gpus(groups: list[list[int]]) -> list[int]:
+    """Every GPU of `gpu_groups`, in config order."""
+    return [gpu for ids in groups for gpu in ids]
+
+
 def matching_group(groups: list[list[int]]) -> list[int] | None:
     """The group that CUDA_VISIBLE_DEVICES names (in any order), or None."""
     visible = os.environ.get("CUDA_VISIBLE_DEVICES")
@@ -35,35 +40,43 @@ def matching_group(groups: list[list[int]]) -> list[int] | None:
     return None
 
 
-def select_gpu_group(config: str | Path | dict, group: int | None = None) -> list[int]:
-    """Restrict this process to one of the config's `gpu_groups` and return its physical GPU ids.
+def select_gpu_group(config: str | Path | dict, group: int | str | None = None) -> list[int]:
+    """Restrict this process to one of the config's `gpu_groups`, or all of them; return the physical GPU ids.
 
     `config` is a config path (relative paths start at the repo root) or an already loaded dict.
 
     `group` is an index into `gpu_groups`; None takes the first group whose GPUs all have at least
-    cfg["min_free_gib"] free. GPUs outside `gpu_groups` are never used. Once CUDA is initialized the
-    devices are fixed: the visible group is returned (no memory test, this process may hold the model)
-    or an error asks for a kernel restart. Without nvidia-smi nothing is set and [] is returned.
+    cfg["min_free_gib"] free; "all" takes every group (for one model copy per group, `load_models`) and
+    needs that much free on every GPU. GPUs outside `gpu_groups` are never used. Once CUDA is initialized
+    the devices are fixed: the visible set is returned if it is what was asked for (no memory test, this
+    process may hold the model), else an error asks for a kernel restart. Without nvidia-smi nothing is
+    set and [] is returned.
     """
     cfg = config if isinstance(config, dict) else load_config(find_repo_root() / config)
     groups = cfg["gpu_groups"]
-    if group is not None and not 0 <= group < len(groups):
-        raise ValueError(f"gpu group {group} does not exist; gpu_groups = {groups}")
+    if group not in (None, "all") and group not in range(len(groups)):
+        raise ValueError(f"gpu group {group!r} does not exist; use 0..{len(groups) - 1}, 'all' or None; "
+                         f"gpu_groups = {groups}")
     free = free_gpu_mib()
     if free is None:
         print("no nvidia-smi: GPU selection skipped")
         return []
-    allowed = sorted({gpu for ids in groups for gpu in ids})
+    allowed = sorted(set(all_gpus(groups)))
     missing = [gpu for gpu in allowed if gpu not in free]
     if missing:
         raise RuntimeError(f"gpu_groups names GPUs {missing} that nvidia-smi does not list")
     table = "\n".join(f"  GPU {gpu}: {free[gpu] / 1024:5.1f} GiB free" for gpu in allowed)
 
+    if group is None:
+        candidates = groups
+    else:
+        candidates = [all_gpus(groups)] if group == "all" else [groups[group]]
+
     # never import torch here: if it is not loaded yet, CUDA cannot have been initialized
     if "torch" in sys.modules and sys.modules["torch"].cuda.is_initialized():
-        chosen = _visible_group(groups, group)
+        chosen = _visible_group(candidates)
     else:
-        chosen = _free_group(groups, group, free, cfg["min_free_gib"], table)
+        chosen = _free_group(candidates, free, cfg["min_free_gib"], table)
         _set_visible(chosen)
     ids = ",".join(str(gpu) for gpu in chosen)
     print(f"using GPUs {ids} | free {', '.join(f'{free[gpu] / 1024:.1f}' for gpu in chosen)} GiB")
@@ -71,9 +84,8 @@ def select_gpu_group(config: str | Path | dict, group: int | None = None) -> lis
     return chosen
 
 
-def _visible_group(groups: list[list[int]], group: int | None) -> list[int]:
-    """The group CUDA was already started on; it must be a gpu_group (and the requested one)."""
-    wanted = groups if group is None else [groups[group]]
+def _visible_group(wanted: list[list[int]]) -> list[int]:
+    """The GPU set CUDA was already started on; it must be one of `wanted`."""
     chosen = matching_group(wanted)
     if chosen is not None:
         return chosen
@@ -84,10 +96,9 @@ def _visible_group(groups: list[list[int]], group: int | None) -> list[int]:
     )
 
 
-def _free_group(groups: list[list[int]], group: int | None, free: dict[int, int],
+def _free_group(candidates: list[list[int]], free: dict[int, int],
                 min_free_gib: float, table: str) -> list[int]:
-    """The requested group, or the first one, whose GPUs all have `min_free_gib` free."""
-    candidates = groups if group is None else [groups[group]]
+    """The first candidate GPU set whose GPUs all have `min_free_gib` free."""
     for ids in candidates:
         if all(free[gpu] >= min_free_gib * 1024 for gpu in ids):
             return list(ids)

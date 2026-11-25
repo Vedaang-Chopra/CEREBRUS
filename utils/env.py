@@ -9,7 +9,7 @@ import datasets
 import transformers
 from dotenv import load_dotenv
 
-from utils.gpus import matching_group
+from utils.gpus import all_gpus, matching_group
 from utils.io import load_config
 
 
@@ -24,12 +24,13 @@ def _find_root() -> Path:
 
 
 def _check_gpus(cfg: dict) -> None:
-    """Report whether CUDA_VISIBLE_DEVICES is one of cfg["gpu_groups"]; changes nothing."""
+    """Report whether CUDA_VISIBLE_DEVICES is one of cfg["gpu_groups"] or all of them; changes nothing."""
     if shutil.which("nvidia-smi") is None:
         return
     visible = os.environ.get("CUDA_VISIBLE_DEVICES")
-    if matching_group(cfg["gpu_groups"]) is None:
-        print(f"WARNING: CUDA_VISIBLE_DEVICES={visible or 'unset'} is not one of gpu_groups {cfg['gpu_groups']}. "
+    groups = cfg["gpu_groups"]
+    if matching_group([*groups, all_gpus(groups)]) is None:
+        print(f"WARNING: CUDA_VISIBLE_DEVICES={visible or 'unset'} is not one of gpu_groups {groups} or their union. "
               "Restart the kernel and call utils.gpus.select_gpu_group before importing adaloop.api.")
     else:
         print(f"CUDA_VISIBLE_DEVICES={visible}")

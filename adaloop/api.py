@@ -15,7 +15,7 @@ from adaloop.core.eval.scorers import score, score_gqa, score_textvqa
 from adaloop.core.eval.summary import summarize_rows
 from adaloop.core.model.hooks import record_pass_states
 from adaloop.core.model.inference import generate, generate_batch, last_logits
-from adaloop.core.model.load import load_model, unload_model
+from adaloop.core.model.load import load_model, load_models, unload_model
 from adaloop.core.model.loops import count_layer_calls, expected_layer_calls, set_loops
 from adaloop.core.model.prompting import prepare_inputs
 from adaloop.core.plots.accuracy_vs_r import plot_accuracy_vs_r
@@ -36,6 +36,7 @@ from adaloop.data.gqa import build_gqa_splits, load_gqa
 from adaloop.data.splits import load_manifest, make_splits
 from adaloop.data.textvqa import build_textvqa_splits, load_textvqa
 from adaloop.orchestration.audit import wrong_predictions
+from adaloop.orchestration.copies import compare_copies, time_copies
 from adaloop.orchestration.cost_timing import time_prefill, time_throughput
 from adaloop.orchestration.evaluate import evaluate_item, item_inputs, item_prompt, read_results, run_evaluation
 from adaloop.orchestration.full_run import full_run_config, result_path, run_full, shard_items, summarize_full
@@ -60,6 +61,7 @@ __all__ = [
     "build_gqa_splits",
     "build_textvqa_splits",
     "check_pass_state",
+    "compare_copies",
     "config_hash",
     "cost_params",
     "cost_ref",
@@ -86,6 +88,7 @@ __all__ = [
     "load_image",
     "load_manifest",
     "load_model",
+    "load_models",
     "load_textvqa",
     "make_splits",
     "plot_accuracy_vs_r",
@@ -115,6 +118,7 @@ __all__ = [
     "summarize_full",
     "summarize_rows",
     "text_mean_selector",
+    "time_copies",
     "time_prefill",
     "time_throughput",
     "uniform_selector",

@@ -3,26 +3,31 @@
 FirstTokenTimer ported from Jiaqi-Gao/adaloop-vlm:adaloop/eval/timing.py @ e870bff.
 """
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 import torch
 
 
-def cuda_sync() -> None:
-    """Wait for every visible GPU, so wall-clock timings are complete."""
-    for i in range(torch.cuda.device_count()):
+def _devices(devices: Sequence[int] | None) -> Sequence[int]:
+    """The given GPU indices, or every visible GPU."""
+    return range(torch.cuda.device_count()) if devices is None else devices
+
+
+def cuda_sync(devices: Sequence[int] | None = None) -> None:
+    """Wait for these GPUs (default: all visible), so wall-clock timings are complete."""
+    for i in _devices(devices):
         torch.cuda.synchronize(i)
 
 
-def reset_peak_memory() -> None:
-    """Reset the peak-allocation counter on every visible GPU."""
-    for i in range(torch.cuda.device_count()):
+def reset_peak_memory(devices: Sequence[int] | None = None) -> None:
+    """Reset the peak-allocation counter on these GPUs (default: all visible)."""
+    for i in _devices(devices):
         torch.cuda.reset_peak_memory_stats(i)
 
 
-def peak_memory_gb() -> float:
-    """Sum over GPUs of peak allocated memory since the last reset, in GiB."""
-    return sum(torch.cuda.max_memory_allocated(i) for i in range(torch.cuda.device_count())) / 1024**3
+def peak_memory_gb(devices: Sequence[int] | None = None) -> float:
+    """Sum over these GPUs (default: all visible) of peak allocated memory since the last reset, in GiB."""
+    return sum(torch.cuda.max_memory_allocated(i) for i in _devices(devices)) / 1024**3
 
 
 class FirstTokenTimer:
