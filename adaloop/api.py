@@ -2,6 +2,7 @@
 from adaloop.core.eval.extract import extract_answer
 from adaloop.core.eval.scorers import normalize_answer, score, score_gqa, score_textvqa
 from adaloop.core.eval.summary import summarize_rows
+from adaloop.core.model.hooks import record_pass_states
 from adaloop.core.model.inference import generate, last_logits
 from adaloop.core.model.load import load_model
 from adaloop.core.model.loops import count_layer_calls, expected_layer_calls, set_loops
@@ -17,6 +18,7 @@ from adaloop.data.gqa import build_gqa_splits, load_gqa
 from adaloop.data.splits import load_manifest, make_splits
 from adaloop.data.textvqa import build_textvqa_splits, load_textvqa
 from adaloop.orchestration.evaluate import evaluate_item, read_results, run_evaluation
+from adaloop.orchestration.pass_state import check_pass_state
 from adaloop.schemas.items import Item
 from adaloop.schemas.vlm import GenerationResult, LoadedVLM
 from utils.env import setup_notebook
@@ -30,6 +32,7 @@ __all__ = [
     "LoadedVLM",
     "build_gqa_splits",
     "build_textvqa_splits",
+    "check_pass_state",
     "config_hash",
     "count_layer_calls",
     "evaluate_item",
@@ -52,6 +55,7 @@ __all__ = [
     "question_embeddings",
     "random_selector",
     "read_results",
+    "record_pass_states",
     "resize_long_side",
     "run_evaluation",
     "score",
