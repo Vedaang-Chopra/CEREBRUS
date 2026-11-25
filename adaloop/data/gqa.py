@@ -7,7 +7,7 @@ from pathlib import Path
 
 from datasets import load_dataset
 
-from adaloop.data.splits import load_manifest, make_splits, save_manifest
+from adaloop.data.splits import build_manifest, load_manifest
 from adaloop.schemas.items import Item
 
 logger = logging.getLogger(__name__)
@@ -17,18 +17,14 @@ BENCHMARK = "gqa"
 
 def build_gqa_splits(cfg: dict, root: str | Path = ".") -> dict:
     """Create the image-disjoint GQA manifest if missing; return the manifest."""
-    bcfg, scfg = cfg["benchmarks"][BENCHMARK], cfg["splits"]
+    bcfg = cfg["benchmarks"][BENCHMARK]
     path = Path(root) / bcfg["manifest"]
     if path.exists():
         return load_manifest(path)
     logger.info("no manifest at %s, creating it", path)
     questions = load_dataset(bcfg["source"], bcfg["questions_config"], split=bcfg["hf_split"])
-    splits = make_splits(questions["id"], questions["imageId"], scfg["sizes"], scfg["image_fracs"], scfg["seed"])
-    image_of = dict(zip(questions["id"], questions["imageId"], strict=True))
-    images = {name: sorted({image_of[q] for q in ids}) for name, ids in splits.items()}
-    meta = {"dataset": bcfg["source"], "config": bcfg["questions_config"], "seed": scfg["seed"], "images": images}
-    save_manifest(path, splits, meta)
-    return load_manifest(path)
+    meta = {"dataset": bcfg["source"], "config": bcfg["questions_config"]}
+    return build_manifest(path, questions["id"], questions["imageId"], cfg["splits"], meta)
 
 
 def load_gqa(cfg: dict, split: str, limit: int | None = None, root: str | Path = ".") -> list[Item]:

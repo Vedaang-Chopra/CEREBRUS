@@ -18,7 +18,8 @@ sys.path.insert(0, str(ROOT))
 from adaloop import api  # noqa: E402
 
 logger = logging.getLogger("mvp")
-LOADERS = {"gqa": api.load_gqa}
+LOADERS = {"gqa": api.load_gqa, "textvqa": api.load_textvqa}
+SPLIT_BUILDERS = {"gqa": api.build_gqa_splits, "textvqa": api.build_textvqa_splits}
 
 
 def cmd_smoke(cfg: dict, args: argparse.Namespace) -> None:
@@ -31,8 +32,9 @@ def cmd_smoke(cfg: dict, args: argparse.Namespace) -> None:
 
 def cmd_splits(cfg: dict, args: argparse.Namespace) -> None:
     """Create (or check) the split manifests and print their sizes."""
-    manifest = api.build_gqa_splits(cfg, ROOT)
-    print({name: len(ids) for name, ids in manifest["splits"].items()}, "hash", manifest["hash"])
+    for benchmark, build in SPLIT_BUILDERS.items():
+        manifest = build(cfg, ROOT)
+        print(benchmark, {name: len(ids) for name, ids in manifest["splits"].items()}, "hash", manifest["hash"])
 
 
 def cmd_eval(cfg: dict, args: argparse.Namespace) -> None:

@@ -70,6 +70,17 @@ def save_manifest(path: str | Path, splits: dict[str, list[str]], meta: dict) ->
     logger.info("saved split manifest %s (hash %s)", path, manifest_hash(splits))
 
 
+def build_manifest(
+    path: str | Path, question_ids: Sequence[str], image_ids: Sequence[str], split_cfg: dict, meta: dict
+) -> dict:
+    """Make the splits from `split_cfg`, save them with `meta` and each split's image ids, return the manifest."""
+    splits = make_splits(question_ids, image_ids, split_cfg["sizes"], split_cfg["image_fracs"], split_cfg["seed"])
+    image_of = dict(zip(question_ids, image_ids, strict=True))
+    images = {name: sorted({image_of[q] for q in ids}) for name, ids in splits.items()}
+    save_manifest(path, splits, {**meta, "seed": split_cfg["seed"], "images": images})
+    return load_manifest(path)
+
+
 def load_manifest(path: str | Path) -> dict:
     """Read a manifest and check its stored hash."""
     manifest = json.loads(Path(path).read_text())

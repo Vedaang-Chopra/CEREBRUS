@@ -13,6 +13,10 @@ benchmarks:
     images_config: testdev_balanced_images
     hf_split: testdev
     manifest: configs/splits/mvp_gqa.json
+  textvqa:
+    source: lmms-lab-encoder/textvqa
+    hf_split: validation
+    manifest: configs/splits/mvp_textvqa.json
 
 # Per benchmark, image-disjoint. Images are split by fraction, then questions are sampled per split.
 # lora_train size null = every remaining question.
