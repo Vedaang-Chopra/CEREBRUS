@@ -19,6 +19,9 @@ The agent builds everything, CORE items included; Vedaang reviews.
 - **Keep the set small and fixed.** One notebook per build stage group (list in `docs/DEC3_MVP.md` / the plan), not one per change. A new feature goes into the matching notebook as a section; a changed feature updates that section in the same commit. Replace outdated cells; do not stack new checks on old ones.
 - Checks cover only the stage's Done-when, a few asserts each.
 - A feature is done only when its notebook ran on the GPU host and the output was pasted back.
+- **Vedaang runs the notebooks himself**, step by step, on Inara. Agents write the code, say which notebook is ready, and wait for the output. Agents do not execute notebooks unless asked.
+- **Keep it simple.** Notebooks are for understanding the project: short cells, one call per step, plain prints. Code reused in two places moves to a small function in the package and is exposed through `api.py`. No clever abstractions.
+- Sometimes Vedaang builds a notebook himself: then guide (which `api` function, what to print, what to assert) instead of writing it.
 - Notebook names: `notebooks/NN_<feature>.ipynb`, in build order. `notebooks/mvp_results.ipynb` only reads saved artifacts and shows the paper tables and figures.
 
 ## Branches
