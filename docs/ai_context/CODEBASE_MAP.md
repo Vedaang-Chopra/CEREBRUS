@@ -10,7 +10,7 @@ Kept current by the agent after every step (see `docs/IMPLEMENTATION.md` §0). L
 | `adaloop/data/` | L4 | `load_gqa`, `build_gqa_splits`, `make_splits`, `load_manifest` | A | GQA only; TextVQA pending (S1) |
 | `adaloop/schemas/` | L5 | `Item`, `LoadedVLM`, `GenerationResult` | A | created |
 | `qafe/api.py` | L2 | — | A | not created |
-| `utils/` | L5 | `load_config`, `load_image`, `resize_long_side`, `config_hash`, `git_hash`, timing helpers | A | created |
+| `utils/` | L5 | `setup_notebook`, `load_config`, `load_image`, `resize_long_side`, `config_hash`, `git_hash`, timing helpers | A | created |
 | `scripts/mvp.py` | CLI | `smoke`, `splits`, `eval` | A | created |
 
 Notebooks (they are the tests, see `AGENTS.md`): `01_huggingfaceload` (load, loops), `02_pruning` (visual tokens, selectors), `03_data_and_scoring` (S1 splits, items, scoring, evaluation runner).

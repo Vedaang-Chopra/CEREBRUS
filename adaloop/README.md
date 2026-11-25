@@ -4,7 +4,7 @@ Public entry points: `adaloop/api.py`. Notebooks and `scripts/mvp.py` import onl
 
 | Step | Functions | File |
 |---|---|---|
-| Load | `load_config`, `load_model` | `utils/io.py`, `core/model/load.py` |
+| Load | `setup_notebook`, `load_config`, `load_model` | `utils/env.py`, `utils/io.py`, `core/model/load.py` |
 | Inputs | `load_image`, `resize_long_side`, `prepare_inputs` | `utils/images.py`, `core/model/prompting.py` |
 | Loops | `set_loops`, `count_layer_calls`, `expected_layer_calls` | `core/model/loops.py` |
 | Inference | `generate` (with TTFT, time, peak memory), `last_logits` | `core/model/inference.py` |
