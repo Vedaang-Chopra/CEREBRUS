@@ -43,7 +43,7 @@ def cmd_eval(cfg: dict, args: argparse.Namespace) -> None:
     vlm = api.load_model(cfg)
     out_dir = ROOT / cfg["out_dir"] / "eval"
     for R in args.loops:
-        out = out_dir / f"{args.benchmark}_{args.split}_n{len(items)}_res{cfg['res_px']}_R{R}.jsonl"
+        out = out_dir / f"{args.benchmark}_{args.split}_n{len(items)}_res{cfg['res_px']}_R{R}_{api.config_hash(cfg)}.jsonl"
         summary = api.run_evaluation(vlm, items, cfg, R, out, resume=True)
         print(json.dumps(summary))
 
