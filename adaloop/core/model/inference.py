@@ -1,23 +1,52 @@
-"""Greedy generation and last-position logits."""
+"""Greedy generation and last-position logits.
+
+Timing and memory measurement adapted from Jiaqi-Gao/adaloop-vlm:adaloop/models/inference.py @ e870bff.
+"""
 import logging
+import time
 from collections.abc import Mapping
 
 import torch
 
 from adaloop.schemas.vlm import GenerationResult, LoadedVLM
+from utils.timing import FirstTokenTimer, cuda_sync, peak_memory_gb, reset_peak_memory
 
 logger = logging.getLogger(__name__)
 
 
 @torch.inference_mode()
 def generate(vlm: LoadedVLM, inputs: Mapping, max_new_tokens: int) -> GenerationResult:
-    """Greedy-decode a single-item batch; works on full and pruned inputs."""
-    prompt_len = inputs["input_ids"].shape[-1]
-    logger.info("generating from %d tokens, max_new_tokens=%d", prompt_len, max_new_tokens)
-    outputs = vlm.model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False, use_cache=True)
+    """Greedy-decode a single-item batch and measure it; works on full and pruned inputs."""
+    input_ids = inputs["input_ids"]
+    prompt_len = input_ids.shape[-1]
+    n_visual = int((input_ids == vlm.model.config.image_token_id).sum())
+    logger.info("generating from %d tokens (%d visual), max_new_tokens=%d", prompt_len, n_visual, max_new_tokens)
+
+    reset_peak_memory()
+    timer = FirstTokenTimer()
+    cuda_sync()
+    start = time.perf_counter()
+    timer.start()
+    outputs = vlm.model.generate(
+        **inputs, max_new_tokens=max_new_tokens, do_sample=False, use_cache=True, streamer=timer
+    )
+    cuda_sync()
+    generate_s = time.perf_counter() - start
+
     token_ids = outputs[0, prompt_len:].cpu()
-    logger.info("generated %d tokens", len(token_ids))
-    return GenerationResult(token_ids, vlm.processor.decode(token_ids, skip_special_tokens=True))
+    result = GenerationResult(
+        token_ids=token_ids,
+        text=vlm.processor.decode(token_ids, skip_special_tokens=True),
+        raw_text=vlm.processor.decode(token_ids, skip_special_tokens=False),
+        n_input_tokens=prompt_len,
+        n_visual_tokens=n_visual,
+        hit_limit=len(token_ids) >= max_new_tokens,
+        ttft_s=timer.ttft_s,
+        generate_s=generate_s,
+        peak_mem_gb=peak_memory_gb(),
+    )
+    logger.info("generated %d tokens in %.2fs (ttft %s)", len(token_ids), generate_s, result.ttft_s)
+    return result
 
 
 @torch.inference_mode()

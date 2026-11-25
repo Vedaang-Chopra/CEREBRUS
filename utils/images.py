@@ -17,7 +17,12 @@ def load_image(url_or_path: str, max_side: int) -> Image.Image:
         source = BytesIO(response.content)
     else:
         source = url_or_path
-    image = Image.open(source).convert("RGB")
+    return resize_long_side(Image.open(source), max_side)
+
+
+def resize_long_side(image: Image.Image, max_side: int) -> Image.Image:
+    """RGB copy with the long side at most `max_side` (never upscales; keeps aspect ratio)."""
+    image = image.convert("RGB")
     image.thumbnail((max_side, max_side))
     logger.info("image size %s", image.size)
     return image

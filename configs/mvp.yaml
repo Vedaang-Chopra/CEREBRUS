@@ -3,3 +3,20 @@ device_map: balanced
 max_memory: {0: 35GiB, 1: 35GiB}
 res_px: 512
 max_new_tokens: 128  # thinking is still on; stage S2 lowers this to 16
+prompt_suffix: "\nAnswer with a single word or short phrase."
+out_dir: execution_results/mvp
+
+benchmarks:
+  gqa:
+    source: lmms-lab-encoder/GQA
+    questions_config: testdev_balanced_instructions
+    images_config: testdev_balanced_images
+    hf_split: testdev
+    manifest: configs/splits/mvp_gqa.json
+
+# Per benchmark, image-disjoint. Images are split by fraction, then questions are sampled per split.
+# lora_train size null = every remaining question.
+splits:
+  seed: 42
+  sizes: {test: 500, ctrl_train: 300, dev: 100, lora_train: null}
+  image_fracs: {test: 0.25, ctrl_train: 0.15, dev: 0.10, lora_train: 0.50}

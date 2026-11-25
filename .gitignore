@@ -18,3 +18,5 @@ execution_results/
 checkpoints/
 *.pt
 *.safetensors
+# secrets
+env.env

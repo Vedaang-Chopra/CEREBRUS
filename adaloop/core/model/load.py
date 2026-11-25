@@ -30,5 +30,10 @@ def load_model(cfg: dict) -> LoadedVLM:
     )
     model.eval()
     model.requires_grad_(False)
+    # Check from Jiaqi-Gao/adaloop-vlm:adaloop/models/load.py @ e870bff: offloading would distort timings.
+    offloaded = {name: dev for name, dev in model.hf_device_map.items() if str(dev) in ("cpu", "disk", "meta")}
+    if offloaded:
+        logger.error("modules offloaded off GPU: %s", offloaded)
+        raise RuntimeError(f"model not fully on GPU; offloaded: {list(offloaded)[:5]}")
     logger.info("loaded %s, device map %s", model_id, model.hf_device_map)
     return LoadedVLM(model=model, processor=processor, loading_info=loading_info)
