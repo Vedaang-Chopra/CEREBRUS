@@ -3,7 +3,7 @@
 v1 · Nov 25, 2026 · owner: Vedaang · deadline: **Thu Dec 3, 11:59 PM ET** (CSE 8803 final: report + video + rerunnable code)
 This file is the build spec for the course submission. It is a **subset** of `docs/IMPLEMENTATION.md`: same package layout, fewer steps. Where they conflict before Dec 3, **this file wins**.
 
-> **Amendment (Nov 25):** the agent implements **everything**, CORE items included (Vedaang reviews instead of writing). **Tests = notebook execution:** `notebooks/mvp.ipynb` runs every stage in `smoke` mode with `assert` checks and loads full-run artifacts in `full` mode (see `docs/04_prompts/agent_build_mvp.md`). Where this conflicts with §3, §8 or §9, the amendment wins.
+> **Amendment (Nov 25):** the agent implements **everything**, CORE items included (Vedaang reviews instead of writing). **Tests = notebooks:** a small fixed set of numbered notebooks (index in `notebooks/README.md`), each with a few `assert` checks for its stage; Vedaang runs them himself (rule in `AGENTS.md`, build prompt in `docs/04_prompts/agent_build_mvp.md`). Where this conflicts with §3, §8 or §9, the amendment wins.
 
 ---
 
