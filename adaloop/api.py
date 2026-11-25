@@ -18,6 +18,7 @@ from adaloop.data.gqa import build_gqa_splits, load_gqa
 from adaloop.data.splits import load_manifest, make_splits
 from adaloop.data.textvqa import build_textvqa_splits, load_textvqa
 from adaloop.orchestration.evaluate import evaluate_item, read_results, run_evaluation
+from adaloop.orchestration.full_run import full_run_config, result_path, run_full, shard_items, summarize_full
 from adaloop.orchestration.pass_state import check_pass_state
 from adaloop.schemas.items import Item
 from adaloop.schemas.vlm import GenerationResult, LoadedVLM
@@ -39,6 +40,7 @@ __all__ = [
     "expected_layer_calls",
     "extract_answer",
     "extract_visual_tokens",
+    "full_run_config",
     "generate",
     "generate_batch",
     "git_hash",
@@ -58,12 +60,16 @@ __all__ = [
     "read_results",
     "record_pass_states",
     "resize_long_side",
+    "result_path",
     "run_evaluation",
+    "run_full",
     "score",
     "score_gqa",
     "score_textvqa",
     "set_loops",
     "setup_notebook",
+    "shard_items",
+    "summarize_full",
     "summarize_rows",
     "text_mean_selector",
     "uniform_selector",

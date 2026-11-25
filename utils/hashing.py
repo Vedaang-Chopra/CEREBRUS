@@ -4,10 +4,14 @@ import json
 import subprocess
 from pathlib import Path
 
+# placement only: which GPUs a run uses must not change its hash (or break resume)
+HASH_EXCLUDE = {"gpu_groups"}
+
 
 def config_hash(cfg: dict) -> str:
-    """Short stable hash of a config dict (key order does not matter)."""
-    blob = json.dumps(cfg, sort_keys=True, default=str).encode()
+    """Short stable hash of a config dict (key order does not matter; HASH_EXCLUDE keys are dropped)."""
+    kept = {key: value for key, value in cfg.items() if key not in HASH_EXCLUDE}
+    blob = json.dumps(kept, sort_keys=True, default=str).encode()
     return hashlib.sha256(blob).hexdigest()[:12]
 
 

@@ -1,6 +1,8 @@
 extends: mvp.yaml
 
 out_dir: execution_results/full_baseline
+# gpu_groups: inherited from mvp.yaml ([[0, 1], [2, 3]]: only physical GPUs 0-3 on Inara, 2 A40s per copy).
+# Override it here on another server.
 # test stays off until stage S12 (DEC3 §9)
 run_splits: [dev, ctrl_train]
 run_benchmarks: [gqa, textvqa]

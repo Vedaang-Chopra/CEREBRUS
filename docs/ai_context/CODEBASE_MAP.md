@@ -5,6 +5,7 @@ Kept current by the agent after every step (see `docs/IMPLEMENTATION.md` §0). L
 | Module | Layer | Public entry points | Owner | Status |
 |---|---|---|---|---|
 | `adaloop/api.py` | L2 | see `adaloop/README.md` | A | model, pruning, GQA + TextVQA data, scoring, evaluation, answer prefill (S2), pass states (S3b) |
+| `adaloop/orchestration/full_run.py` | L3 | `shard_items`, `full_run_config`, `result_path`, `run_full`, `summarize_full` | A | created; shards `items[i::n]`, one JSONL per shard and R; test split and `k_grid` != [1.0] refused |
 | `adaloop/orchestration/evaluate.py` | L3 | `evaluate_item`, `run_evaluation` (`batch_size`), `read_results` | A | created (merged from Jiaqi's repo); batched accuracy runs not yet checked on real weights |
 | `adaloop/core/model/inference.py` | L4 | `generate`, `generate_batch`, `last_logits` | A | batch 1 is the reference; left-padded batch added |
 | `adaloop/core/model/hooks.py` | L4 | `record_pass_states` | B | last core layer state per pass |
@@ -14,9 +15,10 @@ Kept current by the agent after every step (see `docs/IMPLEMENTATION.md` §0). L
 | `adaloop/schemas/` | L5 | `Item`, `LoadedVLM`, `GenerationResult` | A | created |
 | `qafe/api.py` | L2 | — | A | not created |
 | `utils/` | L5 | `setup_notebook`, `load_config`, `load_image`, `resize_long_side`, `config_hash`, `git_hash`, timing helpers | A | created |
-| `scripts/mvp.py` | CLI | `smoke`, `splits`, `eval` | A | created |
+| `scripts/mvp.py` | CLI | `smoke`, `splits`, `eval`, `full --shard i/n` | A | created; `full` sets CUDA_VISIBLE_DEVICES to `gpu_groups[i]` |
+| `utils/hashing.py` | L5 | `config_hash` (drops `HASH_EXCLUDE` = `gpu_groups`), `git_hash` | A | placement is not hashed |
 
-Notebooks (they are the tests, see `AGENTS.md`): `01_huggingfaceload` (load, loops), `02_pruning` (visual tokens, selectors), `03_data_and_scoring` (S1 splits, items, scoring, evaluation runner), `04_thinking_off` (S2 answer prefill, `res_px`), `05_positions_and_loops` (S3 positions, S3b loop control and pass state).
+Notebooks (they are the tests, see `AGENTS.md`): `01_huggingfaceload` (load, loops), `02_pruning` (visual tokens, selectors), `03_data_and_scoring` (S1 splits, items, scoring, evaluation runner), `04_thinking_off` (S2 answer prefill, `res_px`), `05_positions_and_loops` (S3 positions, S3b loop control and pass state), `06_full_baseline` (batch check, full run shards, summary).
 Modeling-code findings: `docs/notes/modeling_code.md` (pruning stays packed).
 Split manifests: `configs/splits/mvp_<benchmark>.json` (frozen, hashed). Run outputs: `execution_results/mvp/`.
 

@@ -13,9 +13,10 @@ Public entry points: `adaloop/api.py`. Notebooks and `scripts/mvp.py` import onl
 | Data | `build_gqa_splits`, `load_gqa`, `build_textvqa_splits`, `load_textvqa` → `Item`; `make_splits`, `load_manifest` | `data/gqa.py`, `data/textvqa.py`, `data/splits.py` |
 | Scoring | `extract_answer`, `normalize_answer`, `score`, `score_gqa`, `score_textvqa`, `summarize_rows` | `core/eval/` |
 | Evaluation | `evaluate_item`, `run_evaluation` (resumable JSONL; `batch_size` > 1 batches generation), `read_results` | `orchestration/evaluate.py` |
+| Full baseline | `shard_items`, `full_run_config`, `result_path`, `run_full` (one shard, all benchmark x split x R), `summarize_full` (all shards, de-duplicated) | `orchestration/full_run.py` |
 
-Notebooks: `01_huggingfaceload` (load, loops), `02_pruning` (tokens), `03_data_and_scoring` (S1 + runner), `04_thinking_off` (S2), `05_positions_and_loops` (S3, S3b).
-CLI: `python scripts/mvp.py {smoke,splits,eval}`.
+Notebooks: `01_huggingfaceload` (load, loops), `02_pruning` (tokens), `03_data_and_scoring` (S1 + runner), `04_thinking_off` (S2), `05_positions_and_loops` (S3, S3b), `06_full_baseline` (batch check, full run shards, summary).
+CLI: `python scripts/mvp.py {smoke,splits,eval,full}`. `full --shard i/n` runs shard i on `gpu_groups[i]` (physical GPUs 0-3 only on Inara; `gpu_groups` is not hashed).
 
 Limits: one image per item; `batch_size` 1 is the reference (batched rows have no TTFT or peak memory, and `generate_s` is batch time / size; batched logits are not bit-exact with batch 1); pruning packs positions (the model does not support original ones, `docs/notes/modeling_code.md`); thinking stays on until `answer_prefill` is set in the config (S2).
 `prepare_inputs(prefill=...)` appends the start of the model reply (the chat template adds none).

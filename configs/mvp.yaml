@@ -1,4 +1,7 @@
 model_id: thinkingmachines/TML-d24-varloop-research
+# Only physical GPUs 0-3 may be used on Inara. One model copy needs 2 A40s, so each group runs one copy.
+# full_baseline.yaml may override this on another server. Placement only: not part of the config hash.
+gpu_groups: [[0, 1], [2, 3]]
 device_map: balanced
 max_memory: {0: 35GiB, 1: 35GiB}
 res_px: 512
