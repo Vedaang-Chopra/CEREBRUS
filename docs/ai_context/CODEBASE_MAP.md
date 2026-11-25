@@ -5,19 +5,20 @@ Kept current by the agent after every step (see `docs/IMPLEMENTATION.md` §0). L
 | Module | Layer | Public entry points | Owner | Status |
 |---|---|---|---|---|
 | `adaloop/api.py` | L2 | see `adaloop/README.md` | A | model, pruning, GQA + TextVQA data, scoring, evaluation, answer prefill (S2), pass states (S3b) |
-| `adaloop/orchestration/full_run.py` | L3 | `shard_items`, `full_run_config`, `result_path`, `run_full` (`vlms`), `summarize_full` | A | created; shards `items[i::n]`, one JSONL per shard and R; test split and `k_grid` != [1.0] refused |
+| `adaloop/orchestration/full_run.py` | L3 | `shard_items`, `full_run_config`, `result_path`, `run_full` (`vlms`), `estimate_full_run`, `summarize_full` | A | created; shards `items[i::n]`, one JSONL per shard and R; test split and `k_grid` != [1.0] refused |
 | `adaloop/core/cost/flops.py` | L4 | `cost_params`, `flops_prefill`, `flops_partial`, `flops_readout`, `flops_decode`, `flops_vit`, `flops_total`, `cost_ref` | A | S6; checked on a meta-device model only, notebook 06 step 4 not yet run |
 | `adaloop/core/plots/` | L4 | `set_paper_style`, `METHOD_COLORS`, `save_figure`, `save_table` (exposed via `api.py`) | A | paper style, method colours, figure/table output (drafts `execution_results/`, finals `paper/`); `plot_*` for F02-F05 (one file per figure) |
 | `utils/paths.py` | L5 | `find_repo_root` | A | nearest folder above this file with `pyproject.toml` (`utils/env.py` has its own cwd-first finder) |
 | `adaloop/orchestration/cost_timing.py` | L3 | `time_prefill`, `time_throughput` | A | S6; not yet run on the GPU host |
-| `adaloop/orchestration/evaluate.py` | L3 | `item_prompt`, `item_inputs`, `evaluate_item`, `run_evaluation` (`batch_size`, `vlms`), `run_chunks`, `read_results` | A | created (merged from Jiaqi's repo); batched accuracy runs not yet checked on real weights; multi-copy threads not yet run on the GPU host |
+| `adaloop/orchestration/evaluate.py` | L3 | `item_prompt`, `item_inputs`, `read_answer`, `evaluate_item`, `run_evaluation` (`batch_size`, `vlms`), `run_chunks`, `read_results` | A | created (merged from Jiaqi's repo); batched accuracy runs not yet checked on real weights; multi-copy threads not yet run on the GPU host |
 | `adaloop/orchestration/copies.py` | L3 | `time_copies`, `compare_copies` | A | 1 copy vs all copies: s/item and same outputs; not yet run on the GPU host |
 | `adaloop/core/model/load.py` | L4 | `load_model`, `load_models`, `unload_model` | A | copy j on the j-th gpu group, cached per placement; multi-copy not yet run on the GPU host |
 | `adaloop/core/model/inference.py` | L4 | `generate`, `generate_batch`, `last_logits` | A | batch 1 is the reference; left-padded batch added |
+| `adaloop/core/model/budget.py`, `stopping.py` | L4 | `generate_answers`, `StopOpenThinking` | A | thinking budget with budget forcing; phase 2 re-prefills; not yet run on real weights |
 | `adaloop/core/model/hooks.py` | L4 | `record_pass_states` | B | last core layer state per pass |
 | `adaloop/orchestration/audit.py` | L3 | `wrong_predictions` | B | re-scores saved rows; used by notebook 03 |
 | `adaloop/orchestration/pass_state.py` | L3 | `check_pass_state` | B | S3b check |
-| `adaloop/core/eval/` | L4 | `extract_answer`, `score`, `score_gqa`, `score_textvqa`, `summarize_rows` | A | GQA, TextVQA |
+| `adaloop/core/eval/` | L4 | `extract_answer`, `has_answer_format`, `count_message_tokens`, `score`, `score_lmms`, `score_gqa`, `score_gqa_lmms`, `score_textvqa`, `summarize_rows` | A | GQA, TextVQA |
 | `adaloop/data/` | L4 | `load_gqa`, `build_gqa_splits`, `load_textvqa`, `build_textvqa_splits`, `make_splits`, `load_manifest` | A | GQA, TextVQA |
 | `adaloop/schemas/` | L5 | `Item`, `LoadedVLM`, `GenerationResult`, `CostParams` | A | created |
 | `qafe/api.py` | L2 | — | A | not created |

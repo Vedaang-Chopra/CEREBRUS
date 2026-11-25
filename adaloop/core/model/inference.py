@@ -6,8 +6,10 @@ import time
 from collections.abc import Mapping, Sequence
 
 import torch
+from transformers import StoppingCriteriaList
 
-from adaloop.core.eval.extract import ANSWER, END
+from adaloop.core.eval.extract import ANSWER, END, THINKING, count_message_tokens
+from adaloop.core.model.stopping import StopOpenThinking
 from adaloop.schemas.vlm import GenerationResult, LoadedVLM
 from utils.timing import FirstTokenTimer, cuda_sync, peak_memory_gb, reset_peak_memory
 
@@ -15,22 +17,22 @@ IMAGE_KEYS = ("pixel_values", "image_grid_thw")  # one row per image token / ima
 END_SAMPLING = "<|content_model_end_sampling|>"
 
 
-def _token_id(vlm: LoadedVLM, token: str) -> int:
+def token_id(vlm: LoadedVLM, token: str) -> int:
     """Id of a special token, looked up by its string."""
     tokenizer = vlm.processor.tokenizer
-    token_id = tokenizer.convert_tokens_to_ids(token)
-    if token_id is None or token_id == tokenizer.unk_token_id:
+    found = tokenizer.convert_tokens_to_ids(token)
+    if found is None or found == tokenizer.unk_token_id:
         raise ValueError(f"tokenizer has no token {token!r}")
-    return token_id
+    return found
 
 
 def _stop_ids(vlm: LoadedVLM, input_ids: torch.Tensor) -> tuple[list[int], dict]:
     """(stop token ids, extra `model.generate` kwargs) for prompts `input_ids` (B, T), padded on the left."""
     # Answer message already open: its <|end_message|> ends the answer, otherwise the model starts a new message.
     # Not open (thinking on): <|end_message|> also ends the thinking message, so the model's own stop is kept.
-    is_open = input_ids[:, -1] == _token_id(vlm, ANSWER)  # (B,)
+    is_open = input_ids[:, -1] == token_id(vlm, ANSWER)  # (B,)
     if is_open.all():
-        ids = [_token_id(vlm, END), _token_id(vlm, END_SAMPLING)]
+        ids = [token_id(vlm, END), token_id(vlm, END_SAMPLING)]
         return ids, {"eos_token_id": ids}
     if is_open.any():
         raise ValueError("a batch cannot mix prompts with and without an open answer message")
@@ -38,14 +40,50 @@ def _stop_ids(vlm: LoadedVLM, input_ids: torch.Tensor) -> tuple[list[int], dict]
     return [] if eos is None else [eos] if isinstance(eos, int) else list(eos), {}
 
 
+def _message_counts(vlm: LoadedVLM, token_ids: torch.Tensor, input_ids: torch.Tensor) -> tuple[int, int]:
+    """(thinking tokens, answer tokens) of one generated row for its unpadded prompt `input_ids` (1, T)."""
+    answer_id, thinking_id, last = token_id(vlm, ANSWER), token_id(vlm, THINKING), int(input_ids[0, -1])
+    return count_message_tokens(
+        token_ids.tolist(),
+        thinking_id=thinking_id,
+        text_id=answer_id,
+        end_ids={token_id(vlm, END), token_id(vlm, END_SAMPLING)},
+        open_part={answer_id: "answer", thinking_id: "think"}.get(last),
+    )
+
+
+def _generate_kwargs(
+    vlm: LoadedVLM, input_ids: torch.Tensor, think_budget: int | None, stop_ids: list[int] | None
+) -> tuple[list[int], dict]:
+    """(stop token ids, extra `model.generate` kwargs); `stop_ids` replaces the rule read from the prompt."""
+    if stop_ids is None:
+        stop_ids, kwargs = _stop_ids(vlm, input_ids)
+    else:
+        kwargs = {"eos_token_id": stop_ids}
+    if think_budget is not None:
+        criterion = StopOpenThinking(input_ids.shape[1], think_budget, token_id(vlm, THINKING), token_id(vlm, END))
+        kwargs = {**kwargs, "stopping_criteria": StoppingCriteriaList([criterion])}
+    return stop_ids, kwargs
+
+
 @torch.inference_mode()
-def generate(vlm: LoadedVLM, inputs: Mapping, max_new_tokens: int) -> GenerationResult:
-    """Greedy-decode a single-item batch and measure it; works on full and pruned inputs."""
+def generate(
+    vlm: LoadedVLM,
+    inputs: Mapping,
+    max_new_tokens: int,
+    think_budget: int | None = None,
+    stop_ids: list[int] | None = None,
+) -> GenerationResult:
+    """Greedy-decode a single-item batch and measure it; works on full and pruned inputs.
+
+    One phase only: `think_budget` ends the output when the thinking is still open there. Runs under a config go
+    through `generate_answers` (core/model/budget.py), which adds the forced answer.
+    """
     input_ids = inputs["input_ids"]
     prompt_len = input_ids.shape[-1]
     n_visual = int((input_ids == vlm.model.config.image_token_id).sum())
 
-    _, stop_kwargs = _stop_ids(vlm, input_ids)
+    _, stop_kwargs = _generate_kwargs(vlm, input_ids, think_budget, stop_ids)
     devices = vlm.devices  # only this copy's GPUs: another copy may be running in another thread
     reset_peak_memory(devices)
     timer = FirstTokenTimer()
@@ -59,6 +97,7 @@ def generate(vlm: LoadedVLM, inputs: Mapping, max_new_tokens: int) -> Generation
     generate_s = time.perf_counter() - start
 
     token_ids = outputs[0, prompt_len:].cpu()
+    n_think, n_answer = _message_counts(vlm, token_ids, input_ids)
     result = GenerationResult(
         token_ids=token_ids,
         text=vlm.processor.decode(token_ids, skip_special_tokens=True),
@@ -69,6 +108,8 @@ def generate(vlm: LoadedVLM, inputs: Mapping, max_new_tokens: int) -> Generation
         ttft_s=timer.ttft_s,
         generate_s=generate_s,
         peak_mem_gb=peak_memory_gb(devices),
+        n_think_tokens=n_think,
+        n_answer_tokens=n_answer,
     )
     return result
 
@@ -95,7 +136,13 @@ def _left_pad(inputs_list: Sequence[Mapping], pad_id: int) -> dict:
 
 
 @torch.inference_mode()
-def generate_batch(vlm: LoadedVLM, inputs_list: Sequence[Mapping], max_new_tokens: int) -> list[GenerationResult]:
+def generate_batch(
+    vlm: LoadedVLM,
+    inputs_list: Sequence[Mapping],
+    max_new_tokens: int,
+    think_budget: int | None = None,
+    stop_ids: list[int] | None = None,
+) -> list[GenerationResult]:
     """Greedy-decode several single-item inputs as one left-padded batch; one result per item, in order.
 
     For accuracy runs. `generate` (batch 1) is the reference and the only path with per-item measurements:
@@ -103,7 +150,7 @@ def generate_batch(vlm: LoadedVLM, inputs_list: Sequence[Mapping], max_new_token
     """
     batch = _left_pad(inputs_list, vlm.model.generation_config.pad_token_id)
     prompt_width = batch["input_ids"].shape[1]
-    stop_ids, stop_kwargs = _stop_ids(vlm, batch["input_ids"])
+    stop_ids, stop_kwargs = _generate_kwargs(vlm, batch["input_ids"], think_budget, stop_ids)
     eos_ids = torch.tensor(stop_ids, dtype=torch.long)
 
     cuda_sync(vlm.devices)
@@ -122,6 +169,7 @@ def generate_batch(vlm: LoadedVLM, inputs_list: Sequence[Mapping], max_new_token
         if len(stops):
             token_ids = token_ids[: int(stops[0]) + 1]
         input_ids = inputs["input_ids"]
+        n_think, n_answer = _message_counts(vlm, token_ids, input_ids)
         results.append(
             GenerationResult(
                 token_ids=token_ids,
@@ -133,6 +181,8 @@ def generate_batch(vlm: LoadedVLM, inputs_list: Sequence[Mapping], max_new_token
                 ttft_s=None,
                 generate_s=batch_s / len(inputs_list),
                 peak_mem_gb=None,
+                n_think_tokens=n_think,
+                n_answer_tokens=n_answer,
             )
         )
     return results

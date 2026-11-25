@@ -11,8 +11,9 @@ from adaloop.core.cost.flops import (
     flops_vit,
 )
 from adaloop.core.eval.extract import extract_answer
-from adaloop.core.eval.scorers import score, score_gqa, score_textvqa
+from adaloop.core.eval.scorers import score, score_gqa, score_gqa_lmms, score_lmms, score_textvqa
 from adaloop.core.eval.summary import summarize_rows
+from adaloop.core.model.budget import generate_answers
 from adaloop.core.model.hooks import record_pass_states
 from adaloop.core.model.inference import generate, generate_batch, last_logits
 from adaloop.core.model.load import load_model, load_models, unload_model
@@ -38,8 +39,22 @@ from adaloop.data.textvqa import build_textvqa_splits, load_textvqa
 from adaloop.orchestration.audit import wrong_predictions
 from adaloop.orchestration.copies import compare_copies, time_copies
 from adaloop.orchestration.cost_timing import time_prefill, time_throughput
-from adaloop.orchestration.evaluate import evaluate_item, item_inputs, item_prompt, read_results, run_evaluation
-from adaloop.orchestration.full_run import full_run_config, result_path, run_full, shard_items, summarize_full
+from adaloop.orchestration.evaluate import (
+    evaluate_item,
+    item_inputs,
+    item_prompt,
+    read_answer,
+    read_results,
+    run_evaluation,
+)
+from adaloop.orchestration.full_run import (
+    estimate_full_run,
+    full_run_config,
+    result_path,
+    run_full,
+    shard_items,
+    summarize_full,
+)
 from adaloop.orchestration.pass_state import check_pass_state
 from adaloop.schemas.cost import CostParams
 from adaloop.schemas.items import Item
@@ -66,6 +81,7 @@ __all__ = [
     "cost_params",
     "cost_ref",
     "count_layer_calls",
+    "estimate_full_run",
     "evaluate_item",
     "expected_layer_calls",
     "extract_answer",
@@ -78,6 +94,7 @@ __all__ = [
     "flops_vit",
     "full_run_config",
     "generate",
+    "generate_answers",
     "generate_batch",
     "git_hash",
     "item_inputs",
@@ -99,6 +116,7 @@ __all__ = [
     "prune_inputs",
     "question_embeddings",
     "random_selector",
+    "read_answer",
     "read_results",
     "record_pass_states",
     "resize_long_side",
@@ -109,6 +127,8 @@ __all__ = [
     "save_table",
     "score",
     "score_gqa",
+    "score_gqa_lmms",
+    "score_lmms",
     "score_textvqa",
     "select_gpu_group",
     "set_loops",

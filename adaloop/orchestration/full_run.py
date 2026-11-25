@@ -2,13 +2,14 @@
 
 Shared by `scripts/mvp.py full` and `notebooks/06_full_baseline`, so file names match.
 """
+import time
 from collections.abc import Sequence
 from pathlib import Path
 
 from adaloop.core.eval.summary import summarize_rows
 from adaloop.data.gqa import load_gqa
 from adaloop.data.textvqa import load_textvqa
-from adaloop.orchestration.evaluate import read_results, run_evaluation
+from adaloop.orchestration.evaluate import read_results, run_chunks, run_evaluation
 from adaloop.schemas.items import Item
 from adaloop.schemas.vlm import LoadedVLM
 from utils.hashing import config_hash
@@ -62,6 +63,55 @@ def run_full(vlm: LoadedVLM | None, cfg: dict, root: str | Path, shard: tuple[in
                 run_evaluation(vlm, items, run_cfg, R, out, resume=True, batch_size=batch_size, vlms=vlms)
 
 
+def _remaining_items(cfg: dict, root: str | Path, shard: tuple[int, int]) -> dict[int, int]:
+    """Per R, the items of this shard (all benchmarks x splits) that have no row yet."""
+    batch_size = cfg["batch_size"]
+    remaining = dict.fromkeys(cfg["R_grid"], 0)
+    for benchmark in cfg["run_benchmarks"]:
+        for split in cfg["run_splits"]:
+            ids = {item.item_id for item in shard_items(LOADERS[benchmark](cfg, split, root=root), *shard)}
+            for R in cfg["R_grid"]:
+                out = result_path(cfg, root, benchmark, split, R, batch_size, shard)
+                done = {row["item_id"] for row in read_results(out)} if out.exists() else set()
+                remaining[R] += len(ids - done)
+    return remaining
+
+
+def estimate_full_run(vlm: LoadedVLM | None, cfg: dict, root: str | Path, shard: tuple[int, int] = (0, 1),
+                      vlms: Sequence[LoadedVLM] | None = None, n_items: int = 16) -> dict:
+    """Time `n_items` dev items at every R with the run's batch size and copies; estimate the time `run_full` needs.
+
+    Writes no result files. Counts only items without a row yet; model and data loading are not included.
+    Returns {"per_R": [one dict per R], "total_s", "total_h"}.
+    """
+    _check_scope(cfg)
+    copies = list(vlms) if vlms else [vlm]
+    batch_size = cfg["batch_size"]
+    if n_items < len(copies) * batch_size:
+        raise ValueError(f"n_items must be >= {len(copies) * batch_size} (one batch per copy), got {n_items}")
+    run_cfg = full_run_config(cfg, batch_size)
+    benchmarks = cfg["run_benchmarks"]
+    # one block per benchmark, as run_full batches them
+    items = [item for benchmark in benchmarks
+             for item in LOADERS[benchmark](cfg, "dev", limit=n_items // len(benchmarks), root=root)]
+    list(run_chunks(copies, items[: len(copies) * batch_size], run_cfg, cfg["R_grid"][0], batch_size))  # warmup
+
+    remaining = _remaining_items(cfg, root, shard)
+    per_R = []
+    for R in cfg["R_grid"]:
+        start = time.perf_counter()
+        rows = [row for _, chunk in run_chunks(copies, items, run_cfg, R, batch_size) for row in chunk]
+        s_per_item = (time.perf_counter() - start) / len(items)
+        summary = summarize_rows(rows)
+        per_R.append({"R": R, "s_per_item": s_per_item, "n_think_tokens_mean": summary["n_think_tokens_mean"],
+                      "forced_rate": summary["forced_rate"], "remaining": remaining[R],
+                      "est_s": s_per_item * remaining[R]})
+        print(f"R={R} | {s_per_item:.2f} s/item | forced {summary['forced_rate']:.0f}% | {remaining[R]} items left")
+    total_s = sum(row["est_s"] for row in per_R)
+    print(f"estimated time left for shard {shard[0]}/{shard[1]}: {total_s / 3600:.1f} h")
+    return {"per_R": per_R, "total_s": total_s, "total_h": total_s / 3600}
+
+
 def summarize_full(cfg: dict, root: str | Path) -> list[dict]:
     """One row per benchmark x split x R over all shard files of this run config, de-duplicated."""
     _check_scope(cfg)
@@ -80,6 +130,8 @@ def summarize_full(cfg: dict, root: str | Path) -> list[dict]:
                     continue
                 summary = summarize_rows(list(rows.values()))
                 table.append({"benchmark": benchmark, "split": split, "R": R, "n": summary["n"],
-                              "accuracy": summary["accuracy"], "parse_rate": summary["parse_rate"],
-                              "s_per_item": summary["generate_s_mean"]})
+                              "accuracy": summary["accuracy"], "accuracy_lmms": summary["accuracy_lmms"],
+                              "parse_rate": summary["parse_rate"],
+                              "n_think_tokens_mean": summary["n_think_tokens_mean"],
+                              "forced_rate": summary["forced_rate"], "s_per_item": summary["generate_s_mean"]})
     return table

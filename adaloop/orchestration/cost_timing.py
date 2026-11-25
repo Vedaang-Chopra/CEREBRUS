@@ -5,7 +5,8 @@ from collections.abc import Mapping, Sequence
 
 import torch
 
-from adaloop.core.model.inference import generate, generate_batch
+from adaloop.core.model.budget import generate_answers
+from adaloop.core.model.inference import generate
 from adaloop.core.model.loops import set_loops
 from adaloop.core.tokens.prune import extract_visual_tokens, prune_inputs
 from adaloop.schemas.vlm import LoadedVLM
@@ -21,16 +22,12 @@ def time_prefill(vlm: LoadedVLM, inputs: Mapping, R: int, repeats: int) -> float
     return statistics.median(generate(vlm, full, max_new_tokens=1).ttft_s for _ in range(repeats))
 
 
-def time_throughput(
-    vlm: LoadedVLM, inputs_list: Sequence[Mapping], R: int, batch_size: int, max_new_tokens: int
-) -> dict:
-    """Generate all inputs at `batch_size` (1 uses `generate`) and return wall-clock seconds per item."""
+def time_throughput(vlm: LoadedVLM, inputs_list: Sequence[Mapping], R: int, batch_size: int, cfg: Mapping) -> dict:
+    """Generate all inputs at `batch_size` as a run of `cfg` does and return wall-clock seconds per item."""
     set_loops(vlm, R)
 
     def run(chunk: Sequence[Mapping]) -> list:
-        if batch_size == 1:
-            return [generate(vlm, chunk[0], max_new_tokens)]
-        return generate_batch(vlm, chunk, max_new_tokens)
+        return generate_answers(vlm, chunk, cfg, batched=batch_size > 1)
 
     run(inputs_list[:batch_size])  # warmup
     start = time.perf_counter()

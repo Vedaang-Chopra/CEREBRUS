@@ -1,0 +1,16 @@
+# Prompt text for every run. Merged into the config (so it is part of config_hash).
+# system: task, output format and three text-only examples. The model may think; only the final answer is graded.
+system: |
+  You answer questions about an image.
+  You may think first. Your final reply must be exactly one line in this format and nothing else:
+  ANSWER: <answer>
+  <answer> is a single word or short phrase of at most 20 characters, with no explanation.
+
+  Examples of the format (about other images):
+  Q: What color is the bus? → ANSWER: red
+  Q: What brand is on the sign? → ANSWER: coca-cola
+  Q: How many dogs are there? → ANSWER: 2
+
+# Appended to each question: the lmms-eval post_prompt of GQA and TextVQA, EvolvingLMMs-Lab/lmms-eval @
+# 9134731f4f617e62ee80bcae9d0d5d9695ea55ef (lmms_eval/tasks/gqa/gqa.yaml and textvqa/_default_template_textvqa_yaml).
+question_suffix: "\nAnswer the question using a single word or phrase."

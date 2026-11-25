@@ -34,6 +34,16 @@ dropped positions stayed in the sequence. That is a change to the model, not bui
 
 Consequence: packing shortens the distance between kept visual tokens, and from the question back to them.
 
+## Prompt and thinking (chat template of the checkpoint)
+- Order: the system prompt, then the template's own system message `Thinking effort level: <x>`, then the user image
+  and question messages. No generation prompt is added; `add_generation_prompt` is not read.
+- `reasoning_effort`: none/minimal/low/medium/high/xhigh/max or a number in [0, 0.99]; it only changes `<x>`.
+- A thinking reply is a `<|content_thinking|>` message ended by `<|end_message|>`, then a `<|content_text|>` message,
+  then `<|content_model_end_sampling|>` (the `eos_token_id` of `generation_config.json`).
+- Thinking budget (`core/model/budget.py`): phase 2 does not reuse the KV cache; it runs the vision tower and the
+  prompt forward again over prompt + thinking + appended ids (`n_reprefill_tokens`).
+- Thinking tokens are decode cost: FLOPs take all generated tokens. Thinking length may change with R, so rows log it.
+
 ## Loop passes (S3b)
 - `Inkling2LoopTextModel.forward`: prelude once; first core pass without messages; each later pass restarts from the
   prelude output and gets messages from the previous pass (`message_input`, queries indexed by **layer**, not pass).

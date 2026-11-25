@@ -8,28 +8,36 @@ max_memory: {0: 35GiB, 1: 35GiB}
 # a gpu_group is picked only if each of its GPUs has this much free memory. Placement only: not hashed.
 min_free_gib: 38
 res_px: 512
-max_new_tokens: 32  # S2: short answers; generation stops earlier at <|end_message|> when the answer is prefilled
-# Start of the model reply, appended to the prompt. Set after Vedaang picks a variant in notebooks/04_thinking_off
-# (log it in docs/decisions.md).
+# system prompt and question suffix; the file's content replaces this value on load, so it is part of config_hash
+prompts: prompts.yaml
+# the reply ends with "ANSWER: <answer>"; only the text after the last marker is graded
+answer_format: "ANSWER:"
+# longest answer counted as answer_len_ok (never truncated); keep in step with the limit stated in prompts.yaml
+answer_max_chars: 20
+# chat template "Thinking effort level": a number in [0, 0.99] or none 0, minimal 0.1, low 0.2, medium 0.7, high 0.9, xhigh/max 0.99
+reasoning_effort: 0.9
+max_new_tokens: 512  # thinking needs room; the limit when think_budget is off or answer_prefill is set
+# Thinking budget (null = off), used when answer_prefill is null. Thinking still open after think_budget new tokens:
+# the answer message is opened with answer_format and at most forced_answer_tokens are generated. Thinking closed in
+# time: the model goes on to its own end, at most think_budget + answer_extra_tokens new tokens in total.
+think_budget: 256
+answer_extra_tokens: 32
+forced_answer_tokens: 16
+# Option: start of the model reply, appended to the prompt. null = the model thinks first and stops by itself.
+# A prefill ending in <|content_text|> opens the answer message, and generation then also stops at <|end_message|>.
 answer_prefill: null
 out_dir: execution_results/mvp
 # bump when a code change alters outputs for the same config (generation, extraction, scoring)
-code_version: 4
+code_version: 5
 
-# prompt_suffix = the lmms-eval post_prompt of the task ("\nAnswer the question using a single word or phrase.")
-# plus " Output only the answer." (added here). Sources, EvolvingLMMs-Lab/lmms-eval @ 9134731f4f617e62ee80bcae9d0d5d9695ea55ef:
-#   gqa:     lmms_eval/tasks/gqa/gqa.yaml, lmms_eval_specific_kwargs.default.post_prompt
-#   textvqa: lmms_eval/tasks/textvqa/_default_template_textvqa_yaml, lmms_eval_specific_kwargs.default.post_prompt
 benchmarks:
   gqa:
-    prompt_suffix: "\nAnswer the question using a single word or phrase. Output only the answer."
     source: lmms-lab-encoder/GQA
     questions_config: testdev_balanced_instructions
     images_config: testdev_balanced_images
     hf_split: testdev
     manifest: configs/splits/mvp_gqa.json
   textvqa:
-    prompt_suffix: "\nAnswer the question using a single word or phrase. Output only the answer."
     source: lmms-lab-encoder/textvqa
     hf_split: validation
     manifest: configs/splits/mvp_textvqa.json

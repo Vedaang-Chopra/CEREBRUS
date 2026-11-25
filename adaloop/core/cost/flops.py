@@ -3,6 +3,10 @@
 Counts the matrix products, short convolutions and attention products of the transformers `inkling2_loop` code.
 Left out: norms, softmax, activations, router top-k, block and message attention residuals beyond their parameters.
 Weights are counted as run: the NVFP4/MXFP8 experts of the checkpoint are dequantized to bf16 on load.
+`n_out` is every generated token, thinking and markers included (result rows: `n_out_tokens`). Thinking length may
+change with R, so it is logged per row (`n_think_tokens`).
+A forced answer (thinking budget, core/model/budget.py) runs the vision tower and the prompt forward a second time over
+`n_reprefill_tokens`; pass that to `flops_total` as `n_reprefill`.
 """
 import re
 from collections.abc import Sequence
@@ -149,14 +153,20 @@ def flops_vit(params: CostParams, image_grid_thw: Sequence[Sequence[int]]) -> in
 
 
 def flops_total(
-    params: CostParams, n_tokens: int, n_out: int, R: int, image_grid_thw: Sequence[Sequence[int]]
+    params: CostParams, n_tokens: int, n_out: int, R: int, image_grid_thw: Sequence[Sequence[int]],
+    n_reprefill: int = 0,
 ) -> dict[str, int]:
-    """Cost of one answer. n_tokens is the prompt length after pruning (text + kept visual tokens)."""
+    """Cost of one answer. n_tokens is the prompt length after pruning (text + kept visual tokens).
+
+    `n_out` is every generated token; `n_reprefill` > 0 adds a forced answer's second vision and prompt forward.
+    """
     parts = {
         "flops_vit": flops_vit(params, image_grid_thw),
         "flops_prefill": flops_prefill(params, n_tokens, R),
         "flops_decode": flops_decode(params, n_out, n_tokens, R),
     }
+    if n_reprefill:
+        parts["flops_reprefill"] = flops_vit(params, image_grid_thw) + flops_prefill(params, n_reprefill, R)
     parts["flops_total"] = sum(parts.values())
     return parts
 

@@ -11,10 +11,10 @@ from pathlib import Path
 
 import torch
 
-from adaloop.core.eval.extract import answer_is_open, extract_answer
-from adaloop.core.eval.scorers import score
+from adaloop.core.eval.extract import THINKING, answer_is_open, extract_answer, has_answer_format
+from adaloop.core.eval.scorers import score, score_lmms
 from adaloop.core.eval.summary import summarize_rows
-from adaloop.core.model.inference import generate, generate_batch
+from adaloop.core.model.budget import generate_answers
 from adaloop.core.model.loops import set_loops
 from adaloop.core.model.prompting import prepare_inputs
 from adaloop.schemas.items import Item
@@ -24,23 +24,41 @@ from utils.images import resize_long_side
 
 
 def item_prompt(item: Item, cfg: dict) -> str:
-    """The question text sent to the model (capitalized for TextVQA) plus its benchmark's `prompt_suffix`."""
+    """The question text sent to the model (capitalized for TextVQA) plus the `question_suffix` prompt."""
     # TextVQA: lmms-eval applies str.capitalize (first letter upper, the rest lower). Ported from
     # EvolvingLMMs-Lab/lmms-eval:lmms_eval/tasks/textvqa/utils.py::textvqa_doc_to_text
     # @ 9134731f4f617e62ee80bcae9d0d5d9695ea55ef.
     question = item.question.capitalize() if item.benchmark == "textvqa" else item.question
-    return question + cfg["benchmarks"][item.benchmark]["prompt_suffix"]
+    return question + cfg["prompts"]["question_suffix"]
 
 
 def item_inputs(vlm: LoadedVLM, item: Item, cfg: dict) -> Mapping:
-    """Model inputs for one item: resized image, prompt, answer prefill."""
+    """Model inputs for one item (system prompt, resized image, question, effort, prefill); every run uses this."""
     image = resize_long_side(item.image, cfg["res_px"])
-    return prepare_inputs(vlm, item_prompt(item, cfg), image, prefill=cfg.get("answer_prefill"))
+    return prepare_inputs(vlm, item_prompt(item, cfg), image, prefill=cfg.get("answer_prefill"),
+                          system=cfg["prompts"]["system"], reasoning_effort=cfg["reasoning_effort"])
+
+
+def read_answer(gen: GenerationResult, cfg: dict) -> str | None:
+    """The graded answer of one generation under the config's prefill and answer format."""
+    prefill = cfg.get("answer_prefill")
+    return extract_answer(_full_reply(gen, prefill), gen.hit_limit, prefilled=answer_is_open(prefill),
+                          answer_format=cfg.get("answer_format"))
+
+
+def _full_reply(gen: GenerationResult, prefill: str | None) -> str:
+    """The raw output, led by the thinking marker when the prefill opened the thinking (so it is never searched)."""
+    return (THINKING if (prefill or "").endswith(THINKING) else "") + gen.raw_text
 
 
 def _result_row(item: Item, cfg: dict, R: int, gen: GenerationResult, batch_size: int) -> dict:
     """Score one generation and lay it out as a result row."""
-    pred = extract_answer(gen.raw_text, gen.hit_limit, prefilled=answer_is_open(cfg.get("answer_prefill")))
+    pred = read_answer(gen, cfg)
+    answer_format, max_chars = cfg.get("answer_format"), cfg.get("answer_max_chars")
+    format_ok = None  # None: the config sets no format / no length limit
+    if answer_format:
+        prefill = cfg.get("answer_prefill")
+        format_ok = has_answer_format(_full_reply(gen, prefill), answer_format, answer_is_open(prefill))
     return {
         "item_id": item.item_id,
         "benchmark": item.benchmark,
@@ -52,12 +70,19 @@ def _result_row(item: Item, cfg: dict, R: int, gen: GenerationResult, batch_size
         "res_px": cfg["res_px"],
         "pred": pred,
         "answers": list(item.answers),
-        "correct": score(item.benchmark, pred, item.answers),
+        "correct": score(item.benchmark, pred, item.answers),  # primary
+        "correct_lmms": score_lmms(item.benchmark, pred, item.answers),
         "parse_ok": pred is not None,
+        "format_ok": format_ok,
+        "answer_len_ok": None if max_chars is None else pred is not None and len(pred) <= max_chars,
         "hit_limit": gen.hit_limit,
         "n_vis": gen.n_visual_tokens,
         "n_input": gen.n_input_tokens,
-        "n_out_tokens": len(gen.token_ids),
+        "n_out_tokens": len(gen.token_ids),  # all generated tokens of both phases: the decode cost
+        "n_think_tokens": gen.n_think_tokens,
+        "n_answer_tokens": gen.n_answer_tokens,
+        "forced": gen.forced,
+        "n_reprefill_tokens": gen.n_reprefill_tokens,  # prompt run again for a forced answer (extra cost)
         "ttft_s": gen.ttft_s,
         "generate_s": gen.generate_s,
         "peak_mem_gb": gen.peak_mem_gb,
@@ -69,7 +94,7 @@ def _result_row(item: Item, cfg: dict, R: int, gen: GenerationResult, batch_size
 def evaluate_item(vlm: LoadedVLM, item: Item, cfg: dict, R: int) -> dict:
     """Answer one item at loop count R with all visual tokens; return its result row."""
     set_loops(vlm, R)
-    gen = generate(vlm, item_inputs(vlm, item, cfg), cfg["max_new_tokens"])
+    gen = generate_answers(vlm, [item_inputs(vlm, item, cfg)], cfg)[0]
     return _result_row(item, cfg, R, gen, batch_size=1)
 
 
@@ -77,7 +102,7 @@ def _evaluate_batch(vlm: LoadedVLM, items: Sequence[Item], cfg: dict, R: int) ->
     """Like `evaluate_item` for several items generated as one batch."""
     set_loops(vlm, R)
     inputs_list = [item_inputs(vlm, item, cfg) for item in items]
-    gens = generate_batch(vlm, inputs_list, cfg["max_new_tokens"])
+    gens = generate_answers(vlm, inputs_list, cfg, batched=True)
     return [_result_row(item, cfg, R, gen, batch_size=len(items)) for item, gen in zip(items, gens)]
 
 
