@@ -23,7 +23,8 @@ def make_splits(
     """Assign whole images to splits by fraction, then sample `sizes[split]` questions per split.
 
     `question_ids[i]` belongs to image `image_ids[i]`. A size of None keeps every question of that split.
-    Splits share no image. Returned id lists are sorted.
+    Splits share no image. Each id list is in seeded shuffled order, so a prefix (`ids[:limit]`) is a random
+    subset; the same inputs and seed give the same lists.
     """
     if set(sizes) != set(image_fracs):
         raise ValueError(f"sizes and image_fracs need the same splits: {sorted(sizes)} vs {sorted(image_fracs)}")
@@ -50,7 +51,7 @@ def make_splits(
         size = sizes[name]
         if size is not None and size > len(pool):
             raise ValueError(f"split {name}: wants {size} questions, pool has {len(pool)}")
-        splits[name] = sorted(pool if size is None else rng.sample(pool, size))
+        splits[name] = rng.sample(pool, len(pool) if size is None else size)
         logger.info("split %s: %d questions from %d images", name, len(splits[name]),
                     sum(1 for s in image_split.values() if s == name))
     return splits
