@@ -16,7 +16,7 @@ n_copies: 2
 sample_items: 20
 # items per generation batch in the S5 comparison and the S7 grid (one method, k, R per batch). Not hashed:
 # nb07/nb08 check that batched outputs equal batch 1. 1 gives per-item latency and time to first token.
-eval_batch_size: 1
+eval_batch_size: 8
 # equal_length: a batch holds only items with equal visual and other token counts, so no padding inside it
 # (padding is a suspected cause of batch != batch 1). Not hashed. null: consecutive items, left-padded.
 batch_grouping: equal_length
