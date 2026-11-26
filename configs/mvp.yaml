@@ -45,8 +45,8 @@ out_dir: execution_results/mvp
 code_version: 7
 
 # Visual-token compression (docs/notes/compression_baselines.md). The keep fraction `k` is set per run (default 1.0).
-# none | random | uniform | text_mean | lowres | crisp_lite | rediprune | divprune | visionzip; frozen after S5
-compressor: none
+# none | random | uniform | text_mean | lowres | crisp_lite | rediprune | divprune | visionzip; frozen to divprune, the S5 winner (Nov 25, see docs/decisions.md)
+compressor: divprune
 compression:
   rediprune: {alpha: 0.5, tau: 0.0}  # upstream defaults (REDIPRUNE_ALPHA, REDIPRUNE_TAU)
   crisp_lite: {spacy_model: en_core_web_sm, uniform_frac: 0.25}

@@ -1,6 +1,8 @@
 extends: mvp.yaml
 
 out_dir: execution_results/full_baseline
+# the full baseline uses every visual token; without this line it would inherit divprune and its config hash (and finished result files) would change
+compressor: none
 # gpu_groups: inherited from mvp.yaml ([[0, 1], [2, 3]]: only physical GPUs 0-3 on Inara, 2 A40s per copy).
 # Override it here on another server.
 # Whole Inara server for a batch run (confirm with Vedaang before enabling; the standing rule is GPUs 0-3 only):

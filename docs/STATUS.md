@@ -33,11 +33,11 @@ No code is written for a step before the previous step's result is in. Infrastru
 | S3 | Original positions after pruning | 05 | code done: **original positions not supported by the model** (distances, masks, convs use token index; see `docs/notes/modeling_code.md`) → pruning stays packed (DEC3 fallback) | you: run 05, confirm k=100% bit-exact |
 | S3b | Layer-call count, pass-p state vs fresh R=p run | 05 | code done (theory: pass p of R=5 equals R=p) | you: run 05 Step-8 table on real weights |
 | S4 | Per-pass features + compression baselines from official code (crisp_lite, ReDiPrune, DivPrune, VisionZip + controls incl. lowres) | 07 | code done (f5e18fb, bca6a36), not run on real weights | you: run nb07, paste per-method output |
-| S5 | Compression comparison (R=3, k 25/50/100%, accuracy + FLOPs + latency) | 07 | agent building | |
+| S5 | Compression comparison (R=3, k 25/50/100%, accuracy + FLOPs + latency) | 07 | **done: divprune frozen** in `configs/mvp.yaml` (see docs/decisions.md) | |
 | S6 | FLOPs model + throughput → item counts | — | not started | can start now (no dependency on S2) |
 | S7 | Base grid 15 cells + noise re-run | — | not started | needs S2–S6 |
 | S8 | Multi-depth teacher cache (100% tokens, R=1..5, all lora_train) | 09 | code ready, not run on GPU | you: run 09, paste Step-2; then the full run (GPUs 0–7 allowed for it) |
-| S9 | Two LoRAs: A depth-matched (teacher R = student R), B `fixed:5` teacher for compressed samples (default, to be confirmed; `fixed:3` still works) | 10 | code written, CPU-checked on a tiny model, not run on GPU; training waits for S8 validation + your approval | you: approve the B depth; run 10 on Inara and paste the outputs; peft==0.22.0 pinned in `environment.yml` / `pyproject.toml`; training (`scripts/mvp.py train --variant A\|B`) and nb10 refuse `compressor: none`, so freeze it (S5) in `configs/mvp.yaml` first |
+| S9 | Two LoRAs: A depth-matched (teacher R = student R), B `fixed:5` teacher for compressed samples (default, to be confirmed; `fixed:3` still works) | 10 | code written, CPU-checked on a tiny model, not run on GPU; training waits for S8 validation + your approval | you: approve the B depth; run 10 on Inara and paste the outputs; peft==0.22.0 pinned in `environment.yml` / `pyproject.toml`; training (`scripts/mvp.py train --variant A\|B`) and nb10 refuse `compressor: none` (frozen to divprune, S5) |
 | S10 | Grids for base, A, B (15 cells each) | — | not started | |
 | S11 | Action tree from grid | — | not started | |
 | S12 | Controller (heuristic + learned) | — | not started | |

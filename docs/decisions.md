@@ -80,6 +80,7 @@ One entry per gate or design decision. Newest at the bottom. Format:
 ## Nov 25, 2026 · S5 · compression comparison (git 69c92a9, nb07, dev n = 100 per benchmark, R = 3, batch 1, no thinking)
 - Decision (Vedaang): compressor = **divprune**. Best accuracy at k = 25% and 50%. The automatic rule suggested visionzip (tied within CI, 1% fewer FLOPs); overruled because DivPrune is +2.4 pts on the mean of both k and the cost gap is ~1%.
 - Latency: median of 10 items per benchmark, batch 1, one copy. Table also in `execution_results/tables/S5_compression.csv` on Inara.
+- `configs/full_baseline.yaml` pins `compressor: none`, so its config hash is unchanged. The S5 cell hashes and the S8 teacher hash do not depend on this key.
 
 | method | k | all | GQA | TextVQA | GFLOPs | latency s | kept tokens |
 |---|---|---|---|---|---|---|---|
