@@ -60,7 +60,7 @@ from adaloop.core.train.teacher_store import load_records, read_index
 from adaloop.data.gqa import build_gqa_splits, load_gqa
 from adaloop.data.splits import load_manifest, make_splits
 from adaloop.data.textvqa import build_textvqa_splits, load_textvqa
-from adaloop.orchestration.analysis import cell_table, headroom_table, load_grid, noise_rate
+from adaloop.orchestration.analysis import batch_regime_table, cell_table, headroom_table, load_grid, noise_rate
 from adaloop.orchestration.audit import wrong_predictions
 from adaloop.orchestration.compare import (
     comparison_cells,
@@ -96,7 +96,7 @@ from adaloop.orchestration.full_run import (
     shard_items,
     summarize_full,
 )
-from adaloop.orchestration.grid import grid_items, merge_grid, rerun_items, run_grid
+from adaloop.orchestration.grid import grid_dir, grid_items, merge_grid, rerun_items, run_grid
 from adaloop.orchestration.inputs import item_inputs, item_prompt
 from adaloop.orchestration.lora_checks import (
     lora_eval_probe,
@@ -230,6 +230,8 @@ __all__ = [
     "generate_answers",
     "generate_batch",
     "git_hash",
+    "batch_regime_table",
+    "grid_dir",
     "grid_items",
     "item_inputs",
     "item_prompt",

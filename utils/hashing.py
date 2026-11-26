@@ -9,8 +9,9 @@ from pathlib import Path
 # `pareto` only lists the cells of the S5b sweep; each cell's compressor / k / compression.cls_iqr.m is hashed
 # `profile` holds the settings of the timing-only profiling (nb06 step 7); its rows go to their own folder
 # `headroom` holds settings of the analysis of a finished grid; it changes no model output
+# `grid_batch` is the grid's generation batch: the batch size is in the output folder name instead (`grid_dir`)
 HASH_EXCLUDE = {"gpu_groups", "full_gpu_groups", "min_free_gib", "n_copies", "sample_items", "eval_batch_size", "latency_items",
-                "batch_grouping", "resolution", "pareto", "headroom", "profile"}
+                "batch_grouping", "resolution", "pareto", "headroom", "profile", "grid_batch"}
 
 
 def config_hash(cfg: dict) -> str:

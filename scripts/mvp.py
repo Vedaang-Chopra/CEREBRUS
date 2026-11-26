@@ -85,9 +85,9 @@ def cmd_grid(api: ModuleType, cfg: dict, args: argparse.Namespace) -> None:
     items = api.grid_items(cfg, ROOT)
     again = api.rerun_items(items, cfg["n_rerun"], cfg["splits"]["seed"])
     vlms = [api.load_model(cfg)]
-    out_dir = ROOT / cfg["out_dir"] / "grid"
+    out_dir = api.grid_dir(cfg, ROOT)  # grid batch size in the name, the same folder as nb08
     api.run_grid(vlms, items, cfg, out_dir, shard=args.shard)
-    api.run_grid(vlms, again, cfg, out_dir, shard=args.shard, rerun_id=1)
+    api.run_grid(vlms, items, cfg, out_dir, shard=args.shard, rerun_id=1, only=again)
 
 
 def cmd_teacher(api: ModuleType, cfg: dict, args: argparse.Namespace) -> None:

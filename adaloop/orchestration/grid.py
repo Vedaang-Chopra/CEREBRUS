@@ -1,8 +1,9 @@
 """The base grid (S7): every item at every k x R under one compressor, features on, resumable; then grid.parquet.
 
-Items are run in the chunks of `item_chunks` (at most `eval_batch_size`); per item the features file is written first, then its rows. An item is done
-when the result files hold all its cells, so a killed run just continues, whatever batch size or copy count it used.
-Each worker (shard x model copy) appends to its own file.
+The batches are the chunks of `item_chunks` (at most `grid_batch.size`) over the whole item list, so they do not
+depend on what is already done, on the shard or copy count, or on which items are written (`only`). A batch with a
+missing row is computed again as a whole and only the missing rows are written; per item the features file is written
+first, then its rows. Each worker (shard x model copy) appends to its own file. One folder holds one batch size (`grid_dir`).
 """
 import json
 import random
@@ -15,10 +16,10 @@ import pandas as pd
 import torch
 
 from adaloop.core.cost.flops import cost_params, kv_cache_bytes, row_flops
-from adaloop.orchestration.batching import item_chunks
+from adaloop.orchestration.batching import EQUAL_LENGTH, item_chunks
 from adaloop.orchestration.evaluate import read_results
 from adaloop.orchestration.features import run_items_cells, save_features
-from adaloop.orchestration.full_run import LOADERS, shard_items
+from adaloop.orchestration.full_run import LOADERS
 from adaloop.schemas.cost import CostParams
 from adaloop.schemas.items import Item
 from adaloop.schemas.vlm import LoadedVLM
@@ -48,6 +49,13 @@ def grid_items(cfg: dict, root: str | Path) -> list[Item]:
     check_grid_config(cfg)
     return [item for split in cfg["grid"]["splits"] for benchmark in cfg["grid"]["benchmarks"]
             for item in LOADERS[benchmark](cfg, split, root=root)]
+
+
+def grid_dir(cfg: dict, root: str | Path, name: str = "grid") -> Path:
+    """<out_dir>/<name>_b<grid batch size>, plus `_padded` when batches may mix prompt lengths."""
+    size = cfg["grid_batch"]["size"]
+    padded = size > 1 and cfg.get("batch_grouping") != EQUAL_LENGTH
+    return Path(root) / cfg["out_dir"] / f"{name}_b{size}{'_padded' if padded else ''}"
 
 
 def rerun_items(items: Sequence[Item], n: int, seed: int) -> list[Item]:
@@ -90,54 +98,75 @@ def _done(out_dir: Path, digest: str) -> dict[tuple, set]:
 
 def run_grid(vlms: Sequence[LoadedVLM], items: Sequence[Item], cfg: dict, out_dir: str | Path,
              shard: tuple[int, int] = (0, 1), rerun_id: int = 0, variant: str = "base",
-             batch_size: int | None = None) -> None:
-    """Run shard i of n of `items` over the model copies, one thread each, `batch_size` at a time; resumable.
+             batch_size: int | None = None, only: Sequence[Item] | None = None) -> None:
+    """Run shard i of n of the batches of `items` over the model copies, one thread each; resumable.
 
+    `items` defines the batches (`batch_size`, default `grid_batch.size`); `only` (default: all of `items`) are the
+    items whose rows are written, so a re-run or a sample goes through the same batches as the full run.
     Writes `grid_<variant>_shard<i>of<n>_copy<j>_<hash>.jsonl` and, for `rerun_id` 0, one features file per item in
     `features/<variant>/<hash>/<benchmark>_<item_id>.pt`. With several copies the times include contention.
     """
     check_grid_config(cfg)
-    batch_size = batch_size or cfg["eval_batch_size"]
+    batch_size = batch_size or cfg["grid_batch"]["size"]
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     digest = config_hash(cfg)
     cells = {(k, R) for k in cfg["k_grid"] for R in cfg["R_grid"]}
     done = _done(out_dir, digest)
-    mine = shard_items(items, *shard)
-    pending = [item for item in mine if not cells <= done.get((item.benchmark, item.item_id, rerun_id), set())]
-    print(f"grid rerun_id={rerun_id} shard {shard[0]}/{shard[1]}: {len(pending)} of {len(mine)} items to run, "
-          f"{len(cells)} cells each, batch {batch_size}, {len(vlms)} copies")
-    if not pending:
+    wanted = {(item.benchmark, item.item_id) for item in (items if only is None else only)}
+    unknown = wanted - {(item.benchmark, item.item_id) for item in items}
+    if unknown:
+        raise ValueError(f"`only` has items that are not in `items`: {sorted(unknown)[:5]}")
+
+    def missing(item: Item) -> set:
+        """The cells of a wanted item that no result file holds yet."""
+        if (item.benchmark, item.item_id) not in wanted:
+            return set()
+        return cells - done.get((item.benchmark, item.item_id, rerun_id), set())
+
+    ### Step-1:- Batches from the whole list, then the shard, then the batches that still lack a row
+    mine = item_chunks(vlms[0], items, cfg, batch_size)[shard[0] :: shard[1]]
+    todo = [chunk for chunk in mine if any(missing(item) for item in chunk)]
+    n_pending = sum(bool(missing(item)) for chunk in todo for item in chunk)
+    n_wanted = sum((item.benchmark, item.item_id) in wanted for chunk in mine for item in chunk)
+    print(f"grid rerun_id={rerun_id} shard {shard[0]}/{shard[1]}: {n_pending} of {n_wanted} items to write in "
+          f"{len(todo)} batches ({sum(map(len, todo))} items computed), {len(cells)} cells each, batch {batch_size}, "
+          f"{len(vlms)} copies")
+    if not todo:
         return
     meta = {"model_variant": variant, "n_copies": len(vlms), "gpu_type": torch.cuda.get_device_name(0),
             "git_hash": git_hash(), "config_hash": digest, "seed": cfg["splits"]["seed"]}
     params = cost_params(vlms[0].model)
-    chunks = item_chunks(vlms[0], pending, cfg, batch_size)
-    stop = threading.Event()  # one failing worker stops the others after their current item
+    stop = threading.Event()  # one failing worker stops the others after their current batch
 
+    ### Step-2:- Each copy takes every n-th batch and writes the missing rows of its items
     def work(j: int) -> None:
         path = out_dir / f"grid_{variant}_shard{shard[0]}of{shard[1]}_copy{j}_{digest}.jsonl"
         kept = read_results(path) if path.exists() else []
         with path.open("w") as handle:  # rewrite the readable rows: a half-written last line is dropped
             handle.writelines(json.dumps(row) + "\n" for row in kept)
-            mine = chunks[j :: len(vlms)]
-            total, seen = sum(len(chunk) for chunk in mine), 0
-            for chunk in mine:
+            chunks = todo[j :: len(vlms)]
+            total, seen = sum(bool(missing(item)) for chunk in chunks for item in chunk), 0
+            for chunk in chunks:
                 if stop.is_set():
                     return
                 try:
                     for item, (rows, features) in zip(chunk, run_items_cells(vlms[j], chunk, cfg)):
+                        lacking = missing(item)
+                        if not lacking:  # done before, or only here to keep the batch as it was
+                            continue
                         if rerun_id == 0:
                             save_features(features, out_dir / "features" / variant / digest,
                                           f"{item.benchmark}_{item.item_id}")
-                        for row in _grid_rows(rows, cfg, params, rerun_id, meta):
+                        new = [row for row in rows if (row["k"], row["R"]) in lacking]
+                        for row in _grid_rows(new, cfg, params, rerun_id, meta):
                             handle.write(json.dumps(row) + "\n")
                         handle.flush()
+                        seen += 1
                 except BaseException:
                     stop.set()
                     print(f"copy {j} failed on {[(i.benchmark, i.item_id) for i in chunk]}; stopping")
                     raise
-                seen += len(chunk)
                 print(f"copy {j}: [{seen}/{total}] items")
 
     with ThreadPoolExecutor(max_workers=len(vlms)) as pool:

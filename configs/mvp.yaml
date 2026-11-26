@@ -60,6 +60,15 @@ grid:
   splits: [dev, ctrl_train]
   benchmarks: [gqa, textvqa]
 
+# Generation batch of the grid (S7 nb08 and `scripts/mvp.py grid`; S10 grids later), separate from eval_batch_size: every
+# other run and every latency number stays batch 1. Rows go to <out_dir>/grid_b<size> (`grid_dir`), so they never mix
+# with batch-1 rows. Batches are cut from the full item list (`batch_grouping`), so resume, shards, copies and the re-run
+# sample do not change them. Not hashed. `check`: nb08 batch 1 against batch `size` on the first n_items dev items per
+# benchmark.
+grid_batch:
+  size: 8
+  check: {n_items: 100, ks: [0.25, 1.0], R: 3, n_boot: 10000}
+
 # noise ceiling: items run a second time at every cell (rerun_id = 1)
 n_rerun: 100
 

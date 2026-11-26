@@ -74,6 +74,29 @@ def noise_rate(grid: pd.DataFrame, variant: str = "base") -> pd.DataFrame:
     return pd.DataFrame(out)
 
 
+def batch_regime_table(b1: pd.DataFrame, bn: pd.DataFrame, n_boot: int, seed: int) -> pd.DataFrame:
+    """Batch 1 against the grid batch on the same items and cells, per k and benchmark (and `all`).
+
+    Accuracies in %, diff = batched - batch 1 in points with a paired bootstrap CI over items, changed_pct: parsed
+    answers that differ. `mean_batch` is the mean size of the batch a row of `bn` ran in.
+    """
+    _refuse_test([*b1["split"], *bn["split"]])
+    on = ITEM + CELL
+    pair = b1.merge(bn, on=on, suffixes=("_b1", "_bn"), validate="one_to_one")
+    if pair.empty or not len(pair) == len(b1) == len(bn):
+        raise ValueError(f"the two regimes hold different items or cells: {len(b1)} and {len(bn)} rows, {len(pair)} shared")
+    out = []
+    for cell, at_cell in pair.groupby(CELL):
+        for name, part in [*at_cell.groupby("benchmark"), ("all", at_cell)]:
+            diff, low, high = paired_bootstrap_ci(100.0 * part["correct_bn"], 100.0 * part["correct_b1"], n_boot, seed)
+            out.append({"k": cell[0], "R": cell[1], "benchmark": name, "n_items": len(part),
+                        "acc_b1": 100.0 * part["correct_b1"].mean(), "acc_batched": 100.0 * part["correct_bn"].mean(),
+                        "diff": diff, "diff_low": low, "diff_high": high,
+                        "changed_pct": 100.0 * (part["pred_b1"].fillna("") != part["pred_bn"].fillna("")).mean(),
+                        "mean_batch": part["batch_size_bn"].mean()})
+    return pd.DataFrame(out)
+
+
 def _arrays(rows: pd.DataFrame, cells: list[tuple]) -> tuple[np.ndarray, np.ndarray]:
     """(scores, FLOPs), each items x cells, items in a fixed order. Every item must have every cell."""
     wide = rows.pivot(index=ITEM, columns=CELL, values=["correct", "flops_total"]).sort_index()
