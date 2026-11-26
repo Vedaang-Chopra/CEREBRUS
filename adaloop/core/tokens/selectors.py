@@ -15,10 +15,10 @@ def n_keep_for(n_tokens: int, k: float) -> int:
     return max(1, int(n_tokens * k))
 
 
-def random_selector(visual_tokens: torch.Tensor, k: float, seed: int = 42) -> torch.Tensor:
-    """Keep a seeded random fraction `k` of the tokens."""
+def random_selector(visual_tokens: torch.Tensor, k: float, seed: int = 42, n_keep: int | None = None) -> torch.Tensor:
+    """Keep a seeded random fraction `k` of the tokens, or exactly `n_keep` of them."""
     n_tokens = len(visual_tokens)
-    n_keep = n_keep_for(n_tokens, k)
+    n_keep = n_keep_for(n_tokens, k) if n_keep is None else n_keep
     generator = torch.Generator().manual_seed(seed)
     indices = torch.randperm(n_tokens, generator=generator)[:n_keep].sort().values
     return indices.to(visual_tokens.device)

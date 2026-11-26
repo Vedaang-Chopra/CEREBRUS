@@ -53,3 +53,9 @@ def prune_inputs(
         "attention_mask": inputs["attention_mask"][:, keep_mask],
         "mm_encoder_outputs": {"image": pruned_vision},
     }
+
+
+def drop_visual_tokens(vlm: LoadedVLM, inputs: Mapping) -> dict:
+    """Zero visual tokens: the prompt without any image placeholder and without vision features (text-only path)."""
+    keep = inputs["input_ids"][0] != vlm.model.config.image_token_id  # (T,)
+    return {"input_ids": inputs["input_ids"][:, keep], "attention_mask": inputs["attention_mask"][:, keep]}

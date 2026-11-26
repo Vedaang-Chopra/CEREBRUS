@@ -89,7 +89,7 @@ def _select(vlm: LoadedVLM, inputs: Mapping, item: Item, cfg: dict, method: str,
 
     if method == "random":
         seed = cfg["splits"]["seed"] + zlib.crc32(item.item_id.encode())
-        return random_selector(tokens, k, seed=seed % 2**31), tokens, {}
+        return random_selector(tokens, k, seed=seed % 2**31, n_keep=K), tokens, {}
     if method == "uniform":
         return uniform_selector(inputs["image_grid_thw"], k), tokens, {}
     if method == "text_mean":
@@ -139,7 +139,7 @@ def compress(vlm: LoadedVLM, inputs: Mapping, item: Item, k: float, cfg: dict,
     info: method, k, res_px, grid_hw (units of the image the model gets), n_vis_full, n_vis, vit_s, compression_s,
     compression_flops, fallback.
 
-    `n_keep` (divprune only) keeps exactly that many tokens and replaces `k`, which is then recorded as kept / full.
+    `n_keep` (divprune and random only) keeps exactly that many tokens and replaces `k`, which is then recorded as kept / full.
     An item with fewer tokens keeps them all and says so in `fallback`.
 
     `cls_iqr` takes k = 1.0 (it has no budget; its knob is `cfg["compression"]["cls_iqr"]["m"]`) and records
@@ -155,8 +155,8 @@ def compress(vlm: LoadedVLM, inputs: Mapping, item: Item, k: float, cfg: dict,
     N = _n_visual(vlm, inputs)
     fewer = None
     if n_keep is not None:
-        if method != "divprune" or n_keep < 1:
-            raise ValueError(f"n_keep needs compressor divprune and a count >= 1, got {method!r}, {n_keep}")
+        if method not in ("divprune", "random") or n_keep < 1:
+            raise ValueError(f"n_keep needs compressor divprune or random and a count >= 1, got {method!r}, {n_keep}")
         fewer = "fewer_tokens_than_n_keep_kept_all" if n_keep > N else None
         n_keep = min(n_keep, N)
         k = n_keep / N

@@ -24,6 +24,7 @@ from adaloop.core.model.hooks import record_attention_mass, record_first_logits,
 from adaloop.core.model.inference import generate, generate_batch, last_logits
 from adaloop.core.model.load import load_model, load_models, unload_model
 from adaloop.core.model.loops import count_layer_calls, expected_layer_calls, set_loops
+from adaloop.core.model.stage_hooks import count_hooks, record_stages
 from adaloop.core.model.prompting import prepare_inputs
 from adaloop.core.plots.accuracy_vs_r import plot_accuracy_vs_r
 from adaloop.core.plots.colors import METHOD_COLORS, VARIANT_LINESTYLES
@@ -36,6 +37,7 @@ from adaloop.core.plots.resolution import plot_resolution
 from adaloop.core.plots.save import save_figure, save_table
 from adaloop.core.plots.style import set_paper_style
 from adaloop.core.plots.thinking_off import plot_thinking_off
+from adaloop.core.plots.token_scan import plot_token_scan
 from adaloop.core.tokens.prune import extract_visual_tokens, prune_inputs
 from adaloop.core.tokens.selectors import (
     n_keep_for,
@@ -106,6 +108,7 @@ from adaloop.orchestration.lora_checks import (
 from adaloop.orchestration.lora_data import load_targets, schedule_table, student_inputs, item_loss
 from adaloop.orchestration.pareto import pareto_cells, pareto_reused_cells, pareto_table, run_pareto
 from adaloop.orchestration.pass_state import check_pass_state
+from adaloop.orchestration.profile import profile_cells, profile_item, profile_items, profile_table
 from adaloop.orchestration.resolution import (
     resolution_cells,
     resolution_gain,
@@ -124,6 +127,8 @@ from adaloop.orchestration.teacher_cache import (
     teacher_summary,
     teacher_total_records,
 )
+from adaloop.orchestration.token_scan import run_token_scan, token_scan_table
+from adaloop.orchestration.torch_trace import trace_item
 from adaloop.orchestration.train_lora import lora_run_dir, lora_run_estimate, require_compressor, train_lora
 from adaloop.schemas.cost import CostParams
 from adaloop.schemas.items import Item
@@ -135,6 +140,16 @@ from utils.images import load_image, resize_long_side
 from utils.io import load_config
 
 __all__ = [
+    "count_hooks",
+    "plot_token_scan",
+    "profile_cells",
+    "profile_item",
+    "profile_items",
+    "profile_table",
+    "record_stages",
+    "run_token_scan",
+    "token_scan_table",
+    "trace_item",
     "attach_lora",
     "expected_target_count",
     "item_loss",

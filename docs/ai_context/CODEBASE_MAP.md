@@ -28,6 +28,7 @@ Kept current by the agent after every step (see `docs/IMPLEMENTATION.md` §0). L
 | `adaloop/core/eval/bootstrap.py`, `core/eval/pareto.py`, `core/plots/compression.py` | L4 | `paired_bootstrap_ci`, `pareto_front`, `plot_pareto` (F06) | A | |
 | `adaloop/orchestration/cell_runs.py` | L3 | `run_batch1_cells`, `cell_lines` | A | batch-1 resumable cells with S5 reuse; used by the resolution check and the Pareto sweep |
 | `adaloop/orchestration/pareto.py` | L3 | `pareto_cells`, `pareto_reused_cells`, `run_pareto`, `pareto_table` | A | S5b (nb07 step 7), config `pareto` (not hashed); tiny-model check only |
+| `adaloop/orchestration/profile.py`, `token_scan.py`, `torch_trace.py` (with `core/model/stage_hooks.py`, `core/plots/token_scan.py`) | L3 | `profile_item`, `profile_items`, `profile_table`, `run_token_scan`, `token_scan_table`, `trace_item`, `record_stages`, `plot_token_scan` (F04b) | A | profiling (nb06 step 7), config `profile` (not hashed), timing only; tiny-model CPU check only |
 | `adaloop/orchestration/features.py` | L3 | `run_item_cells`, `save_features`, `load_features` | A | S4b: rows + controller features per (k, R); tiny-model check only; S7 grid builds on it |
 | `adaloop/core/controller/features.py` | L4 | `pass_features` | A | `h_last`, `delta_norm`, `vis_attn_mass`, `entropy`, `kl_prev`, `top1_prob` |
 | `adaloop/core/cost/compression.py` | L4 | `compression_flops` | A | analytic cost of the compression step |
@@ -50,7 +51,7 @@ Kept current by the agent after every step (see `docs/IMPLEMENTATION.md` §0). L
 | `utils/gpus.py` | L5 | `select_gpu_group`, `claim_gpu_group` (flock per pair, for parallel training), `free_gpu_mib` | A | picks one of `gpu_groups` (or `"all"`, their union) by free memory before CUDA starts; torch-free import chain; notebooks import it from `utils.gpus` before `adaloop.api` (the one exception: GPU choice must precede CUDA init); fix not yet run on the GPU host |
 | `utils/` | L5 | `setup_notebook`, `select_gpu_group`, `load_config`, `load_image`, `resize_long_side`, `config_hash`, `git_hash`, timing helpers | A | created; `setup_notebook(config)` only checks `CUDA_VISIBLE_DEVICES` |
 | `scripts/mvp.py` | CLI | `smoke`, `splits`, `eval`, `full --shard i/n`, `grid --shard i/n`, `teacher --shard i/n`, `train --variant A\|B [--smoke]` | A | created; `full` uses `select_gpu_group(cfg, group=i)`, `smoke`/`eval` pick a free group; selection runs before `adaloop.api` is imported |
-| `utils/hashing.py` | L5 | `config_hash` (drops `HASH_EXCLUDE` = `gpu_groups`, `min_free_gib`), `git_hash` | A | placement is not hashed |
+| `utils/hashing.py` | L5 | `config_hash` (drops `HASH_EXCLUDE`: placement, batching and check-only blocks such as `profile`), `git_hash` | A | placement is not hashed |
 
 Notebooks (they are the tests, see `AGENTS.md`): `01_huggingfaceload` (load, loops), `02_pruning` (visual tokens, selectors), `03_data_and_scoring` (S1 splits, items, scoring, evaluation runner), `04_thinking_off` (S2 answer prefill, `res_px`), `05_positions_and_loops` (S3 positions, S3b loop control and pass state), `06_full_baseline` (batch check, full run shards, summary, S6 cost model), `07_compression` (S4 methods, S4b features, S5 comparison), `08_grid` (S7 grid), `09_teacher_cache` (S8).
 Modeling-code findings: `docs/notes/modeling_code.md` (pruning stays packed).
