@@ -14,11 +14,12 @@ from pathlib import Path
 import pandas as pd
 import torch
 
-from adaloop.core.cost.flops import cost_params, row_flops
+from adaloop.core.cost.flops import cost_params, kv_cache_bytes, row_flops
 from adaloop.orchestration.batching import item_chunks
 from adaloop.orchestration.evaluate import read_results
 from adaloop.orchestration.features import run_items_cells, save_features
 from adaloop.orchestration.full_run import LOADERS, shard_items
+from adaloop.schemas.cost import CostParams
 from adaloop.schemas.items import Item
 from adaloop.schemas.vlm import LoadedVLM
 from utils.hashing import config_hash, git_hash
@@ -28,6 +29,7 @@ COLUMNS = [
     "pred", "correct", "correct_lmms", "parse_ok",
     "n_vis", "n_vis_full", "n_txt", "n_out_tokens",
     "flops_vit", "flops_prefill", "flops_decode", "flops_compression", "flops_total",
+    "kv_cache_bytes",
     "t_vit_ms", "t_compression_ms", "t_prefill_ms", "t_decode_ms", "peak_mem_gb",
     "rerun_id", "n_copies", "batch_size", "gpu_type", "git_hash", "config_hash", "seed",
 ]
@@ -146,8 +148,13 @@ def run_grid(vlms: Sequence[LoadedVLM], items: Sequence[Item], cfg: dict, out_di
             raise
 
 
-def merge_grid(out_dir: str | Path, cfg: dict, name: str = "grid.parquet") -> pd.DataFrame:
-    """All result files of this config as one table (a repeated cell keeps its last row), written to <out_dir>/name."""
+def merge_grid(out_dir: str | Path, cfg: dict, name: str = "grid.parquet",
+               params: CostParams | None = None) -> pd.DataFrame:
+    """All result files of this config as one table (a repeated cell keeps its last row), written to <out_dir>/name.
+
+    With `params` (from `cost_params`), `kv_cache_bytes` is computed for every row, also rows written before the column
+    existed; without it those rows have NaN there.
+    """
     out_dir = Path(out_dir)
     rows = [row for path in sorted(out_dir.glob(f"grid_*_{config_hash(cfg)}.jsonl")) for row in read_results(path)]
     if not rows:
@@ -155,5 +162,8 @@ def merge_grid(out_dir: str | Path, cfg: dict, name: str = "grid.parquet") -> pd
     table = pd.DataFrame(rows, columns=COLUMNS)
     keys = ["benchmark", "item_id", "model_variant", "k", "R", "rerun_id"]
     table = table.drop_duplicates(keys, keep="last").sort_values(keys).reset_index(drop=True)
+    if params is not None:  # analytic: the prompt after compression is text + kept visual tokens
+        table["kv_cache_bytes"] = [kv_cache_bytes(params, int(t + v), int(R))
+                                   for t, v, R in zip(table["n_txt"], table["n_vis"], table["R"])]
     table.to_parquet(out_dir / name, index=False)
     return table

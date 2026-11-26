@@ -11,6 +11,7 @@ from adaloop.core.cost.flops import (
     flops_readout,
     flops_total,
     flops_vit,
+    kv_cache_bytes,
     row_flops,
 )
 from adaloop.core.eval.bootstrap import paired_bootstrap_ci
@@ -191,6 +192,7 @@ __all__ = [
     "grid_items",
     "item_inputs",
     "item_prompt",
+    "kv_cache_bytes",
     "last_logits",
     "latency_table",
     "load_config",

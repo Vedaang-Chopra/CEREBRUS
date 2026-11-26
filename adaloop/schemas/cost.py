@@ -23,6 +23,7 @@ class CostParams:
     core_end: int
     attn_dims: tuple[int, ...]  # per decoder layer: heads * head_dim
     attn_windows: tuple[int | None, ...]  # per decoder layer: sliding window, None = full attention
+    kv_dims: tuple[int, ...]  # per decoder layer: key/value heads * head_dim (what the KV cache stores per token)
     vit_n_layers: int
     vit_hidden: int
     vit_merge: int

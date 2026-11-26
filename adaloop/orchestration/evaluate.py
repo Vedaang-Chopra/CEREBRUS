@@ -11,6 +11,7 @@ from pathlib import Path
 
 import torch
 
+from adaloop.core.cost.flops import cost_params, kv_cache_bytes
 from adaloop.core.eval.extract import THINKING, answer_is_open, extract_answer, has_answer_format, prefill_answer_text
 from adaloop.core.eval.scorers import score, score_lmms
 from adaloop.core.eval.summary import summarize_rows
@@ -182,6 +183,7 @@ def run_evaluation(
     config hash are an error. The summary is also written next to the JSONL as `.summary.json`.
     `batch_size` 1 is the reference path; larger values batch the generation of the pending items, for
     accuracy runs only (no per-item time to first token or memory).
+    Every row gets the analytic `kv_cache_bytes` (also rows already on disk; not part of the config hash).
 
     `vlms` (from `load_models`) splits the pending chunks over several copies, one thread each; `vlm` must
     then be None or vlms[0]. Outputs, hash and resume are the same as with one copy; rows record `copy` and
@@ -208,6 +210,8 @@ def run_evaluation(
     if stale:
         raise ValueError(f"{out_path} has rows from other configs {stale}; use a new output path")
     done = {r["item_id"] for r in rows}
+    params = cost_params(copies[0].model)
+    rows = [{**r, "kv_cache_bytes": kv_cache_bytes(params, r["n_input"], r["R"])} for r in rows]
 
     with out_path.open("w") as handle:  # rewrite clean rows, then append new ones
         for row in rows:
@@ -216,7 +220,8 @@ def run_evaluation(
         order = {item.item_id: n for n, item in enumerate(items)}
         for copy, results in run_chunks(copies, [item for _, item in pending], cfg, R, batch_size):
             for result in results:
-                row = {**result, "copy": copy, "n_copies": len(copies), **run_meta}
+                row = {**result, "kv_cache_bytes": kv_cache_bytes(params, result["n_input"], R),
+                       "copy": copy, "n_copies": len(copies), **run_meta}
                 handle.write(json.dumps(row) + "\n")
                 handle.flush()
                 rows.append(row)

@@ -146,8 +146,8 @@ TIMING_COLUMNS = ("latency_n", "latency_s", "compression_s", "t_vit_ms", "t_pref
 def comparison_table(rows: Sequence[dict], latency_rows: Sequence[dict] = ()) -> list[dict]:
     """One line per (method, k, benchmark), and per (method, k) over both benchmarks (benchmark "all").
 
-    Accuracy, tokens and FLOPs come from `rows`. The timing columns (`TIMING_COLUMNS`) come only from `latency_rows`,
-    the batch-1 one-copy pass; they are NaN (latency_n 0) for lines that pass did not run.
+    Accuracy, tokens, FLOPs and KV cache bytes (means) come from `rows`. The timing columns (`TIMING_COLUMNS`) come only
+    from `latency_rows`, the batch-1 one-copy pass; they are NaN (latency_n 0) for lines that pass did not run.
     """
     def by_benchmark(source: Sequence[dict]) -> list[dict]:
         return [{**row, "line": benchmark} for row in source for benchmark in (row["benchmark"], "all")]
@@ -167,6 +167,7 @@ def comparison_table(rows: Sequence[dict], latency_rows: Sequence[dict] = ()) ->
          "accuracy": 100.0 * mean(group, "correct"), "n_vis": mean(group, "n_vis"),
          "n_vis_full": mean(group, "n_vis_full"), "gflops_total": mean(group, "flops_total") / 1e9,
          "gflops_vit": mean(group, "flops_vit") / 1e9, "gflops_compression": mean(group, "flops_compression") / 1e9,
+         "kv_cache_bytes": mean(group, "kv_cache_bytes"),
          **{name: timed.get((method, k, benchmark), untimed)[name] for name in TIMING_COLUMNS},
          "parse_rate": 100.0 * mean(group, "parse_ok"),
          "fallback_rate": 100.0 * float(np.mean([r.get("fallback") is not None for r in group]))}

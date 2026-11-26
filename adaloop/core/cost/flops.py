@@ -7,6 +7,7 @@ Weights are counted as run: the NVFP4/MXFP8 experts of the checkpoint are dequan
 change with R, so it is logged per row (`n_think_tokens`).
 A forced answer (thinking budget, core/model/budget.py) runs the vision tower and the prompt forward a second time over
 `n_reprefill_tokens`; pass that to `flops_total` as `n_reprefill`.
+The KV cache size of a row (`kv_cache_bytes`) is memory, not FLOPs; it lives here because it uses the same layout.
 """
 import re
 from collections.abc import Sequence
@@ -16,6 +17,7 @@ from transformers import PreTrainedModel
 from adaloop.schemas.cost import CostParams
 
 REF_R = 3  # loop count of the reference cost (DEC3 §6); a definition, not a tunable
+BF16_BYTES = 2  # the model is loaded in bf16 (core/model/load.py), so cached keys and values are bf16
 
 
 def cost_params(model: PreTrainedModel) -> CostParams:
@@ -24,6 +26,7 @@ def cost_params(model: PreTrainedModel) -> CostParams:
     sliding = [kind == "hybrid_sliding" for kind in text.layer_types]
     heads = [text.swa_num_attention_heads if s else text.num_attention_heads for s in sliding]
     head_dims = [text.swa_head_dim if s else text.head_dim for s in sliding]
+    kv_heads = [text.swa_num_key_value_heads if s else text.num_key_value_heads for s in sliding]
     expert_share = text.num_experts_per_tok / text.n_routed_experts
 
     parts = dict.fromkeys(
@@ -78,6 +81,7 @@ def cost_params(model: PreTrainedModel) -> CostParams:
         core_end=text.loop_layer_index_end,
         attn_dims=tuple(h * d for h, d in zip(heads, head_dims)),
         attn_windows=tuple(text.sliding_window_size if s else None for s in sliding),
+        kv_dims=tuple(h * d for h, d in zip(kv_heads, head_dims)),
         vit_n_layers=vision.num_hidden_layers,
         vit_hidden=vision.hidden_size,
         vit_merge=vision.spatial_merge_size,
@@ -181,17 +185,39 @@ def flops_total(
     return parts
 
 
+def kv_cache_bytes(params: CostParams, n_tokens: int, R: int) -> int:
+    """Bytes of the decoder's cached keys and values after the prefill of one n_tokens prompt at R passes.
+
+    Every core layer has R caches (one per pass), prelude and coda layers one. A sliding layer keeps its last
+    window - 1 tokens. Counts K and V only: each cache also holds four short-convolution states of fixed size (not per
+    token). Per item: a batch holds this for every row at its padded length. Past the window, a sliding layer's kept
+    K, V are still a view of the whole prefill tensor, so the allocator holds more until the next step.
+    """
+    if R < 1:
+        raise ValueError(f"loop passes must be >= 1, got {R}")
+    total = 0
+    for i, (dim, window) in enumerate(zip(params.kv_dims, params.attn_windows)):
+        copies = R if params.core_start <= i < params.core_end else 1
+        kept = n_tokens if window is None else min(n_tokens, window - 1)
+        total += copies * kept * dim
+    return 2 * BF16_BYTES * total  # 2: keys and values
+
+
 def row_flops(params: CostParams, row: dict) -> dict[str, int]:
     """`flops_total` of one result row plus its compression step (`flops_compression`, included in the total).
 
     The vision tower runs on the row's `grid_hw` (the full image for post-ViT methods, smaller for `lowres`);
     the decoder runs on `n_input`, the prompt after compression.
+
+    Also returns `kv_cache_bytes` (not FLOPs) at the end of the first prefill, over `n_input`. A forced row's second
+    prefill builds a new cache over `n_reprefill_tokens`, and decoding grows it; neither is in the column.
     """
     height, width = row["grid_hw"]
     parts = flops_total(params, row["n_input"], row["n_out_tokens"], row["R"], [(1, height, width)],
                         n_reprefill=row.get("n_reprefill_tokens", 0))
     parts["flops_compression"] = row["compression_flops"]
     parts["flops_total"] += row["compression_flops"]
+    parts["kv_cache_bytes"] = kv_cache_bytes(params, row["n_input"], row["R"])
     return parts
 
 
