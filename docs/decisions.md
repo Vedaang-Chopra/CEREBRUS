@@ -106,3 +106,8 @@ One entry per gate or design decision. Newest at the bottom. Format:
 
 ## Nov 25, 2026 · S8/S9 paused
 - Vedaang paused S8 (teacher cache) and S9: the dataset design is under review (no top-32 log-prob distillation as planned; SFT, distillation data and reward modeling need more focus). Vedaang will share a report. S8/S9 code stays on main unused; nothing is run.
+
+## Nov 25, 2026 · S14 inputs · headroom definitions (main-discussion; for Vedaang's review before any number is quoted)
+- Oracle per cost cap: per-item cell choice with **mean** FLOPs ≤ cap (exact DP). The stricter per-item reading is reported as `oracle_eligible`, not used.
+- Noise oracle: the part of the oracle score that does not survive a re-run (choose cells on one run, score on the other, both directions averaged), on all re-run items (ctrl_train + dev). Chosen over the build-spec §2.4 simulated flip-rate version because it uses measured data only. If greedy runs are deterministic it is ~0; item-sampling noise is covered by paired bootstrap CIs.
+- Caps {0.25 … 1.5} × cost_ref (k=100%, R=3), headline 0.5. FLOPs include the vision tower; by the nb06 cost table, k=25–50% at R=1–2 should fall under 0.5 (to confirm on the grid).
