@@ -103,3 +103,6 @@ One entry per gate or design decision. Newest at the bottom. Format:
 | none | 1.0 | 57.4 | 59 | 55.8 | 2925.6 | 1.02 | 126 |
 
 - Findings: question-conditioned scoring with decoder input embeddings hurts (text_mean below random); TextVQA loses far more than GQA at 25%; batch-1 latency barely follows FLOPs (overhead-bound; profiled in S5b part 4).
+
+## Nov 25, 2026 · S8/S9 paused
+- Vedaang paused S8 (teacher cache) and S9: the dataset design is under review (no top-32 log-prob distillation as planned; SFT, distillation data and reward modeling need more focus). Vedaang will share a report. S8/S9 code stays on main unused; nothing is run.
