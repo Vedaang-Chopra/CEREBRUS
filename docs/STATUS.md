@@ -29,13 +29,13 @@ No code is written for a step before the previous step's result is in. Infrastru
 |---|---|---|---|---|
 | S0 | Env, package, model load, loop control, pruning port | 01, 02 | code done; env pinned to `learning_env` | archive 01/02 once you commit your edits; `scripts/mvp.py smoke` not run yet |
 | S1 | GQA + TextVQA loaders, splits, scorers, eval runner | 03 | **data checks PASS** (splits frozen, `configs/splits/`) | you: finish the evaluation section |
-| S2 | Thinking off, `res_px` | 04 | **done**: no thinking for the POC (P: GQA 60, TextVQA 59 on 20 items, ~2 s/item) | thinking with a larger budget only for final results |
-| S3 | Original positions after pruning | 05 | code done: **original positions not supported by the model** (distances, masks, convs use token index; see `docs/notes/modeling_code.md`) → pruning stays packed (DEC3 fallback) | you: run 05, confirm k=100% bit-exact |
-| S3b | Layer-call count, pass-p state vs fresh R=p run | 05 | code done (theory: pass p of R=5 equals R=p) | you: run 05 Step-8 table on real weights |
-| S4 | Per-pass features + compression baselines from official code (crisp_lite, ReDiPrune, DivPrune, VisionZip + controls incl. lowres) | 07 | code done (f5e18fb, bca6a36), not run on real weights | you: run nb07, paste per-method output |
+| S2 | Thinking off, `res_px` | 04 | **done**: no thinking for the POC (P: GQA 60, TextVQA 59 on 20 items) | res_px 768/1024 not compared → **resolution check today** |
+| S3 | Original positions after pruning | 05 | **done**: not supported → pruning stays packed; k=100% bit-exact | — |
+| S3b | Layer-call count, pass-p state vs fresh R=p run | 05 | **done**: bit-identical for p=1..5 (n=20) | — |
+| S4 | Per-pass features + compression methods (crisp_lite, ReDiPrune, DivPrune, VisionZip + controls) | 07 | **done** (1-item checks on real weights, features saved) | — |
 | S5 | Compression comparison (R=3, k 25/50/100%, accuracy + FLOPs + latency) | 07 | **done: divprune frozen** in `configs/mvp.yaml` (see docs/decisions.md) | |
-| S6 | FLOPs model + throughput → item counts | — | not started | can start now (no dependency on S2) |
-| S7 | Base grid 15 cells + noise re-run | — | not started | needs S2–S6 |
+| S6 | FLOPs model + throughput → item counts | 06 | FLOPs ratio check PASS, throughput measured | grid timing (`RUN_GRID_TIME`) → budget line |
+| S7 | Base grid 15 cells (divprune) + noise re-run | 08 | code ready | 1 item → 20 → full (ctrl_train + dev) |
 | S8 | Multi-depth teacher cache (100% tokens, R=1..5, all lora_train) | 09 | code ready, not run on GPU | you: run 09, paste Step-2; then the full run (GPUs 0–7 allowed for it) |
 | S9 | Two LoRAs: A depth-matched (teacher R = student R), B `fixed:5` teacher for compressed samples (default, to be confirmed; `fixed:3` still works) | 10 | code written, CPU-checked on a tiny model, not run on GPU; training waits for S8 validation + your approval | you: approve the B depth; run 10 on Inara and paste the outputs; peft==0.22.0 pinned in `environment.yml` / `pyproject.toml`; training (`scripts/mvp.py train --variant A\|B`) and nb10 refuse `compressor: none` (frozen to divprune, S5) |
 | S10 | Grids for base, A, B (15 cells each) | — | not started | |
@@ -58,3 +58,20 @@ No code is written for a step before the previous step's result is in. Infrastru
 
 ## Later to-do (run separately, after the main path)
 - **S5b Pareto sweep:** every method at k ∈ {10, 25, 35, 50, 75, 100}% (R = 3, dev, 200 items) → accuracy-vs-FLOPs and accuracy-vs-tokens curves per method with the Pareto front (paper figure F06). The methods are budget-based (no method picks its own count), so the curve is the fair comparison. Own config key and folder; reuse the finished 25/50/100% cells. ~4 extra k × 8 methods × 200 items ≈ 6,400 answers: ~1 h at batch 1 on 4 copies, less with equal-length batching. Run after the S8 cache.
+
+## Today (Nov 25–26): inference and baselines through S8 — run list
+Vedaang decision: no post-training today; finish every inference baseline and the S8 dataset; S9 starts tomorrow.
+
+| # | Run | Where | Gives |
+|---|---|---|---|
+| 1 | nb09 1-item print → 20-item checks | nb09, 1 copy | teacher cache valid (S8 checks) |
+| 2 | nb07 `RUN_BATCH_CHECK` + `RUN_BATCH_DIAG` | nb07 | may the grid batch? |
+| 3 | `scripts/mvp.py smoke` | terminal | S0 Done-when |
+| 4 | nb06 `RUN_GRID_TIME` | nb06 | S6 budget line, grid item counts |
+| 5 | nb06 `RUN_FULL` (k=100%, R=1..5, dev + ctrl_train) | nb06 / CLI | F05 accuracy vs R |
+| 6 | Resolution check (512 / 768 / 1024 px, full and DivPrune at matched tokens) | nb04 (to build) | does a sharper image + pruning beat 512 px? |
+| 7 | S5b Pareto sweep + KV bytes + profiling | nb07 / nb06 (agent building) | F06 curves, where time goes |
+| 8 | nb08 1 item → 20 → full grid + re-run | nb08 / CLI, GPUs 0–7 | S7 grid.parquet, noise rate, F07, F08 |
+| 9 | Full S8 cache | CLI, GPUs 0–7 | teacher dataset for S9 |
+| 10 | Analysis from the grid: best_fixed, oracle, noise oracle, headroom (T2, F09) | code (to build), seconds | headroom claim |
+Not today (planned later): S5 extra 10/75% curve is inside #7; POPE/hallucination test, evidence retention, thinking study (post-MVP / final runs).
