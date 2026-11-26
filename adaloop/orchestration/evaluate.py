@@ -16,6 +16,7 @@ from adaloop.core.eval.scorers import score, score_lmms
 from adaloop.core.eval.summary import summarize_rows
 from adaloop.core.model.budget import generate_answers
 from adaloop.core.model.loops import set_loops
+from adaloop.orchestration.batching import item_chunks
 from adaloop.orchestration.compress import compress
 from adaloop.orchestration.inputs import item_inputs, item_prompt
 from adaloop.schemas.items import Item
@@ -106,8 +107,8 @@ def _evaluate_batch(vlm: LoadedVLM, items: Sequence[Item], cfg: dict, R: int) ->
 
 
 def _run_chunk(vlm: LoadedVLM, items: Sequence[Item], cfg: dict, R: int, batch_size: int) -> list[dict]:
-    """Rows of one chunk on one model copy: the batch-1 reference path, or one left-padded batch."""
-    if batch_size == 1:
+    """Rows of one chunk on one model copy: the batch-1 reference path (also a chunk of one), or one batch."""
+    if len(items) == 1:
         return [evaluate_item(vlm, items[0], cfg, R)]
     return _evaluate_batch(vlm, items, cfg, R)
 
@@ -121,13 +122,15 @@ def check_distinct_copies(vlms: Sequence[LoadedVLM]) -> None:
 
 def run_chunks(vlms: Sequence[LoadedVLM], items: Sequence[Item], cfg: dict, R: int,
                batch_size: int = 1) -> Iterator[tuple[int, list[dict]]]:
-    """Yield (copy index, rows) for consecutive chunks of `batch_size` items, in item order.
+    """Yield (copy index, rows) per chunk of `item_chunks` (at most `batch_size` items each).
+
+    Without `batch_grouping: equal_length` the chunks are consecutive items, so rows come in item order.
 
     One copy runs in the calling thread. Several copies take the chunks round-robin, one thread each, so
     the chunks (and so the batch padding) are the same as with one copy. An error in a chunk is raised when
     its turn comes: earlier chunks were already yielded, later ones are dropped.
     """
-    chunks = [items[first : first + batch_size] for first in range(0, len(items), batch_size)]
+    chunks = item_chunks(vlms[0], items, cfg, batch_size)
     if len(vlms) == 1:
         for chunk in chunks:
             yield 0, _run_chunk(vlms[0], chunk, cfg, R, batch_size)
@@ -183,7 +186,7 @@ def run_evaluation(
     `vlms` (from `load_models`) splits the pending chunks over several copies, one thread each; `vlm` must
     then be None or vlms[0]. Outputs, hash and resume are the same as with one copy; rows record `copy` and
     `n_copies`, and with n_copies > 1 their times include contention between the copies. This thread writes
-    the rows, in item order. After an error, rows before the failed chunk are on disk; finished later chunks
+    the rows (the finished file is in item order). After an error, rows before the failed chunk are on disk; finished later chunks
     are dropped and rerun on resume (a killed process loses at most 2 chunks per copy).
     """
     if batch_size < 1:
@@ -210,17 +213,21 @@ def run_evaluation(
         for row in rows:
             handle.write(json.dumps(row) + "\n")
         pending = [(n, item) for n, item in enumerate(items) if item.item_id not in done]
-        positions = iter(n for n, _ in pending)  # place of each pending item in `items`, for the progress line
+        order = {item.item_id: n for n, item in enumerate(items)}
         for copy, results in run_chunks(copies, [item for _, item in pending], cfg, R, batch_size):
             for result in results:
-                n = next(positions)
                 row = {**result, "copy": copy, "n_copies": len(copies), **run_meta}
                 handle.write(json.dumps(row) + "\n")
                 handle.flush()
                 rows.append(row)
+                n = len(rows) - 1
                 if n == 0 or (n + 1) % 10 == 0:
                     acc = 100.0 * sum(r["correct"] for r in rows) / len(rows)
                     print(f"[{n + 1}/{len(items)}] R={R} | acc: {acc:.1f}")
+
+    if cfg.get("batch_grouping") == "equal_length" and batch_size > 1:  # grouped chunks finish out of item order
+        rows.sort(key=lambda row: order.get(row["item_id"], -1))
+        out_path.write_text("".join(json.dumps(row) + "\n" for row in rows))
 
     summary = {**summarize_rows(rows), "R": R, **run_meta}
     out_path.with_suffix(".summary.json").write_text(json.dumps(summary, indent=1))

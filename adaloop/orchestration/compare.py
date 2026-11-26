@@ -11,6 +11,7 @@ import torch
 
 from adaloop.core.cost.flops import cost_params, row_flops
 from adaloop.core.eval.bootstrap import paired_bootstrap_ci
+from adaloop.orchestration.batching import item_chunks
 from adaloop.orchestration.cells import ChunkInputs, generate_cell, map_copies
 from adaloop.orchestration.evaluate import read_results, result_row
 from adaloop.schemas.items import Item
@@ -52,7 +53,7 @@ def run_comparison(vlms: Sequence[LoadedVLM], items: Mapping[str, Sequence[Item]
                    out_dir: str | Path, batch_size: int | None = None) -> list[dict]:
     """Run every cell on every benchmark's items (resumable, one JSONL per cell); return all rows with FLOPs.
 
-    Items are taken `batch_size` at a time (default `eval_batch_size`): the vision tower runs once per item and every
+    Items are taken in the chunks of `item_chunks`, at most `batch_size` (default `eval_batch_size`) each: the vision tower runs once per item and every
     cell reuses it (not `none` and `lowres`), each batch holds one cell. Rows already on disk are kept, whatever
     batch size or copy count wrote them. Batched rows have no time to first token and an averaged `generate_s`; with
     several copies the times include contention.
@@ -69,7 +70,7 @@ def run_comparison(vlms: Sequence[LoadedVLM], items: Mapping[str, Sequence[Item]
         pending = [item for item in bench_items if any(item.item_id not in done[cell] for cell in paths)]
         print(f"[{benchmark}] {len(bench_items)} items, {len(pending)} with cells to run | {len(paths)} cells | "
               f"batch {batch_size}, {len(vlms)} copies")
-        chunks = [pending[first : first + batch_size] for first in range(0, len(pending), batch_size)]
+        chunks = item_chunks(vlms[0], pending, cfg, batch_size)
 
         def work(vlm: LoadedVLM, j: int, chunk: list[Item]) -> list[tuple[tuple, dict]]:
             inputs = ChunkInputs(vlm, chunk, cfg)
@@ -96,10 +97,11 @@ def run_comparison(vlms: Sequence[LoadedVLM], items: Mapping[str, Sequence[Item]
             seen += len(chunks[n])
             print(f"[{benchmark}] {seen}/{len(pending)} items done")
 
-        wanted = {item.item_id for item in bench_items}
+        order = {item.item_id: n for n, item in enumerate(bench_items)}
         for path in paths.values():
-            for row in read_results(path):
-                if row["item_id"] in wanted:
+            # item order, whatever order the batches finished in
+            for row in sorted(read_results(path), key=lambda row: order.get(row["item_id"], -1)):
+                if row["item_id"] in order:
                     rows.append({**row, **row_flops(params, row), "latency_s": row_latency(row)})
     return rows
 

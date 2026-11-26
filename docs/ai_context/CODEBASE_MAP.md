@@ -13,6 +13,8 @@ Kept current by the agent after every step (see `docs/IMPLEMENTATION.md` §0). L
 | `adaloop/core/train/` | L4 | `answer_log_probs`, `split_top`, `target_tensors` (`teacher.py`); `read_index`, `write_part`, `load_records` (`teacher_store.py`) | A | LoRA training (S9) stays on `wip/post-training` |
 | `adaloop/orchestration/grid.py` | L3 | `grid_items`, `rerun_items`, `run_grid`, `merge_grid` | A | S7; `full_run.py` stays the k = 1 batched baseline; tiny-model check only |
 | `adaloop/orchestration/cells.py` | L3 | `ChunkInputs`, `generate_cell`, `map_copies`, `check_batched` | A | batched compressed evaluation shared by S5/S7; batched = batch 1 not yet checked on real weights |
+| `adaloop/orchestration/batching.py` | L3 | `item_chunks`, `batchable_items` | A | equal-length batches; not yet checked on real weights |
+| `adaloop/orchestration/batch_diagnostic.py` | L3 | `diagnose_batch` | A | batch 1 vs copies vs mixed batch: logit margins and diffs; nb07 flag `RUN_BATCH_DIAG` |
 | `adaloop/orchestration/compare.py` | L3 | `comparison_cells`, `run_comparison`, `comparison_table`, `pick_winner` | A | S5; tiny-model check only, nb07 step 6 not yet run |
 | `adaloop/core/eval/bootstrap.py`, `core/plots/compression.py` | L4 | `paired_bootstrap_ci`, `plot_compression` (F06) | A | |
 | `adaloop/orchestration/features.py` | L3 | `run_item_cells`, `save_features`, `load_features` | A | S4b: rows + controller features per (k, R); tiny-model check only; S7 grid builds on it |

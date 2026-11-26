@@ -52,6 +52,8 @@ from adaloop.orchestration.compare import (
     pick_winner,
     run_comparison,
 )
+from adaloop.orchestration.batch_diagnostic import diagnose_batch
+from adaloop.orchestration.batching import batchable_items, item_chunks
 from adaloop.orchestration.cells import check_batched
 from adaloop.orchestration.compress import METHODS, compress, encode_vision
 from adaloop.orchestration.copies import compare_copies, time_copies
@@ -114,6 +116,9 @@ __all__ = [
     "build_gqa_splits",
     "build_textvqa_splits",
     "check_batched",
+    "diagnose_batch",
+    "batchable_items",
+    "item_chunks",
     "check_pass_state",
     "compare_copies",
     "comparison_cells",

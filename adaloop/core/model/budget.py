@@ -26,11 +26,20 @@ def thinking_budget(cfg: Mapping) -> int | None:
 
 
 def _run(
-    vlm: LoadedVLM, inputs_list: Sequence[Mapping], max_new_tokens: int, batched: bool, **stop
+    vlm: LoadedVLM, inputs_list: Sequence[Mapping], max_new_tokens: int, batched: bool, grouping: str | None, **stop
 ) -> list[GenerationResult]:
-    """One generation phase: one left-padded batch, or the batch-1 reference path."""
+    """One generation phase: one batch (equal-length batches under `grouping`), or the batch-1 reference path."""
     if batched:
-        return generate_batch(vlm, inputs_list, max_new_tokens, **stop)
+        if grouping != "equal_length":
+            return generate_batch(vlm, inputs_list, max_new_tokens, **stop)
+        lengths: dict[int, list[int]] = {}
+        for i, inputs in enumerate(inputs_list):
+            lengths.setdefault(inputs["input_ids"].shape[1], []).append(i)
+        results = [None] * len(inputs_list)
+        for rows in lengths.values():  # no padding inside a batch
+            for i, result in zip(rows, generate_batch(vlm, [inputs_list[i] for i in rows], max_new_tokens, **stop)):
+                results[i] = result
+        return results
     if len(inputs_list) != 1 and inputs_list:
         raise ValueError(f"batched=False takes one item, got {len(inputs_list)}")
     return [generate(vlm, inputs, max_new_tokens, **stop) for inputs in inputs_list]
@@ -72,15 +81,17 @@ def generate_answers(
     """Generate one result per `prepare_inputs` output under the config's token limits and thinking budget.
 
     `batched` False takes one item (the reference path with per-item measurements). True runs phase 1 as one batch and
-    the forced rows together as a second batch. `generate_s` covers both phases (batched: both batch times / batch
+    the forced rows together as a second batch; with `batch_grouping: equal_length` each is split by prompt length. `generate_s` covers both phases (batched: both batch times / batch
     size, the same for every row); `ttft_s` is phase 1's.
     """
     budget = thinking_budget(cfg)
+    grouping = cfg.get("batch_grouping")
     if budget is None:
-        return _run(vlm, inputs_list, cfg["max_new_tokens"], batched)
+        return _run(vlm, inputs_list, cfg["max_new_tokens"], batched, grouping)
 
     ### Step-1:- Think up to the budget; a row that closed its thinking may go on a little
-    results = _run(vlm, inputs_list, budget + cfg["answer_extra_tokens"], batched, think_budget=budget)
+    results = _run(vlm, inputs_list, budget + cfg["answer_extra_tokens"], batched, grouping,
+                   think_budget=budget)
     forced = [i for i, gen in enumerate(results) if _needs_forcing(vlm, gen, budget)]
     if not forced:
         return results
@@ -91,7 +102,7 @@ def generate_answers(
     think_ids = [results[i].token_ids[:budget] for i in forced]  # batched rows carry padding after the budget
     longer = [append_ids(inputs_list[i], ids.tolist() + suffix_ids) for i, ids in zip(forced, think_ids)]
     stop_ids = [token_id(vlm, END), token_id(vlm, END_SAMPLING)]
-    answers = _run(vlm, longer, cfg["forced_answer_tokens"], batched, stop_ids=stop_ids)
+    answers = _run(vlm, longer, cfg["forced_answer_tokens"], batched, grouping, stop_ids=stop_ids)
 
     ### Step-3:- Merge the two phases; the phase-2 time belongs to the whole batch
     for i, ids, inputs, answer in zip(forced, think_ids, longer, answers):

@@ -8,6 +8,7 @@ from torch.nn import functional as F
 from adaloop.core.controller.features import pass_features
 from adaloop.core.cost.flops import cost_params, flops_features
 from adaloop.core.model.hooks import record_attention_mass, record_first_logits, record_pass_states
+from adaloop.orchestration.batching import EQUAL_LENGTH, equal_key_chunks
 from adaloop.orchestration.cells import ChunkInputs, generate_cell
 from adaloop.orchestration.evaluate import result_row
 from adaloop.schemas.items import Item
@@ -22,6 +23,7 @@ def run_items_cells(vlm: LoadedVLM, items: Sequence[Item], cfg: dict) -> list[tu
     needs the R = p-1 run, so it is NaN when p-1 is not in `R_grid`. Needs `answer_prefill` (no thinking): the first
     generated token is then the first answer token. Features and `generate_s` carry the hooks' small overhead; batched
     values differ from batch 1 in the last bits (floating point), take latency from batch-1 runs without features.
+    Under `batch_grouping: equal_length`, items whose compressed prompts differ in length run as separate batches.
     """
     if cfg.get("answer_prefill") is None:
         raise ValueError("features read the first answer token: set answer_prefill (no thinking)")
@@ -30,10 +32,19 @@ def run_items_cells(vlm: LoadedVLM, items: Sequence[Item], cfg: dict) -> list[tu
     image_id = vlm.model.config.image_token_id
     chunk = ChunkInputs(vlm, items, cfg)
     n_items = len(items)
+    compressed = {k: [chunk.compressed(i, cfg["compressor"], k) for i in range(n_items)] for k in cfg["k_grid"]}
+    if cfg.get("batch_grouping") == EQUAL_LENGTH:
+        # the hooks need one generate call per cell, and `generate_answers` splits a batch of unequal prompt lengths
+        lengths = [tuple(compressed[k][i][0]["input_ids"].shape[1] for k in cfg["k_grid"]) for i in range(n_items)]
+        groups = equal_key_chunks(lengths, n_items)
+        if len(groups) > 1:
+            results = {i: result for group in groups
+                       for i, result in zip(group, run_items_cells(vlm, [items[i] for i in group], cfg))}
+            return [results[i] for i in range(n_items)]
     batched = n_items > 1
     out = [([], {}) for _ in items]
     for k in cfg["k_grid"]:
-        prepared = [chunk.compressed(i, cfg["compressor"], k) for i in range(n_items)]
+        prepared = compressed[k]
         masks = [inputs["input_ids"][0] == image_id for inputs, _ in prepared]  # (T_i,)
         width = max(len(mask) for mask in masks)
         padded = torch.stack([F.pad(mask, (width - len(mask), 0), value=False) for mask in masks])  # (B, T), left

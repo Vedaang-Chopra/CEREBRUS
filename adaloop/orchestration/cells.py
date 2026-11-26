@@ -7,6 +7,7 @@ import torch
 
 from adaloop.core.model.budget import generate_answers
 from adaloop.core.model.loops import set_loops
+from adaloop.orchestration.batching import item_chunks
 from adaloop.orchestration.compress import compress, encode_vision
 from adaloop.orchestration.evaluate import check_distinct_copies
 from adaloop.orchestration.inputs import item_inputs
@@ -64,19 +65,22 @@ def map_copies(vlms: Sequence[LoadedVLM], jobs: Sequence, work: Callable) -> Ite
 
 
 def check_batched(vlm: LoadedVLM, items: Sequence[Item], cfg: dict, cells: Sequence[tuple[str, float]],
-                  R: int) -> list[dict]:
-    """For every (method, k): all `items` as one batch against each item alone; one row per (method, k, item).
+                  R: int, batch_size: int) -> list[dict]:
+    """For every (method, k): `items` batched as a run would batch them (`item_chunks`) against each item alone.
 
-    The same compressed inputs are used for both, so only the batching differs.
+    The same compressed inputs are used for both, so only the batching differs. One row per (method, k, item);
+    `batch_n` is the size of the item's batch (1: nothing was batched, so the row proves nothing).
     """
-    chunk = ChunkInputs(vlm, items, cfg)
     rows = []
-    for method, k in cells:
-        prepared = [chunk.compressed(i, method, k)[0] for i in range(len(items))]
-        batched = generate_cell(vlm, prepared, cfg, R)
-        for item, inputs, together in zip(items, prepared, batched):
-            alone = generate_cell(vlm, [inputs], cfg, R)[0]
-            rows.append({"method": method, "k": k, "benchmark": item.benchmark, "item_id": item.item_id,
-                         "raw_b1": alone.raw_text, "raw_batched": together.raw_text,
-                         "ids_equal": torch.equal(alone.token_ids, together.token_ids)})
+    for chunk_items in item_chunks(vlm, items, cfg, batch_size):
+        chunk = ChunkInputs(vlm, chunk_items, cfg)
+        for method, k in cells:
+            prepared = [chunk.compressed(i, method, k)[0] for i in range(len(chunk_items))]
+            batched = generate_cell(vlm, prepared, cfg, R)
+            for item, inputs, together in zip(chunk_items, prepared, batched):
+                alone = generate_cell(vlm, [inputs], cfg, R)[0]
+                rows.append({"method": method, "k": k, "benchmark": item.benchmark, "item_id": item.item_id,
+                             "batch_n": len(chunk_items), "n_input": inputs["input_ids"].shape[1],
+                             "raw_b1": alone.raw_text, "raw_batched": together.raw_text,
+                             "ids_equal": torch.equal(alone.token_ids, together.token_ids)})
     return rows

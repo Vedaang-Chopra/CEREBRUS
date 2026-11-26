@@ -18,6 +18,7 @@ from adaloop.core.tokens.prune import extract_visual_tokens, prune_inputs
 from adaloop.core.train.teacher import answer_log_probs, target_tensors
 from adaloop.core.train.teacher_store import load_records, read_index, repair_index, write_part
 from adaloop.data.splits import load_manifest
+from adaloop.orchestration.batching import item_chunks
 from adaloop.orchestration.evaluate import read_answer
 from adaloop.orchestration.full_run import LOADERS
 from adaloop.orchestration.inputs import item_inputs
@@ -71,7 +72,7 @@ def _packed_inputs(vlm: LoadedVLM, item: Item, cfg: dict) -> dict:
 @torch.inference_mode()
 def _teacher_batch(vlm: LoadedVLM, items: Sequence[Item], inputs: Sequence[dict], cfg: dict, R: int,
                    meta: dict) -> list[tuple[dict, dict]]:
-    """(index line, tensors) of each item at loop count R, generated as one batch."""
+    """(index line, tensors) of each item at loop count R, generated as one batch (`items` come from one chunk)."""
     set_loops(vlm, R)
     results, logits = generate_batch(vlm, inputs, cfg["max_new_tokens"], return_logits=True)
     records = []
@@ -107,10 +108,12 @@ def build_teacher_cache(vlms: Sequence[LoadedVLM], items: Sequence[Item], cfg: d
     meta = {"config_hash": teacher_hash(cfg), "git_hash": git_hash(), "prompt_hash": config_hash(cfg["prompts"]),
             "model_revision": getattr(vlms[0].model.config, "_commit_hash", None),
             "code_version": cfg["code_version"], "seed": cfg["splits"]["seed"]}
+    chunks = item_chunks(vlms[0], pending, cfg, batch_size)
     start = time.perf_counter()
 
     def work(j: int) -> int:
-        vlm, mine = vlms[j], pending[j :: len(vlms)]
+        vlm, mine = vlms[j], chunks[j :: len(vlms)]
+        total, seen = sum(len(chunk) for chunk in mine), 0
         writer = f"shard{shard[0]}of{shard[1]}_copy{j}"
         repair_index(folder / f"index_{writer}.jsonl")
         written = 0
@@ -124,17 +127,16 @@ def build_teacher_cache(vlms: Sequence[LoadedVLM], items: Sequence[Item], cfg: d
                     written += len(records)
                     records.clear()
 
-        for n, first in enumerate(range(0, len(mine), batch_size)):
-            chunk = mine[first : first + batch_size]
+        for n, chunk in enumerate(mine):
             inputs = [_packed_inputs(vlm, item, cfg) for item in chunk]  # the vision tower, once per item
             for R in R_list:
                 todo = [i for i, item in enumerate(chunk) if (item.benchmark, item.item_id, R) not in done]
                 if todo:
                     buffer[R] += _teacher_batch(vlm, [chunk[i] for i in todo], [inputs[i] for i in todo], cfg, R, meta)
-            seen = first + len(chunk)
-            if seen // teacher["flush_every"] > first // teacher["flush_every"] or seen == len(mine):
+            before, seen = seen, seen + len(chunk)
+            if seen // teacher["flush_every"] > before // teacher["flush_every"] or n == len(mine) - 1:
                 flush()
-                print(f"copy {j}: {seen}/{len(mine)} items | {seen / (time.perf_counter() - start):.2f} items/s")
+                print(f"copy {j}: {seen}/{total} items | {seen / (time.perf_counter() - start):.2f} items/s")
         flush()
         return written
 

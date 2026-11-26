@@ -1,6 +1,6 @@
 """The base grid (S7): every item at every k x R under one compressor, features on, resumable; then grid.parquet.
 
-Items are run `eval_batch_size` at a time; per item the features file is written first, then its rows. An item is done
+Items are run in the chunks of `item_chunks` (at most `eval_batch_size`); per item the features file is written first, then its rows. An item is done
 when the result files hold all its cells, so a killed run just continues, whatever batch size or copy count it used.
 Each worker (shard x model copy) appends to its own file.
 """
@@ -15,6 +15,7 @@ import pandas as pd
 import torch
 
 from adaloop.core.cost.flops import cost_params, row_flops
+from adaloop.orchestration.batching import item_chunks
 from adaloop.orchestration.evaluate import read_results
 from adaloop.orchestration.features import run_items_cells, save_features
 from adaloop.orchestration.full_run import LOADERS, shard_items
@@ -109,6 +110,7 @@ def run_grid(vlms: Sequence[LoadedVLM], items: Sequence[Item], cfg: dict, out_di
     meta = {"model_variant": variant, "n_copies": len(vlms), "gpu_type": torch.cuda.get_device_name(0),
             "git_hash": git_hash(), "config_hash": digest, "seed": cfg["splits"]["seed"]}
     params = cost_params(vlms[0].model)
+    chunks = item_chunks(vlms[0], pending, cfg, batch_size)
     stop = threading.Event()  # one failing worker stops the others after their current item
 
     def work(j: int) -> None:
@@ -116,11 +118,11 @@ def run_grid(vlms: Sequence[LoadedVLM], items: Sequence[Item], cfg: dict, out_di
         kept = read_results(path) if path.exists() else []
         with path.open("w") as handle:  # rewrite the readable rows: a half-written last line is dropped
             handle.writelines(json.dumps(row) + "\n" for row in kept)
-            mine = pending[j :: len(vlms)]
-            for first in range(0, len(mine), batch_size):
+            mine = chunks[j :: len(vlms)]
+            total, seen = sum(len(chunk) for chunk in mine), 0
+            for chunk in mine:
                 if stop.is_set():
                     return
-                chunk = mine[first : first + batch_size]
                 try:
                     for item, (rows, features) in zip(chunk, run_items_cells(vlms[j], chunk, cfg)):
                         if rerun_id == 0:
@@ -133,7 +135,8 @@ def run_grid(vlms: Sequence[LoadedVLM], items: Sequence[Item], cfg: dict, out_di
                     stop.set()
                     print(f"copy {j} failed on {[(i.benchmark, i.item_id) for i in chunk]}; stopping")
                     raise
-                print(f"copy {j}: [{first + len(chunk)}/{len(mine)}] items")
+                seen += len(chunk)
+                print(f"copy {j}: [{seen}/{total}] items")
 
     with ThreadPoolExecutor(max_workers=len(vlms)) as pool:
         try:
