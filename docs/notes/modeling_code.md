@@ -61,3 +61,12 @@ Not the real weights. Layer calls = 6 + 12R + 6 for R = 1..5; k = 100% pruning b
 at k = 50% give identical logits and identical generated ids; shifting them by 100000 changes logits; without an
 attention mask and cache, gapped `position_ids` change logits (packed-sequence masking); pass-p states of an R = 5 run
 equal (`torch.equal`) the final states of R = p runs.
+
+## Teacher cache (S8)
+`orchestration/teacher_cache.py`. Teacher inputs: `item_inputs` with `answer_prefill` = `no_think_prefill`, all other
+settings from `mvp.yaml` (including `reasoning_effort`, so the system text matches evaluation), `max_new_tokens` 32. The
+vision tower runs once per item (`mm_encoder_outputs`, packed with every token); batches carry one R. Log-probs are the
+log-softmax of the generation's own logits (batched, KV cache); nb09 compares them with a teacher-forced full forward.
+Layout: `execution_results/teacher/<hash>/R<r>/shard<i>of<n>_copy<j>_part<k>.pt` + `index_shard<i>of<n>_copy<j>.jsonl`.
+`n_answer_tokens` = number of answer ids, end token included. The hash covers model, res_px, prompts, answer format,
+prefill, reasoning effort, `code_version`, `top_n` and `max_new_tokens`: bumping `code_version` starts a new cache.
