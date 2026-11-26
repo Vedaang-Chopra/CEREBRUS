@@ -69,7 +69,7 @@ One entry per gate or design decision. Newest at the bottom. Format:
 - Decision: `eval_batch_size: 1` for S5 (the rows already done were batch 1, so all methods are compared under the same regime). Speed comes from 2 copies. Root cause (BF16 numerics with padding vs a bug) is checked before the S7 grid uses batching.
 
 ## Nov 25, 2026 · GPUs for big runs
-- Decision (Vedaang): big runs (S7 grid, S8 cache, S10 grids, final test runs) may use all GPUs 0–7 (4 model copies, `gpu_groups: [[0,1],[2,3],[4,5],[6,7]]` in the run's config). Notebook checks and small runs stay on 0–3.
+- Decision (Vedaang): big runs (S7 grid, S8 cache, S9 full training runs A and B, S10 grids, final test runs) may use all GPUs 0–7 (4 model copies, `gpu_groups: [[0,1],[2,3],[4,5],[6,7]]` in the run's config). Notebook checks and small runs stay on 0–3.
 
 ## Nov 25, 2026 · S9 · teacher depth is a config rule
 - Teacher depth of a compressed student comes from `lora.teacher_R` in `configs/train_lora.yaml`: `same` (R_teacher = R_student), `fixed:N` (N loops) or `plus:N` (min(R + N, 5)). Full-token samples (k = 1) always use `same`.
