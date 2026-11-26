@@ -59,7 +59,7 @@ No code is written for a step before the previous step's result is in. Infrastru
 - `configs/prereg.yaml`: the "what changed since Oct 1" sentence (needed before S12).
 
 ## Later to-do (run separately, after the main path)
-- **S5b Pareto sweep:** every method at k ∈ {10, 25, 35, 50, 75, 100}% (R = 3, dev, 200 items) → accuracy-vs-FLOPs and accuracy-vs-tokens curves per method with the Pareto front (paper figure F06). The methods are budget-based (no method picks its own count), so the curve is the fair comparison. Own config key and folder; reuse the finished 25/50/100% cells. ~4 extra k × 8 methods × 200 items ≈ 6,400 answers: ~1 h at batch 1 on 4 copies, less with equal-length batching. Run after the S8 cache.
+- **S5b Pareto sweep:** every method at k ∈ {10, 25, 50, 75, 100}% (R = 3, dev, 200 items) → accuracy-vs-FLOPs and accuracy-vs-tokens curves per method with the Pareto front (paper figure F06). The methods are budget-based (no method picks its own count), so the curve is the fair comparison. Own config key and folder; reuse the finished 25/50/100% cells. ~4 extra k × 8 methods × 200 items ≈ 6,400 answers: ~1 h at batch 1 on 4 copies, less with equal-length batching. Run after the S8 cache.
 
 ## Today (Nov 25–26): inference and baselines through S8 — run list
 Vedaang decision: no post-training today; finish every inference baseline and the S8 dataset; S9 starts tomorrow.

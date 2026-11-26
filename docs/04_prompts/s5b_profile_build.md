@@ -19,7 +19,7 @@ the cache class, `docs/notes/modeling_code.md`) × 2 (K, V) × kv heads × head 
 layers capped at their window. Verify once against the real cache object on the tiny model. Not hashed into configs.
 
 ## 3. S5b Pareto sweep (nb07 new section, own config key `pareto.ks`, own folder)
-All 8 methods + `none` at k ∈ {0.10, 0.25, 0.35, 0.50, 0.75, 1.0}, R = 3, dev 100 per benchmark, batch 1, 2 copies.
+All 8 methods + `none` at k ∈ {0.10, 0.25, 0.50, 0.75, 1.0}, R = 3, dev 100 per benchmark, batch 1, 2 copies.
 Reuse the finished 25 / 50 / 100% cells (same hashes). Plot accuracy vs GFLOPs, vs kept tokens, vs kv_cache_bytes,
 one line per method, Pareto front marked (F06 becomes these panels).
 
