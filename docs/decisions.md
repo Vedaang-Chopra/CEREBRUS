@@ -50,3 +50,7 @@ One entry per gate or design decision. Newest at the bottom. Format:
 - Pass state, GQA dev n=20, no thinking: the last-core-layer state at pass p of an R=5 run is **bit-identical** to the final pass of an R=p run for every p=1..5 (cosine 1.0, rel L2 0, h_equal 20/20).
 - Decision: the tree assumption holds (stopping at pass p costs exactly the R=p run). Answers still need the coda after the last pass, so each R is generated on its own; per-pass states/features can come from one R=5 run.
 - First look at loops (GQA dev n=20, k=100%): accuracy R=1 50, R=2 60, R=3 60, R=4 65, R=5 65; answer agreement with R=5: 75 / 85 / 85 / 95 / 100%.
+
+## Nov 25, 2026 — S8/S9 distillation design: under discussion (not yet in DEC3)
+- Proposal (Vedaang): depth-matched distillation (teacher 100% tokens at the student's R) instead of a fixed R=3 teacher. Literature check (LoopOPD 2610.10623, LoopFormer 2602.11451, ELT 2604.09168, MELT 2605.07721, InternVL3.5 ViCO 2508.18265): looped papers use the deepest loop as teacher to make short loops match long ones; ViCO (forward KL, full-token teacher, same model) is the direct precedent for depth-matched budget tolerance; none compares same-depth vs deep teacher or combines token budget with loop depth (within these 5 papers).
+- main-discussion recommendation, pending Vedaang's OK: depth-matched main, cross-depth with R=5 teacher as the only ablation (drop fixed R=3); S8 caches only the planned (item, R) training samples; S10 grid for base + both LoRAs; S15 adds A7 (distillation target).

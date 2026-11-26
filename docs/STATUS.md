@@ -17,7 +17,7 @@ No code is written for a step before the previous step's result is in. Infrastru
 |---|---|---|---|---|
 | 1 | S2 answer format | 04 | P (no thinking) or T (thinking, 256 budget)? Parse ≥95%? | **done: P for the POC**, thinking for final results |
 | 2 | S3/S3b checks | 05 | k=100% pruning exact? pass p of R=5 = fresh R=p? | **done: both yes (bit-exact)** |
-| 3 | Loops at full tokens | 06 (Step-1..3 on 20 items) | does accuracy change with R = 1..5? batched = batch 1? | code ready |
+| 3 | Loops at full tokens | 06 (Step-1..3 on 20 items) | does accuracy change with R = 1..5? batched = batch 1? | code ready; nb05 already shows GQA 50→65 from R=1→5 |
 | 4 | Tokens × loops, small | small k × R table on 20 items (k ∈ 25/50/100%, R ∈ 1/3/5) | how much does accuracy drop at low k? (this is what the LoRA must fix) | not built: one small addition after step 3 |
 | 5 | Post-training (S8 teacher cache, S9 budget-tolerance LoRA) | 10 | does LoRA recover accuracy at low k without hurting k=100%? | after step 4; draft code parked on branch `wip/post-training` |
 
@@ -32,8 +32,8 @@ No code is written for a step before the previous step's result is in. Infrastru
 | S2 | Thinking off, `res_px` | 04 | **done**: no thinking for the POC (P: GQA 60, TextVQA 59 on 20 items, ~2 s/item) | thinking with a larger budget only for final results |
 | S3 | Original positions after pruning | 05 | code done: **original positions not supported by the model** (distances, masks, convs use token index; see `docs/notes/modeling_code.md`) → pruning stays packed (DEC3 fallback) | you: run 05, confirm k=100% bit-exact |
 | S3b | Layer-call count, pass-p state vs fresh R=p run | 05 | code done (theory: pass p of R=5 equals R=p) | you: run 05 Step-8 table on real weights |
-| S4 | Per-pass features + compression baselines from official code (CDPruner-style, ReDiPrune, TRIM-style, ToMe, DivPrune) | 07 | planned (`docs/notes/compression_baselines.md`) | awaiting your OK to implement |
-| S5 | Compression comparison (R=3, k 25/50/100%, accuracy + FLOPs + latency) | 07 | planned | after S4 |
+| S4 | Per-pass features + compression baselines from official code (crisp_lite, ReDiPrune, DivPrune, VisionZip + controls incl. lowres) | 07 | code done (f5e18fb, bca6a36), not run on real weights | you: run nb07, paste per-method output |
+| S5 | Compression comparison (R=3, k 25/50/100%, accuracy + FLOPs + latency) | 07 | agent building | |
 | S6 | FLOPs model + throughput → item counts | — | not started | can start now (no dependency on S2) |
 | S7 | Base grid 15 cells + noise re-run | — | not started | needs S2–S6 |
 | S8 | Teacher cache | — | not started | needs S2, S5 |

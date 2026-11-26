@@ -84,7 +84,7 @@ adaloop/
     splits.py               # image-disjoint splits, frozen to configs/splits/mvp_*.json
   core/
     model/   load.py  loops.py (set_loops, call counter)  prompting.py (thinking off)  hooks.py (per-pass last-token state, visual attention mass)
-    tokens/  selectors.py (random, uniform, text_mean)  methods/ (cdpruner, rediprune, trim_style, tome, divprune: official code + glue, docs/notes/compression_baselines.md)  prune.py (prune_inputs with original positions)
+    tokens/  selectors.py (random, uniform, text_mean)  methods/ (crisp_lite, rediprune, divprune, visionzip: official code + glue, crisp_lite reimplemented, docs/notes/compression_baselines.md)  prune.py (prune_inputs with original positions)
     cost/    flops.py       # analytic FLOPs per (n_tokens, R, partial_pass) from the model config
     eval/    extract.py  scorers.py (GQA exact match, TextVQA VQA-acc)  oracle.py
     controller/
@@ -120,7 +120,7 @@ prompt: configs/prompts.yaml#short_answer
 max_new_tokens: 16
 k_grid: [0.25, 0.5, 1.0]
 R_grid: [1, 2, 3, 4, 5]
-compressor: <none | random | uniform | text_mean | cdpruner_style | rediprune | trim_style | tome | divprune>   # frozen after S5
+compressor: <none | random | uniform | text_mean | lowres | crisp_lite | rediprune | divprune | visionzip>   # frozen after S5
 benchmarks:
   gqa:     {source: <HF_ID verified in S1>, split: testdev_balanced}
   textvqa: {source: <HF_ID verified in S1>, split: validation}
@@ -190,7 +190,7 @@ Owner columns match `docs/TEAM_PLAN.md` roles: **V** = Vedaang, **A** = data/eva
 | **S2** | A | **Thinking off.** Inspect chat template + special tokens; prefill an empty thinking block + answer start. Pick `res_px` (768 vs 1024 on 50 TextVQA dev items) | ≥ 95% parseable short answers on 20 GQA + 20 TextVQA. Decision in `docs/decisions.md`. **Deadline: Wed noon.** |
 | **S3** | B | Original positions: read the modeling code for `position_ids` / `relative_distance`; `prune.py` keeps original positions if supported. Compare packed vs positioned at k = 50% on 50 dev items | Decision logged; `test_prune_positions.py` + `test_identity.py` (k = 100% bit-exact) pass |
 | **S3b** | B | Loop control test (calls = 6 + 12R + 6). **Pass-state check:** h_last at pass p from hooks in an R = 5 run vs an R = p run, cosine + answer agreement over p, 30 items | Numbers in `decisions.md`. Drives the tree assumption. |
-| **S4** | A | **(a)** `hooks.py` + `features.py` (loop-state extraction, unchanged). **(b) Compression baselines from official code** (revised Nov 25, `docs/notes/compression_baselines.md`): clone ReDiPrune, CDPruner, TRIM, ToMe (+ DivPrune) at pinned commits; copy their core functions verbatim with provenance; write glue to our vision tower / projected tokens. One interface `compress(vlm, inputs, question, k, cfg)`, chosen by `compressor` in config, `none` = bypass. Methods whose scorer had to change are named `-style`. No official code → excluded (CRISP, HQAP). Controls: random, uniform, text_mean | Each method: exact kept-token count at k = 25/50%, k = 100% bit-exact with no compression, 1 item per benchmark runs end to end (nb07). Features saved for 5 items × 15 cells |
+| **S4** | A | **(a)** `hooks.py` + `features.py` (loop-state extraction, unchanged). **(b) Compression baselines from official code** (revised Nov 25, `docs/notes/compression_baselines.md`): final set (Nov 25 evening): controls random, uniform, text_mean, lowres; methods crisp_lite (reimplemented, no official code), ReDiPrune, DivPrune, VisionZip (official code at pinned commits); ToMe, TRIM, CDPruner later; copy their core functions verbatim with provenance; write glue to our vision tower / projected tokens. One interface `compress(vlm, inputs, question, k, cfg)`, chosen by `compressor` in config, `none` = bypass. Methods whose scorer had to change are named `-style`. HQAP excluded (no code) | Each method: exact kept-token count at k = 25/50%, k = 100% bit-exact with no compression, 1 item per benchmark runs end to end (nb07). Features saved for 5 items × 15 cells |
 | **S5** | A | **Compression comparison** on dev (frozen model, R = 3, k ∈ {25, 50, 100}%, GQA + TextVQA): every integrated method + controls. Metrics: accuracy, FLOPs (ViT + decoder + compression overhead), latency, compression time, actual token count. 20 items per benchmark first, then full dev. Freeze the winner as `compressor` in `mvp.yaml` | Table + accuracy-vs-FLOPs figure (F06) in `decisions.md`; S9 smoke may start with text_mean and switch to the winner |
 | **S6** | A | `flops.py` + timing; **throughput:** 50 dev items × 15 cells → s/item → final item counts | `test_flops.py` passes; budget line in `decisions.md` |
 | **S7** | A | **Base grid** on ctrl_train + dev (test is added only after S12 is frozen, see §9 rule 2), all 15 cells, features on. Shard by item over replicas; merge shards. Plus noise re-run: `n_rerun` items × 15 cells with `rerun_id=1` | `grid.parquet` complete; row counts checked |
