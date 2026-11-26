@@ -76,3 +76,29 @@ One entry per gate or design decision. Newest at the bottom. Format:
 - Variants: A = `same`; B = `fixed:5` (default, to be confirmed by Vedaang; `fixed:3` still works). A later extension `plus:2` is possible. Changing B means editing `lora_variants` only.
 - Code: `adaloop/core/train/schedule.py`. Written and CPU-checked on a tiny model; not run on GPU. Training waits for S8 validation and Vedaang's approval.
 - peft pinned at `==0.22.0` (`environment.yml`, `pyproject.toml`).
+
+## Nov 25, 2026 · S5 · compression comparison (git 69c92a9, nb07, dev n = 100 per benchmark, R = 3, batch 1, no thinking)
+- Decision (Vedaang): compressor = **divprune**. Best accuracy at k = 25% and 50%. The automatic rule suggested visionzip (tied within CI, 1% fewer FLOPs); overruled because DivPrune is +2.4 pts on the mean of both k and the cost gap is ~1%.
+- Latency: median of 10 items per benchmark, batch 1, one copy. Table also in `execution_results/tables/S5_compression.csv` on Inara.
+
+| method | k | all | GQA | TextVQA | GFLOPs | latency s | kept tokens |
+|---|---|---|---|---|---|---|---|
+| divprune | 0.25 | 47.7 | 58 | 37.4 | 2112.7 | 0.78 | 31 |
+| visionzip | 0.25 | 43.0 | 54 | 32.0 | 2118.9 | 0.77 | 31 |
+| rediprune | 0.25 | 41.2 | 46 | 36.4 | 2105.1 | 0.78 | 31 |
+| crisp_lite | 0.25 | 40.9 | 51 | 30.8 | 2093.4 | 0.78 | 31 |
+| uniform | 0.25 | 40.4 | 57 | 23.7 | 2100.6 | 0.78 | 31 |
+| random | 0.25 | 36.4 | 49 | 23.7 | 2099.2 | 0.78 | 31 |
+| lowres | 0.25 | 35.8 | 49 | 22.5 | 1819.9 | 0.79 | 29 |
+| text_mean | 0.25 | 31.4 | 46 | 16.7 | 2075.8 | 0.77 | 31 |
+| divprune | 0.5 | 52.2 | 57 | 47.3 | 2393.6 | 0.91 | 63 |
+| visionzip | 0.5 | 52.1 | 54 | 50.2 | 2343.0 | 0.79 | 63 |
+| rediprune | 0.5 | 50.8 | 56 | 45.6 | 2390.4 | 0.92 | 63 |
+| random | 0.5 | 49.2 | 53 | 45.4 | 2373.4 | 0.92 | 63 |
+| uniform | 0.5 | 48.8 | 56 | 41.6 | 2338.6 | 0.91 | 63 |
+| lowres | 0.5 | 48.5 | 54 | 42.9 | 2143.1 | 0.79 | 60 |
+| crisp_lite | 0.5 | 47.5 | 53 | 41.9 | 2365.0 | 0.80 | 63 |
+| text_mean | 0.5 | 43.5 | 53 | 34.0 | 2362.6 | 0.78 | 63 |
+| none | 1.0 | 57.4 | 59 | 55.8 | 2925.6 | 1.02 | 126 |
+
+- Findings: question-conditioned scoring with decoder input embeddings hurts (text_mean below random); TextVQA loses far more than GQA at 25%; batch-1 latency barely follows FLOPs (overhead-bound; profiled in S5b part 4).
