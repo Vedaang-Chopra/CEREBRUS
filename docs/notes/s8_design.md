@@ -1,5 +1,7 @@
 # S8 design review — teacher data for budget-tolerance distillation
 
+> **Nov 26 update:** after this review Vedaang set GQA/TextVQA as evaluation-only and asked for a varied training mix, possibly on-policy distillation and KL + CE. The current state of that discussion is in `docs/04_prompts/main_discussion_handoff.md` §5; parts of this document (data §1, trajectory choice) are superseded.
+
 Status: **proposal for Vedaang's approval** (Nov 26, 2026). Nothing is generated or trained until approved.
 Sources: three literature/data reviews (Nov 26), the S8 code on main (`adaloop/core/train/teacher.py`,
 `orchestration/teacher_cache.py`), the nb05/nb07 results. Claims from papers are cited by section; items marked

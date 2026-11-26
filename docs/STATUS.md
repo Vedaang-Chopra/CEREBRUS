@@ -66,7 +66,7 @@ Vedaang decision: no post-training today; finish every inference baseline and th
 
 | # | Run | Where | Gives |
 |---|---|---|---|
-| 1 | ~~nb09~~ **paused**: S8 dataset design (top-32 distillation vs SFT / reward data) under review by Vedaang | — | — |
+| 1 | ~~nb09~~ **paused**: post-training redesign (varied training mix, on-policy vs offline, KL + CE); see `docs/04_prompts/main_discussion_handoff.md` §5 | — | — |
 | 2 | nb07 `RUN_BATCH_CHECK` + `RUN_BATCH_DIAG` | nb07 | may the grid batch? |
 | 3 | `scripts/mvp.py smoke` | terminal | S0 Done-when |
 | 4 | nb06 `RUN_GRID_TIME` | nb06 | S6 budget line, grid item counts |
