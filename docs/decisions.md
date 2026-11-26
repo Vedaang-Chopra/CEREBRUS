@@ -41,3 +41,12 @@ One entry per gate or design decision. Newest at the bottom. Format:
 - Dev n=20 per benchmark, R=3, res_px 512, batch 1. P (no thinking, prefill "ANSWER:"): GQA 60.0, TextVQA 59.0, parse 100%, 1.5-2.6 s/item. T (thinking, effort 0.9, budget 256): GQA 60.0, TextVQA 63.0, parse 100%, 30-35% forced, 89-98 s/item.
 - Decision (Vedaang): build and test the whole pipeline (S4 onward, incl. LoRA) with **no thinking** (`answer_prefill` = `no_think_prefill`). Final results add a **thinking** evaluation with a larger budget (forcing cut 30-35% of answers at 256) and the strict parser.
 - Open for the final runs: think budget size; LoRA is trained without thinking, so base vs LoRA under thinking must be compared in the same format; thinking costs ~50x time per item. res_px stays 512 (768/1024 not compared).
+
+## Nov 25, 2026 · S3 · token positions after pruning (git 3600fa8, nb05)
+- Decision: pruning stays packed. Inkling2Loop builds token distances, masks and convolutions from the token index, so original positions are not supported (`docs/notes/modeling_code.md`). On real weights: k=100% packed pruning is bit-exact; original position_ids change nothing at k=50%.
+
+## Nov 25, 2026 · S3b · loop control and pass state (git 3600fa8, nb05)
+- Layer calls = 6 + 12R + 6 for R=1..5; logits differ between R=1 and R=3.
+- Pass state, GQA dev n=20, no thinking: the last-core-layer state at pass p of an R=5 run is **bit-identical** to the final pass of an R=p run for every p=1..5 (cosine 1.0, rel L2 0, h_equal 20/20).
+- Decision: the tree assumption holds (stopping at pass p costs exactly the R=p run). Answers still need the coda after the last pass, so each R is generated on its own; per-pass states/features can come from one R=5 run.
+- First look at loops (GQA dev n=20, k=100%): accuracy R=1 50, R=2 60, R=3 60, R=4 65, R=5 65; answer agreement with R=5: 75 / 85 / 85 / 95 / 100%.
