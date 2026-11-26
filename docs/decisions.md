@@ -67,3 +67,6 @@ One entry per gate or design decision. Newest at the bottom. Format:
 ## Nov 25, 2026 · S5 · batching off for compressed runs
 - nb07 batch check (8 items × rediprune, visionzip at k=25%, R=3): batched generation changed 2 of 16 outputs vs batch 1 (gqa 20442346 rediprune yes→no; textvqa 35744 visionzip). At k=100% (nb06) batch 8 = batch 1 on 8/8.
 - Decision: `eval_batch_size: 1` for S5 (the rows already done were batch 1, so all methods are compared under the same regime). Speed comes from 2 copies. Root cause (BF16 numerics with padding vs a bug) is checked before the S7 grid uses batching.
+
+## Nov 25, 2026 · GPUs for big runs
+- Decision (Vedaang): big runs (S7 grid, S8 cache, S10 grids, final test runs) may use all GPUs 0–7 (4 model copies, `gpu_groups: [[0,1],[2,3],[4,5],[6,7]]` in the run's config). Notebook checks and small runs stay on 0–3.
