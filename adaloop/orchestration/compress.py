@@ -69,11 +69,11 @@ def encode_vision(vlm: LoadedVLM, inputs: Mapping) -> VisionRun:
 
 
 def _select(vlm: LoadedVLM, inputs: Mapping, item: Item, cfg: dict, method: str, k: float,
-            vision: VisionRun) -> tuple[torch.Tensor, torch.Tensor, dict]:
+            vision: VisionRun, n_keep: int | None = None) -> tuple[torch.Tensor, torch.Tensor, dict]:
     """(kept indices, token features (changed only by visionzip), extras for the cost count and info)."""
     tokens = vision.tokens
     N = len(tokens)
-    K = n_keep_for(N, k)
+    K = n_keep_for(N, k) if n_keep is None else n_keep  # an exact count skips the rounding of k * N
     if K == N:  # nothing to choose: the same packed path, with every token
         return torch.arange(N), tokens, {}
     params = cfg.get("compression", {}).get(method, {})
@@ -123,7 +123,7 @@ def _select(vlm: LoadedVLM, inputs: Mapping, item: Item, cfg: dict, method: str,
 
 @torch.no_grad()  # not inference_mode: LoRA training (S9) feeds these tensors to autograd
 def compress(vlm: LoadedVLM, inputs: Mapping, item: Item, k: float, cfg: dict,
-             vision: VisionRun | None = None) -> tuple[Mapping, dict]:
+             vision: VisionRun | None = None, n_keep: int | None = None) -> tuple[Mapping, dict]:
     """Return (model inputs for generation, info) for keep fraction `k` under `cfg["compressor"]`.
 
     `inputs` is `item_inputs(vlm, item, cfg)`. `none` returns it untouched; `lowres` prepares the item again at a
@@ -131,6 +131,9 @@ def compress(vlm: LoadedVLM, inputs: Mapping, item: Item, k: float, cfg: dict,
     (`encode_vision` of these inputs; computed here when None). Its time is reported as `vit_s` either way.
     info: method, k, res_px, grid_hw (units of the image the model gets), n_vis_full, n_vis, vit_s, compression_s,
     compression_flops, fallback.
+
+    `n_keep` (divprune only) keeps exactly that many tokens and replaces `k`, which is then recorded as kept / full.
+    An item with fewer tokens keeps them all and says so in `fallback`.
     """
     method = cfg.get("compressor", "none")
     if method not in METHODS:
@@ -138,6 +141,13 @@ def compress(vlm: LoadedVLM, inputs: Mapping, item: Item, k: float, cfg: dict,
     if method == "none" and k != 1.0:
         raise ValueError(f"compressor 'none' keeps every token, got k={k}")
     N = _n_visual(vlm, inputs)
+    fewer = None
+    if n_keep is not None:
+        if method != "divprune" or n_keep < 1:
+            raise ValueError(f"n_keep needs compressor divprune and a count >= 1, got {method!r}, {n_keep}")
+        fewer = "fewer_tokens_than_n_keep_kept_all" if n_keep > N else None
+        n_keep = min(n_keep, N)
+        k = n_keep / N
     info = {"method": method, "k": k, "res_px": cfg["res_px"], "n_vis_full": N, "n_vis": N, "vit_s": None,
             "compression_s": 0.0, "compression_flops": 0, "fallback": None,
             "grid_hw": tuple(inputs["image_grid_thw"][0, 1:].tolist())}
@@ -157,7 +167,7 @@ def compress(vlm: LoadedVLM, inputs: Mapping, item: Item, k: float, cfg: dict,
 
     ### Step-2:- Choose the tokens, then drop the others from the prompt and the features
     start = _clock(vlm)
-    indices, features, extras = _select(vlm, inputs, item, cfg, method, k, vision)
+    indices, features, extras = _select(vlm, inputs, item, cfg, method, k, vision, n_keep)
     if features is not tokens:
         vision_outputs = copy(vision_outputs)
         vision_outputs.pooler_output = (features,)
@@ -170,5 +180,5 @@ def compress(vlm: LoadedVLM, inputs: Mapping, item: Item, k: float, cfg: dict,
         head_dim=tower.hidden_size // tower.num_attention_heads, n_heads=tower.num_attention_heads,
         n_patches_per_unit=tower.spatial_merge_size**2, n_contextual=extras.get("n_contextual", 0))
     info.update(n_vis=len(indices), vit_s=vision.seconds, compression_s=end - start, compression_flops=flops,
-                fallback=extras.get("fallback"))
+                fallback=extras.get("fallback") or fewer)
     return packed, info

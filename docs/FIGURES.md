@@ -22,7 +22,7 @@ Notebooks show the figure inline and save it. Small-sample runs save drafts; ful
 | F07 | k × R accuracy surface (heatmap) per benchmark | Measurement | S7 grid notebook | `grid.parquet` | main |
 | F08 | Accuracy vs FLOPs for the 15 cells, with the Pareto front | Measurement | S7 grid notebook | `grid.parquet` | main |
 | F09 | Headroom: oracle per cost cap vs best fixed vs noise oracle | Measurement | S14 analysis notebook | grid + reruns | main |
-| F09b | Resolution: accuracy vs visual tokens for 512 / 768 / 1024 px, full and DivPrune at matched tokens | Measurement | `04_thinking_off` (resolution check) | res runs | main |
+| F09b | Resolution: accuracy vs visual tokens for 512 / 768 / 1024 px, full and DivPrune at matched tokens | Measurement | `04_thinking_off` (step 5) | `execution_results/mvp/nb04/resolution*` + S5 512 px rows | main |
 | F10 | **Iso-cost curves**: controller, heuristic, 4 baselines, oracle (accuracy vs mean FLOPs), headline cost marked | Results (headline) | S14 analysis notebook | `policy_eval.parquet` | main |
 | F11 | Base vs LoRA: surface difference (LoRA − base) and controller curve on each | Post-training | S10/S14 notebooks | base + lora grids | main |
 | F12 | Policy behaviour: exit-pass and look-rate histograms per benchmark and GQA question type | Analysis | S12/S14 notebook | `policy_eval.parquet` | main |

@@ -67,6 +67,20 @@ compare:
   R: 3
   n_boot: 10000  # paired bootstrap resamples for "within noise"
 
+# Resolution check (nb04 step 5), batch 1: full tokens at each res_px; DivPrune at `matched_res_px` keeping each item's
+# full token count at `match_res_px`; DivPrune at the `fixed_k` [res_px, k] cells. Not hashed as a block: each cell
+# sets res_px and k (or match_res_px) in its own hashed config.
+resolution:
+  R: 3
+  n_items: 100  # dev items per benchmark
+  res_px: [512, 768, 1024]
+  match_res_px: 512
+  matched_res_px: [768, 1024]
+  fixed_k: [[1024, 0.25]]
+  # finished S5 runs under out_dir; a cell with the same config hash is read from there, not run again
+  reuse_dir: nb07/compare_dev
+  reuse_latency_dir: nb07/compare_dev_latency
+
 # the grid (S7): keep fractions x loop passes; configs/full_baseline.yaml keeps k at 1.0
 k_grid: [0.25, 0.5, 1.0]
 R_grid: [1, 2, 3, 4, 5]

@@ -49,7 +49,7 @@ def plot_thinking_off(variants: pd.DataFrame, resolution: pd.DataFrame | None = 
     require_unique(variants, ["variant", "benchmark"], "variants")
     if resolution is not None:
         require_columns(resolution, ["res_px", "accuracy", "n_vis_mean"], "resolution",
-                        "run nb04 with RUN_RES_PX = True")
+                        "run nb04 with RUN_RESOLUTION = True")
         require_unique(resolution, ["res_px"], "resolution")
     if variants["benchmark"].nunique() > len(BENCH_STYLES):
         raise ValueError(f"at most {len(BENCH_STYLES)} benchmarks, got {sorted(variants['benchmark'].unique())}")

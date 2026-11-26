@@ -23,6 +23,7 @@ Kept current by the agent after every step (see `docs/IMPLEMENTATION.md` §0). L
 | `adaloop/orchestration/batching.py` | L3 | `item_chunks`, `batchable_items` | A | equal-length batches; not yet checked on real weights |
 | `adaloop/orchestration/batch_diagnostic.py` | L3 | `diagnose_batch` | A | batch 1 vs copies vs mixed batch: logit margins and diffs; nb07 flag `RUN_BATCH_DIAG` |
 | `adaloop/orchestration/compare.py` | L3 | `comparison_cells`, `run_comparison`, `comparison_table`, `pick_winner` | A | S5; tiny-model check only, nb07 step 6 not yet run |
+| `adaloop/orchestration/resolution.py` | L3 | `run_resolution`, `resolution_table`, `resolution_gain` (plot `core/plots/resolution.py`) | A | resolution check (nb04 step 5), reuses the S5 512 px rows; tiny-model check only |
 | `adaloop/core/eval/bootstrap.py`, `core/plots/compression.py` | L4 | `paired_bootstrap_ci`, `plot_compression` (F06) | A | |
 | `adaloop/orchestration/features.py` | L3 | `run_item_cells`, `save_features`, `load_features` | A | S4b: rows + controller features per (k, R); tiny-model check only; S7 grid builds on it |
 | `adaloop/core/controller/features.py` | L4 | `pass_features` | A | `h_last`, `delta_norm`, `vis_attn_mass`, `entropy`, `kl_prev`, `top1_prob` |

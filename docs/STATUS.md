@@ -71,7 +71,7 @@ Vedaang decision: no post-training today; finish every inference baseline and th
 | 3 | `scripts/mvp.py smoke` | terminal | S0 Done-when |
 | 4 | nb06 `RUN_GRID_TIME` | nb06 | S6 budget line, grid item counts |
 | 5 | nb06 `RUN_FULL` (k=100%, R=1..5, dev + ctrl_train) | nb06 / CLI | F05 accuracy vs R |
-| 6 | Resolution check (512 / 768 / 1024 px, full and DivPrune at matched tokens) | nb04 (to build) | does a sharper image + pruning beat 512 px? |
+| 6 | Resolution check (512 / 768 / 1024 px, full and DivPrune at matched tokens) | nb04 step 5, `RUN_RESOLUTION` (built, tiny-model check only; ready to run) | does a sharper image + pruning beat 512 px? |
 | 7 | S5b Pareto sweep + KV bytes + profiling | nb07 / nb06 (agent building) | F06 curves, where time goes |
 | 8 | nb08 1 item → 20 → full grid + re-run | nb08 / CLI, GPUs 0–7 | S7 grid.parquet, noise rate, F07, F08 |
 | 9 | ~~Full S8 cache~~ **paused** (see #1) | — | — |

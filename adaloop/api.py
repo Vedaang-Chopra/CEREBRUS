@@ -29,6 +29,7 @@ from adaloop.core.plots.colors import METHOD_COLORS, VARIANT_LINESTYLES
 from adaloop.core.plots.compression import plot_compression
 from adaloop.core.plots.cost_model import plot_cost_model
 from adaloop.core.plots.pass_state import plot_pass_state
+from adaloop.core.plots.resolution import plot_resolution
 from adaloop.core.plots.save import save_figure, save_table
 from adaloop.core.plots.style import set_paper_style
 from adaloop.core.plots.thinking_off import plot_thinking_off
@@ -100,6 +101,14 @@ from adaloop.orchestration.lora_checks import (
 )
 from adaloop.orchestration.lora_data import load_targets, schedule_table, student_inputs, item_loss
 from adaloop.orchestration.pass_state import check_pass_state
+from adaloop.orchestration.resolution import (
+    resolution_cells,
+    resolution_gain,
+    resolution_memory,
+    resolution_table,
+    resolution_token_counts,
+    run_resolution,
+)
 from adaloop.orchestration.teacher_cache import (
     build_teacher_cache,
     check_teacher_live,
@@ -214,6 +223,7 @@ __all__ = [
     "plot_compression",
     "plot_cost_model",
     "plot_pass_state",
+    "plot_resolution",
     "plot_thinking_off",
     "prepare_inputs",
     "prune_inputs",
@@ -227,6 +237,11 @@ __all__ = [
     "record_pass_states",
     "rerun_items",
     "resize_long_side",
+    "resolution_cells",
+    "resolution_gain",
+    "resolution_memory",
+    "resolution_table",
+    "resolution_token_counts",
     "row_flops",
     "result_path",
     "run_comparison",
@@ -234,6 +249,7 @@ __all__ = [
     "run_full",
     "run_grid",
     "run_item_cells",
+    "run_resolution",
     "run_items_cells",
     "save_figure",
     "save_features",

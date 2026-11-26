@@ -5,8 +5,9 @@ import subprocess
 from pathlib import Path
 
 # placement, sample size and how items are batched: they must not change a run's hash (or break resume)
+# `resolution` only lists the cells of the resolution check; each cell's res_px / k / match_res_px is hashed
 HASH_EXCLUDE = {"gpu_groups", "min_free_gib", "n_copies", "sample_items", "eval_batch_size", "latency_items",
-                "batch_grouping"}
+                "batch_grouping", "resolution"}
 
 
 def config_hash(cfg: dict) -> str:
