@@ -12,12 +12,14 @@ def _cosine(n: int, m: int, d: int) -> int:
 
 def compression_flops(method: str, N: int, K: int, d: int, n_words: int = 0, head_dim: int = 0,
                       n_heads: int = 0, n_patches_per_unit: int = 4, n_contextual: int = 0) -> int:
-    """FLOPs of choosing K of N tokens with `method`; 0 when everything is kept."""
+    """FLOPs of choosing K of N tokens with `method`; 0 when everything is kept (not cls_iqr: it always scores)."""
+    # one query (CLS) against every patch key, all heads, plus the q/k that the layer already computes (not counted)
+    cls_attention = 2 * (N * n_patches_per_unit + 1) * n_heads * head_dim
+    if method == "cls_iqr":  # the count comes out of the scores; the quartiles are bookkeeping
+        return cls_attention
     if K >= N or method in ("none", "random", "uniform", "lowres"):
         return 0
     greedy = N * K * K // 2  # min over the selected set, once per pick
-    # one query (CLS) against every patch key, all heads, plus the q/k that the layer already computes (not counted)
-    cls_attention = 2 * (N * n_patches_per_unit + 1) * n_heads * head_dim
     if method == "text_mean":
         return _cosine(N, 1, d)
     if method == "divprune":

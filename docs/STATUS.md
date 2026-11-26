@@ -49,7 +49,7 @@ No code is written for a step before the previous step's result is in. Infrastru
 
 **Day plan (DEC3_MVP §7):** Wed 25: S0–S3b · Thu 26: S4, S5, S6, S8 · Fri 27: S7 launch, S9 · Sat 28: S9, S10, S11 · Sun 29: S12–S14 · Mon 30: S15, S16, results freeze · Tue Dec 1: S17 + report · Wed Dec 2: video · Thu Dec 3: submit.
 
-**S5b prep (code):** `kv_cache_bytes` (analytic KV cache size after prefill) is on evaluation, S5 and grid rows; checked on the tiny model only.
+**S5b prep (code):** `kv_cache_bytes` (analytic KV cache size after prefill) is on evaluation, S5 and grid rows; checked on the tiny model only. The S5b Pareto sweep and `cls_iqr` are built (nb07 step 7, `RUN_PARETO`), tiny-model check only.
 
 ## Open decisions (yours)
 - S2: `answer_prefill`, `res_px`, `max_new_tokens` (after notebook 04).
@@ -59,7 +59,7 @@ No code is written for a step before the previous step's result is in. Infrastru
 - `configs/prereg.yaml`: the "what changed since Oct 1" sentence (needed before S12).
 
 ## Later to-do (run separately, after the main path)
-- **S5b Pareto sweep:** every method at k ∈ {10, 25, 50, 75, 100}% (R = 3, dev, 200 items) → accuracy-vs-FLOPs and accuracy-vs-tokens curves per method with the Pareto front (paper figure F06). The methods are budget-based (no method picks its own count), so the curve is the fair comparison. Own config key and folder; reuse the finished 25/50/100% cells. ~4 extra k × 8 methods × 200 items ≈ 6,400 answers: ~1 h at batch 1 on 4 copies, less with equal-length batching. Run after the S8 cache.
+- **S5b Pareto sweep (built, nb07 step 7):** every method at k ∈ {10, 25, 50, 75, 100}% plus `cls_iqr` (TRIM IQR rule on CLS attention; kept count per image) at m ∈ {0, 0.5, 1, 1.5, 3}, R = 3, dev, 200 items → accuracy vs GFLOPs, kept tokens and KV cache bytes with the Pareto front (F06). S5 25 / 50 / 100% rows are reused; 21 new cells = 4,200 answers + 420 for latency, about 45 min at batch 1 on 2 copies. Run after the S8 cache.
 
 ## Today (Nov 25–26): inference and baselines through S8 — run list
 Vedaang decision: no post-training today; finish every inference baseline and the S8 dataset; S9 starts tomorrow.
@@ -72,7 +72,7 @@ Vedaang decision: no post-training today; finish every inference baseline and th
 | 4 | nb06 `RUN_GRID_TIME` | nb06 | S6 budget line, grid item counts |
 | 5 | nb06 `RUN_FULL` (k=100%, R=1..5, dev + ctrl_train) | nb06 / CLI | F05 accuracy vs R |
 | 6 | Resolution check (512 / 768 / 1024 px, full and DivPrune at matched tokens) | nb04 step 5, `RUN_RESOLUTION` (built, tiny-model check only; ready to run) | does a sharper image + pruning beat 512 px? |
-| 7 | S5b Pareto sweep + KV bytes + profiling | nb07 / nb06 (agent building) | F06 curves, where time goes |
+| 7 | S5b Pareto sweep + KV bytes; profiling | nb07 step 7, `RUN_PARETO` (built, ready to run) / nb06 profiling (not built) | F06 curves, where time goes |
 | 8 | nb08 1 item → 20 → full grid + re-run | nb08 / CLI, GPUs 0–7 | S7 grid.parquet, noise rate, F07, F08 |
 | 9 | ~~Full S8 cache~~ **paused** (see #1) | — | — |
 | 10 | Analysis from the grid: best_fixed, oracle, noise oracle, headroom (T2, F09) | code (to build), seconds | headroom claim |

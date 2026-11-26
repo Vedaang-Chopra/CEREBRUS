@@ -18,7 +18,7 @@ Notebooks show the figure inline and save it. Small-sample runs save drafts; ful
 | F03 | Pass-state check: cosine and answer agreement of pass p (in R=5) vs fresh R=p, per p | Setup (tree assumption) | `05_positions_and_loops` | nb05 table | appendix |
 | F04 | Cost model: FLOPs per (k, R) heatmap; analytic vs measured time ratio | Cost | `06_full_baseline` (S6) | flops + timing | appendix |
 | F05 | Accuracy vs R at full tokens, per benchmark (the loop-depth sweep) | Measurement | `06_full_baseline` | full baseline | main |
-| F06 | Compression Pareto (S5b): accuracy vs GFLOPs, vs kept tokens, vs KV cache bytes, one line per method (random, uniform, text_mean, lowres, crisp_lite, ReDiPrune, DivPrune, VisionZip) at k ∈ {10, 25, 50, 75, 100}%, R=3, Pareto front marked | Measurement | `07_compression` | S5b runs | main |
+| F06 | Compression Pareto (S5b): accuracy vs GFLOPs, vs kept tokens, vs KV cache bytes (rows: GQA, TextVQA, both); one line per method (random, uniform, text_mean, lowres, crisp_lite, rediprune, divprune, visionzip at k ∈ {10, 25, 50, 75}% and full; `cls_iqr` = TRIM IQR rule on CLS attention at m ∈ {0, 0.5, 1, 1.5, 3}), R=3, Pareto front ringed (`plot_pareto`) | Measurement | `07_compression` (step 7) | `execution_results/mvp/nb07/pareto*` + S5 25 / 50 / 100% rows | main |
 | F07 | k × R accuracy surface (heatmap) per benchmark | Measurement | S7 grid notebook | `grid.parquet` | main |
 | F08 | Accuracy vs FLOPs for the 15 cells, with the Pareto front | Measurement | S7 grid notebook | `grid.parquet` | main |
 | F09 | Headroom: oracle per cost cap vs best fixed vs noise oracle | Measurement | S14 analysis notebook | grid + reruns | main |

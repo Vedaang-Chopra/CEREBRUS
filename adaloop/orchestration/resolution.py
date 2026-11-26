@@ -1,26 +1,21 @@
 """Resolution check (nb04 step 5): a sharper image with DivPrune against 512 px with every token.
 
 Batch 1 throughout, so the same function serves the accuracy run (several copies) and the latency pass (one copy).
-One JSONL per (benchmark, cell); a cell the S5 comparison already ran (same config hash) is read from its files.
+One JSONL per (benchmark, cell); a cell the S5 comparison already ran (same config hash) is read from its files
+(`cell_runs.run_batch1_cells`).
 """
-import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import numpy as np
 import torch
 
-from adaloop.core.cost.flops import cost_params, row_flops
 from adaloop.core.eval.bootstrap import paired_bootstrap_ci
 from adaloop.orchestration.batching import input_key
-from adaloop.orchestration.cells import generate_cell, map_copies
-from adaloop.orchestration.compare import comparison_table, row_latency
-from adaloop.orchestration.compress import compress
-from adaloop.orchestration.evaluate import evaluate_item, read_results, result_row
-from adaloop.orchestration.inputs import item_inputs
+from adaloop.orchestration.cell_runs import cell_lines, run_batch1_cells
+from adaloop.orchestration.evaluate import evaluate_item
 from adaloop.schemas.items import Item
 from adaloop.schemas.vlm import LoadedVLM
-from utils.hashing import config_hash, git_hash
 from utils.timing import peak_memory_gb
 
 
@@ -52,17 +47,6 @@ def resolution_memory(vlm: LoadedVLM, item: Item, cfg: dict) -> dict[int, float]
     return {i: peak_memory_gb([i]) for i in devices}
 
 
-def _answer(vlm: LoadedVLM, item: Item, cell_cfg: dict, R: int) -> dict:
-    """One row: compress (exact count for a matched cell), generate at batch 1, score."""
-    n_keep = None
-    if "match_res_px" in cell_cfg:  # the item's own full count at the smaller size
-        n_keep = input_key(vlm, item, {**cell_cfg, "res_px": cell_cfg["match_res_px"]})[0]
-    inputs, info = compress(vlm, item_inputs(vlm, item, cell_cfg), item, cell_cfg.get("k", 1.0), cell_cfg,
-                            n_keep=n_keep)
-    gen = generate_cell(vlm, [inputs], cell_cfg, R)[0]
-    return result_row(item, cell_cfg, R, gen, batch_size=1, info=info)
-
-
 def run_resolution(vlms: Sequence[LoadedVLM], items: Mapping[str, Sequence[Item]], cfg: dict,
                    out_dir: str | Path, reuse_dir: str | Path | None = None) -> list[dict]:
     """Every cell on every benchmark's items at batch 1 (resumable); return the rows with FLOPs and latency.
@@ -70,61 +54,7 @@ def run_resolution(vlms: Sequence[LoadedVLM], items: Mapping[str, Sequence[Item]
     `reuse_dir` holds `run_comparison` files: rows of a cell with the same config hash are taken from there and never
     run again (`source` "reused"). Files are not named by the item count, so a sample run's rows count in the full run.
     """
-    R = cfg["resolution"]["R"]
-    out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    params = cost_params(vlms[0].model)
-    gpu_type, commit = torch.cuda.get_device_name(0), git_hash()
-    rows = []
-    for benchmark, bench_items in items.items():
-        ### Step-1:- What is already there, per cell: reused rows first, then this folder's own
-        cells = resolution_cells(cfg)
-        for cell in cells:
-            cell["cfg"] = {**cfg, **cell["keys"]}
-            digest = config_hash(cell["cfg"])
-            cell["path"] = out_dir / f"{benchmark}_{cell['cell']}_R{R}_{digest}.jsonl"
-            old = []
-            if reuse_dir is not None:  # the file name pattern of run_comparison
-                method, k = cell["keys"]["compressor"], cell["keys"].get("k")
-                if k is not None:
-                    pattern = f"{benchmark}_{method}_k{round(100 * k)}_R{R}_n*_{digest}.jsonl"
-                    old = [row for path in sorted(Path(reuse_dir).glob(pattern)) for row in read_results(path)]
-            own = read_results(cell["path"]) if cell["path"].exists() else []
-            if own:  # rewrite clean lines before appending
-                cell["path"].write_text("".join(json.dumps(row) + "\n" for row in own))
-            if {row["config_hash"] for row in old + own} - {digest}:
-                raise ValueError(f"{cell['cell']} {benchmark}: rows from another config than {digest}")
-            cell["done"] = {row["item_id"]: {**row, "source": "run"} for row in own}
-            cell["done"].update({row["item_id"]: {**row, "source": "reused"} for row in old})
-
-        ### Step-2:- Run what is missing, one item per copy at a time
-        pending = [item for item in bench_items if any(item.item_id not in cell["done"] for cell in cells)]
-        n_missing = sum(item.item_id not in cell["done"] for item in bench_items for cell in cells)
-        print(f"[{benchmark}] {len(bench_items)} items x {len(cells)} cells | {n_missing} answers to run | "
-              f"{len(vlms)} copies")
-
-        def work(vlm: LoadedVLM, j: int, item: Item) -> list[tuple[dict, dict]]:
-            out = []
-            for cell in cells:
-                if item.item_id not in cell["done"]:
-                    meta = {"copy": j, "n_copies": len(vlms), "config_hash": config_hash(cell["cfg"]),
-                            "git_hash": commit, "gpu_type": gpu_type, "seed": cfg["splits"]["seed"]}
-                    out.append((cell, {**_answer(vlm, item, cell["cfg"], R), **meta}))
-            return out
-
-        for n, (_, results) in enumerate(map_copies(vlms, pending, work), 1):
-            for cell, row in results:  # only this thread writes
-                with cell["path"].open("a") as handle:
-                    handle.write(json.dumps(row) + "\n")
-                cell["done"][row["item_id"]] = {**row, "source": "run"}
-            if n % 10 == 0 or n == len(pending):
-                print(f"[{benchmark}] {n}/{len(pending)} items done")
-
-        for cell in cells:
-            for item in bench_items:
-                row = cell["done"][item.item_id]
-                rows.append({**row, "cell": cell["cell"], **row_flops(params, row), "latency_s": row_latency(row)})
-    return rows
+    return run_batch1_cells(vlms, items, resolution_cells(cfg), cfg, cfg["resolution"]["R"], out_dir, reuse_dir)
 
 
 def resolution_table(rows: Sequence[dict], latency_rows: Sequence[dict], cfg: dict) -> list[dict]:
@@ -139,12 +69,8 @@ def resolution_table(rows: Sequence[dict], latency_rows: Sequence[dict], cfg: di
         own = [row for row in rows if row["cell"] == name]
         if not own:
             continue
-        timed = [{**row, "k": 0} for row in latency_rows if row["cell"] == name]
-        # k = 0: one group per cell, although a matched cell's k differs from item to item
-        for line in comparison_table([{**row, "k": 0} for row in own], timed):
-            group = [row for row in own if line["benchmark"] in (row["benchmark"], "all")]
-            table.append({"cell": name, "setting": cell["setting"], "res_px": cell["keys"]["res_px"], **line,
-                          "k": float(np.mean([row["k"] for row in group]))})
+        for line in cell_lines(own, [row for row in latency_rows if row["cell"] == name]):
+            table.append({"cell": name, "setting": cell["setting"], "res_px": cell["keys"]["res_px"], **line})
     return table
 
 

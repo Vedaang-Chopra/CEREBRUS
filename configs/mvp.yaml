@@ -81,6 +81,20 @@ resolution:
   reuse_dir: nb07/compare_dev
   reuse_latency_dir: nb07/compare_dev_latency
 
+# S5b Pareto sweep (nb07 step 7), dev, batch 1: `none` at k = 1 once, every method at each k below 1, and cls_iqr (kept
+# count decided per image) at each m of its rule score > Q3 + m * IQR. Not hashed as a block: each cell sets compressor
+# and k (cls_iqr: compression.cls_iqr.m) in its own hashed config. Do not put cls_iqr under `compression:` above (it
+# would move every hash).
+pareto:
+  R: 3
+  n_items: 100  # dev items per benchmark
+  methods: [random, uniform, text_mean, lowres, crisp_lite, rediprune, divprune, visionzip]
+  ks: [0.1, 0.25, 0.5, 0.75, 1.0]
+  ms: [0.0, 0.5, 1.0, 1.5, 3.0]  # 1.5 is TRIM's value
+  # finished S5 runs under out_dir: the S5 cells are read from there and never run again
+  reuse_dir: nb07/compare_dev
+  reuse_latency_dir: nb07/compare_dev_latency
+
 # the grid (S7): keep fractions x loop passes; configs/full_baseline.yaml keeps k at 1.0
 k_grid: [0.25, 0.5, 1.0]
 R_grid: [1, 2, 3, 4, 5]

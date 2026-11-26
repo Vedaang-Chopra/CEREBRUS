@@ -8,7 +8,7 @@ Kept current by the agent after every step (see `docs/IMPLEMENTATION.md` §0). L
 | `adaloop/orchestration/full_run.py` | L3 | `shard_items`, `full_run_config`, `result_path`, `run_full` (`vlms`), `estimate_full_run`, `summarize_full` | A | created; shards `items[i::n]`, one JSONL per shard and R; test split and `k_grid` != [1.0] refused |
 | `adaloop/orchestration/compress.py` | L3 | `compress`, `METHODS` | A | S4: one interface for all compression methods; checked on a tiny random model, nb07 not yet run on real weights |
 | `adaloop/orchestration/inputs.py` | L3 | `item_prompt`, `item_inputs` | A | moved out of `evaluate.py` (compression builds inputs too) |
-| `adaloop/core/tokens/` | L4 | `extract_visual_tokens`, `prune_inputs`, selectors, `n_keep_for`; `methods/` (crisp_lite, rediprune, divprune, visionzip), `vision.py` (attention inputs, then CLS attention and keys per unit) | A | see `docs/notes/compression_baselines.md` |
+| `adaloop/core/tokens/` | L4 | `extract_visual_tokens`, `prune_inputs`, selectors, `n_keep_for`; `methods/` (crisp_lite, rediprune, divprune, visionzip, cls_iqr), `vision.py` (attention inputs, then CLS attention and keys per unit) | A | see `docs/notes/compression_baselines.md` |
 | `adaloop/orchestration/teacher_cache.py` | L3 | `teacher_items`, `build_teacher_cache`, `teacher_records`, `check_teacher_live`, `teacher_summary` | A | S8; tiny-model check only, nb09 not yet run |
 | `adaloop/core/train/` | L4 | `answer_log_probs`, `split_top`, `target_tensors` (`teacher.py`); `read_index`, `write_part`, `load_records` (`teacher_store.py`) | A | S8 teacher store; the S9 files are listed below |
 | `adaloop/schemas/train.py` | L5 | `TeacherTarget`, `TrainSample` | A | S9 data contracts; CPU-checked only |
@@ -24,7 +24,9 @@ Kept current by the agent after every step (see `docs/IMPLEMENTATION.md` §0). L
 | `adaloop/orchestration/batch_diagnostic.py` | L3 | `diagnose_batch` | A | batch 1 vs copies vs mixed batch: logit margins and diffs; nb07 flag `RUN_BATCH_DIAG` |
 | `adaloop/orchestration/compare.py` | L3 | `comparison_cells`, `run_comparison`, `comparison_table`, `pick_winner` | A | S5; tiny-model check only, nb07 step 6 not yet run |
 | `adaloop/orchestration/resolution.py` | L3 | `run_resolution`, `resolution_table`, `resolution_gain` (plot `core/plots/resolution.py`) | A | resolution check (nb04 step 5), reuses the S5 512 px rows; tiny-model check only |
-| `adaloop/core/eval/bootstrap.py`, `core/plots/compression.py` | L4 | `paired_bootstrap_ci`, `plot_compression` (F06) | A | |
+| `adaloop/core/eval/bootstrap.py`, `core/eval/pareto.py`, `core/plots/compression.py` | L4 | `paired_bootstrap_ci`, `pareto_front`, `plot_pareto` (F06) | A | |
+| `adaloop/orchestration/cell_runs.py` | L3 | `run_batch1_cells`, `cell_lines` | A | batch-1 resumable cells with S5 reuse; used by the resolution check and the Pareto sweep |
+| `adaloop/orchestration/pareto.py` | L3 | `pareto_cells`, `pareto_reused_cells`, `run_pareto`, `pareto_table` | A | S5b (nb07 step 7), config `pareto` (not hashed); tiny-model check only |
 | `adaloop/orchestration/features.py` | L3 | `run_item_cells`, `save_features`, `load_features` | A | S4b: rows + controller features per (k, R); tiny-model check only; S7 grid builds on it |
 | `adaloop/core/controller/features.py` | L4 | `pass_features` | A | `h_last`, `delta_norm`, `vis_attn_mass`, `entropy`, `kl_prev`, `top1_prob` |
 | `adaloop/core/cost/compression.py` | L4 | `compression_flops` | A | analytic cost of the compression step |

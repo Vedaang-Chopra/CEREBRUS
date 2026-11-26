@@ -68,8 +68,11 @@ Upstream clones: `old_code/third_party/{rediprune,divprune,visionzip}`; each por
 | rediprune | upstream `_select_text_cond` byte-identical, α = 0.5, τ = 0. **Scored after the projector** (deviation, approved by Vedaang): features = projected tokens (2304-d), query = upstream `extract_question_embedding` (2304-d), so upstream's dimension pooling does not run. Before the projector our features are 1024-d and the query could not be matched without pooling. Upstream scores before the projector |
 | divprune | upstream max-min on the projected tokens (cosine distance). An index picked twice (only possible with identical tokens) raises |
 | visionzip | upstream Qwen2.5-VL merge on the projected tokens. Score = CLS attention of the last ViT layer (our tower has a CLS token; upstream's Qwen path has none and sums over all queries), 2×2 mean; keys = rotary keys, 2×2 and head mean. Contextual = `int(0.05 * N)` tokens, dominant = the rest of K (upstream at 50%: 45% + 5%) |
+| cls_iqr | **TRIM IQR rule on CLS attention, not TRIM** (S5b). Rule ported from FreedomIntelligence/TRIM `llava/model/multimodal_encoder/clip_encoder.py` @ `f2032236583b` l.93-107 (Apache-2.0): keep score > Q3 + m·IQR (upstream m = 1.5). Score = the CLS attention used for visionzip (upstream: softmax of negated patch-text similarity); no further softmax. Count = number of outliers (upstream's `int(ratio * N)` can lose one to rounding), at least 1. **No mean token of the unselected** (our decoder never saw one). No budget: `k` = 1.0 in, kept / full recorded per item; knob `compression.cls_iqr.m` (set per cell by the sweep, not in `mvp.yaml`) |
 
 CDPruner-style (optional) is not built.
+
+`cls_iqr` FLOPs: the same CLS attention row as visionzip (the quartiles are not counted).
 
 FLOPs of the step (`core/cost/compression.py`): cosine scores, greedy loops, the question self-attention (rediprune), the
 CLS attention row and merge (visionzip). Not counted: softmax/argmax/sort, the spaCy tagger. Wall time `compression_s`

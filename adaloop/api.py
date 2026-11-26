@@ -16,6 +16,7 @@ from adaloop.core.cost.flops import (
 )
 from adaloop.core.eval.bootstrap import paired_bootstrap_ci
 from adaloop.core.eval.extract import extract_answer
+from adaloop.core.eval.pareto import pareto_front
 from adaloop.core.eval.scorers import score, score_gqa, score_gqa_lmms, score_lmms, score_textvqa
 from adaloop.core.eval.summary import summarize_rows
 from adaloop.core.model.budget import generate_answers
@@ -26,7 +27,7 @@ from adaloop.core.model.loops import count_layer_calls, expected_layer_calls, se
 from adaloop.core.model.prompting import prepare_inputs
 from adaloop.core.plots.accuracy_vs_r import plot_accuracy_vs_r
 from adaloop.core.plots.colors import METHOD_COLORS, VARIANT_LINESTYLES
-from adaloop.core.plots.compression import plot_compression
+from adaloop.core.plots.compression import plot_pareto
 from adaloop.core.plots.cost_model import plot_cost_model
 from adaloop.core.plots.pass_state import plot_pass_state
 from adaloop.core.plots.resolution import plot_resolution
@@ -100,6 +101,7 @@ from adaloop.orchestration.lora_checks import (
     student_layer_calls,
 )
 from adaloop.orchestration.lora_data import load_targets, schedule_table, student_inputs, item_loss
+from adaloop.orchestration.pareto import pareto_cells, pareto_reused_cells, pareto_table, run_pareto
 from adaloop.orchestration.pass_state import check_pass_state
 from adaloop.orchestration.resolution import (
     resolution_cells,
@@ -143,6 +145,10 @@ __all__ = [
     "lora_target_names",
     "one_step_check",
     "pairing_table",
+    "pareto_cells",
+    "pareto_front",
+    "pareto_reused_cells",
+    "pareto_table",
     "probe_loss",
     "REF_R",
     "answer_log_probs",
@@ -220,8 +226,8 @@ __all__ = [
     "pass_features",
     "pick_winner",
     "plot_accuracy_vs_r",
-    "plot_compression",
     "plot_cost_model",
+    "plot_pareto",
     "plot_pass_state",
     "plot_resolution",
     "plot_thinking_off",
@@ -248,6 +254,7 @@ __all__ = [
     "run_evaluation",
     "run_full",
     "run_grid",
+    "run_pareto",
     "run_item_cells",
     "run_resolution",
     "run_items_cells",

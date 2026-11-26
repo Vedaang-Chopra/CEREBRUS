@@ -8,6 +8,7 @@ import torch
 from PIL import Image
 
 from adaloop.core.cost.compression import compression_flops
+from adaloop.core.tokens.methods.cls_iqr import cls_iqr_select
 from adaloop.core.tokens.methods.crisp_lite import noun_relevance, question_nouns, word_embeddings
 from adaloop.core.tokens.methods.divprune import DivPrune
 from adaloop.core.tokens.methods.rediprune import _select_text_cond, extract_question_embedding
@@ -29,7 +30,9 @@ from adaloop.schemas.vlm import LoadedVLM
 from utils.images import resize_long_side
 from utils.timing import cuda_sync
 
-METHODS = ("none", "random", "uniform", "text_mean", "lowres", "crisp_lite", "rediprune", "divprune", "visionzip")
+# cls_iqr has no budget: its kept count is decided per image by `compression.cls_iqr.m`
+METHODS = ("none", "random", "uniform", "text_mean", "lowres", "crisp_lite", "rediprune", "divprune", "visionzip",
+           "cls_iqr")
 
 
 def _clock(vlm: LoadedVLM) -> float:
@@ -73,6 +76,10 @@ def _select(vlm: LoadedVLM, inputs: Mapping, item: Item, cfg: dict, method: str,
     """(kept indices, token features (changed only by visionzip), extras for the cost count and info)."""
     tokens = vision.tokens
     N = len(tokens)
+    if method == "cls_iqr":  # no budget k: the rule decides the count
+        attention, _ = unit_cls_attention(vlm, vision.attention_inputs)
+        indices, n_outliers = cls_iqr_select(attention, cfg["compression"][method]["m"])
+        return indices, tokens, {"fallback": None if n_outliers else "no_outlier_kept_top1"}
     K = n_keep_for(N, k) if n_keep is None else n_keep  # an exact count skips the rounding of k * N
     if K == N:  # nothing to choose: the same packed path, with every token
         return torch.arange(N), tokens, {}
@@ -134,12 +141,17 @@ def compress(vlm: LoadedVLM, inputs: Mapping, item: Item, k: float, cfg: dict,
 
     `n_keep` (divprune only) keeps exactly that many tokens and replaces `k`, which is then recorded as kept / full.
     An item with fewer tokens keeps them all and says so in `fallback`.
+
+    `cls_iqr` takes k = 1.0 (it has no budget; its knob is `cfg["compression"]["cls_iqr"]["m"]`) and records
+    k = kept / full of the item.
     """
     method = cfg.get("compressor", "none")
     if method not in METHODS:
         raise ValueError(f"unknown compressor {method!r}; one of {METHODS}")
     if method == "none" and k != 1.0:
         raise ValueError(f"compressor 'none' keeps every token, got k={k}")
+    if method == "cls_iqr" and (k != 1.0 or "m" not in cfg.get("compression", {}).get(method, {})):
+        raise ValueError(f"cls_iqr has no budget: pass k=1.0 (got {k}) and set compression.cls_iqr.m")
     N = _n_visual(vlm, inputs)
     fewer = None
     if n_keep is not None:
@@ -179,6 +191,8 @@ def compress(vlm: LoadedVLM, inputs: Mapping, item: Item, k: float, cfg: dict,
         method, N, len(indices), tokens.shape[-1], n_words=extras.get("n_words", 0),
         head_dim=tower.hidden_size // tower.num_attention_heads, n_heads=tower.num_attention_heads,
         n_patches_per_unit=tower.spatial_merge_size**2, n_contextual=extras.get("n_contextual", 0))
+    if method == "cls_iqr":
+        info["k"] = len(indices) / N
     info.update(n_vis=len(indices), vit_s=vision.seconds, compression_s=end - start, compression_flops=flops,
                 fallback=extras.get("fallback") or fewer)
     return packed, info
