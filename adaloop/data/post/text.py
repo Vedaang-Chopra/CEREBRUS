@@ -52,6 +52,15 @@ def cap_free_answer(text: str, max_tokens: int) -> str | None:
     return best
 
 
+def is_english(question: str, answer: str, min_ascii: float) -> bool:
+    """Mostly ASCII letters in both; digits and punctuation are ignored, an answer without letters (a number) passes."""
+    def ok(text: str, if_no_letters: bool) -> bool:
+        letters = [char for char in text if char.isalpha()]
+        return sum(char.isascii() for char in letters) >= min_ascii * len(letters) if letters else if_no_letters
+
+    return ok(question, False) and ok(answer, True)
+
+
 def turn_ratings(row: dict, index: int, cfg: dict) -> tuple[dict | None, bool]:
     """(ratings of turn `index`, passes). A row or turn without a rating passes (ratings only drop the worst)."""
     values = {}
@@ -82,8 +91,12 @@ def majority_turns(turns: list[tuple]) -> list[tuple]:
     return kept
 
 
-def pick_turn(row: dict, cfg: dict, free: bool, count_only: bool, seed: str) -> tuple[dict | None, str]:
-    """One turn of a FineVision row (filters 1, 2, 6): (turn, "") or (None, "ratings" | "answer")."""
+def pick_turn(row: dict, cfg: dict, free: bool, count_only: bool, seed: str, english: dict | None = None,
+              tally: dict | None = None) -> tuple[dict | None, str]:
+    """One turn of a FineVision row (filters 1, 2, 6): (turn, "") or (None, "ratings" | "answer").
+
+    `english` is a source's English filter; `tally` gets the turns that reached it and the turns it kept.
+    """
     answers_cfg = cfg["answers"]
     turns, any_rated_ok = [], False
     for index, text in enumerate(row["texts"] or []):
@@ -94,8 +107,15 @@ def pick_turn(row: dict, cfg: dict, free: bool, count_only: bool, seed: str) -> 
         question = clean_question(text["user"] or "", answers_cfg["style_words"])
         full = (text["assistant"] or "").strip()
         answer = cap_free_answer(full, answers_cfg["free_max_tokens"]) if free else clean_short_answer(full)
-        if question and answer:
-            turns.append((question, answer, full, ratings))
+        if not (question and answer):
+            continue
+        if english:
+            passed = is_english(question, answer, english["min_ascii_letters"])
+            tally["english_turns"] += 1
+            tally["english_kept"] += passed
+            if not passed:
+                continue
+        turns.append((question, answer, full, ratings))
     if not any_rated_ok:
         return None, "ratings"
     usable = []

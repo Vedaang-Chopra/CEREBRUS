@@ -47,3 +47,11 @@ Licences per source (card states none). PixMo-Count / PixMo-AMA are not in FineV
 6. Drop multi-reference answers without a clear majority.
 
 Open (Vedaang): approve the mix; R sampling (uniform vs 1:2:6:2:1); data-only control run.
+
+## Deviations (candidate store build)
+- Ratings filter applies to the chosen turn (`<key>_ratings`), not the row's `<key>_min` columns: the `_min` columns
+  passed almost nothing in several configs.
+- Counting falls back to `clevr`: PixMo-Count downloads fail (HTTP 429, sha256 mismatches).
+- `est_vqa` (about 80% Chinese) has an English filter: a turn is kept only if the question and the answer are mostly
+  ASCII letters (digits and punctuation ignored; a number answer is fine). If fewer than 30% of the first 500 turns
+  pass, the whole source is dropped and `ocrvqa` takes its share. Thresholds: `configs/post_training_data.yaml`.

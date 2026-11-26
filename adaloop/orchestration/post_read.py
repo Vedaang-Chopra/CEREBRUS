@@ -38,18 +38,22 @@ def _read_finevision(run: SourceRun) -> None:
         picked = []
         for index, row in enumerate(_read(run, parquet, group, columns).to_pylist()):
             row_id = f"{run.name}/{where}/{index}"
+            tally = {"english_turns": 0, "english_kept": 0}
             turn, why = pick_turn(row, run.cfg, spec.get("free", False), spec.get("count_only", False),
-                                  f"{run.cfg['seed']}:{row_id}")
+                                  f"{run.cfg['seed']}:{row_id}", run.source.get("english"), tally)
             unrated = turn is not None and turn["ratings"] is None
-            picked.append((index, row_id, turn, why, unrated))
-        passing = [index for index, _, turn, _, _ in picked if turn]
+            picked.append((index, row_id, turn, why, unrated, tally))
+        passing = [index for index, _, turn, *_ in picked if turn]
         images = {}
         if passing:
             column = _read(run, parquet, group, ["images"]).column("images").take(passing).to_pylist()
             images = dict(zip(passing, column))
-        for index, row_id, turn, why, unrated in picked:
-            if run.full:
+        for index, row_id, turn, why, unrated, tally in picked:
+            run.check_english()
+            if run.full or run.dropped:
                 break
+            for key, n in tally.items():
+                run.counts[key] += n
             run.counts["rows_read"] += 1
             run.counts["after_ratings"] += why != "ratings"
             if not turn:
@@ -117,4 +121,5 @@ def read_source(run: SourceRun) -> None:
     """Fill `run` from its source and write the last shard."""
     if run.target > 0:
         (_read_urls if "url_repo" in run.source else _read_finevision)(run)
+    run.check_english(at_end=True)
     run.flush()

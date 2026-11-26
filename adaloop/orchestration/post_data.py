@@ -32,7 +32,7 @@ def build_source(cfg: dict, folder: Path, bucket: str, source: dict, target: int
     t0 = time.time()
     print(f"[STAGE] {bucket} / {run.name}: target {target}")
     read_source(run)
-    state = {"source_config": run.name, "bucket": bucket, "target": target, "kept": run.counts["after_dup"],
+    state = {"source_config": run.name, "bucket": bucket, "target": target, "kept": run.kept,
              **run.counts, "eval_dup_dropped": run.counts["after_image"] - run.counts["after_eval"],
              "dup_dropped": run.counts["after_eval"] - run.counts["after_dup"], "seconds": round(time.time() - t0, 1),
              "files_used": run.files_used, "files_total": run.files_total, "shards": run.shards,

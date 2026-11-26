@@ -62,7 +62,13 @@ buckets:
       - {config: CoSyn_400k_document}
   ocr:
     target: 2000
-    sources: [{config: cocotext, max_gb: 3}, {config: est_vqa}, {config: ocrvqa}]  # cocotext: ~6% of rows pass the ratings
+    sources:
+      - {config: cocotext, max_gb: 3}  # ~6% of rows pass the ratings
+      # ~80% Chinese. A turn is kept if at least `min_ascii_letters` of the letters in the question and in the answer
+      # are ASCII (digits and punctuation are ignored). If fewer than `min_keep_rate` of the first `sample_turns` turns
+      # pass, the whole source is dropped and ocrvqa takes its share.
+      - {config: est_vqa, english: {min_ascii_letters: 0.9, min_keep_rate: 0.3, sample_turns: 500}}
+      - {config: ocrvqa}
   diagrams:
     target: 1000
     sources: [{config: scienceqa}, {config: ai2d_merged}, {config: iconqa}]
