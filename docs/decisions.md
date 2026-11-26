@@ -59,3 +59,7 @@ One entry per gate or design decision. Newest at the bottom. Format:
 - Dev n=20 per benchmark, k=100%, no thinking, batch 8. GQA accuracy R=1..5: 55 / 60 / 55 / 65 / 60. TextVQA: 53 / 63 / 54.5 / 54 / 59. Parse 95-100%. At n=20 the R trend is within noise (1 item = 5 pts); the full dev / grid decides.
 - Batch 8 = batch 1 predictions on 8 items: batched runs are allowed.
 - Cost: measured R5/R1 prefill time ratio 3.41 vs analytic 3.05 (within ±25%): the FLOPs model holds. Throughput at R=3: batch 1 1.08 s/item, batch 8 0.37 s/item per copy (2x A40).
+
+## Nov 25, 2026 · S8 · multi-depth teacher cache approved
+- Decision (Vedaang): S8 caches the frozen full-token teacher at R = 1..5 for all 8,549 lora_train items (42,745 records), schema and checks in DEC3 S8 and `docs/04_prompts/s8_build.md`. GPUs 0–7 may be used for the S8 cache run (exception to the 0–3 rule, S8 only). Estimate from nb06 throughput (0.37 s/item at R=3, batch 8): ~2 h on 2 copies, ~1 h on 4.
+- S9 (not started until S8 is validated and Vedaang approves): A = depth-matched (teacher R = student R), B = fixed R=3 teacher; 10% full-token samples depth-matched in both; forward KL top-32 + tail bucket; identical training settings. S10 compares base, A, B on the 15-cell grid.
