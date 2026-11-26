@@ -41,3 +41,18 @@ printed top-15 kernel table (GPU busy vs idle). Plot: prefill / decode time vs t
 ## Rules
 Timing never changes accuracy rows (separate folders, unhashed keys). One commit per part (1, 2, 3, 4).
 Update CODEBASE_MAP, READMEs, notebooks/README, STATUS.
+
+## 3b. One dynamic method: `cls_iqr` (TRIM's IQR rule on CLS attention)
+The 8 methods are budget-based. Add one whose kept count is decided per image, as a step toward QAFE (the encoder
+decides how much to keep). Score = the CLS attention we already compute for VisionZip (unit level, last ViT layer).
+Keep the tokens whose score is an outlier by TRIM's rule: `score > Q3 + m·IQR`, ported from
+FreedomIntelligence/TRIM:llava/model/multimodal_encoder/clip_encoder.py @ f2032236583b (IQR block, l.93-107, Apache-2.0),
+unchanged except the score source; at least 1 token. No mean token of the rest (our decoder never saw one; note it).
+`m` is the knob instead of k: sweep m ∈ {0.0, 0.5, 1.0, 1.5 (TRIM default), 3.0} → one Pareto point per m, with the
+actual mean kept count per benchmark. Name in tables: `cls_iqr` ("TRIM IQR rule on CLS attention", not TRIM).
+Rows log `n_vis` per item (varies), so FLOPs / KV / accuracy are per item as usual.
+
+## Reuse rule (all parts)
+Never rerun a finished row to fill a new column. `kv_cache_bytes` and any other analytic column are computed from the
+saved row fields (token counts, R, config) when tables are built; resume treats rows without them as complete.
+Only genuinely new cells (k = 10%, 75%, `cls_iqr` per m) run.
