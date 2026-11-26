@@ -36,6 +36,14 @@ out_dir: execution_results/mvp
 # bump when a code change alters outputs for the same config (generation, extraction, scoring)
 code_version: 6
 
+# Visual-token compression (docs/notes/compression_baselines.md). The keep fraction `k` is set per run (default 1.0).
+# none | random | uniform | text_mean | lowres | crisp_lite | rediprune | divprune | visionzip; frozen after S5
+compressor: none
+compression:
+  rediprune: {alpha: 0.5, tau: 0.0}  # upstream defaults (REDIPRUNE_ALPHA, REDIPRUNE_TAU)
+  crisp_lite: {spacy_model: en_core_web_sm, uniform_frac: 0.25}
+  visionzip: {contextual_frac: 0.05}  # of the full token count, as upstream; the dominant tokens fill the rest of k
+
 benchmarks:
   gqa:
     source: lmms-lab-encoder/GQA

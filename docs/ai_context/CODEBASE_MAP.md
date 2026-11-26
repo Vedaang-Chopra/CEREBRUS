@@ -6,11 +6,15 @@ Kept current by the agent after every step (see `docs/IMPLEMENTATION.md` §0). L
 |---|---|---|---|---|
 | `adaloop/api.py` | L2 | see `adaloop/README.md` | A | model, pruning, GQA + TextVQA data, scoring, evaluation, answer prefill (S2), pass states (S3b) |
 | `adaloop/orchestration/full_run.py` | L3 | `shard_items`, `full_run_config`, `result_path`, `run_full` (`vlms`), `estimate_full_run`, `summarize_full` | A | created; shards `items[i::n]`, one JSONL per shard and R; test split and `k_grid` != [1.0] refused |
+| `adaloop/orchestration/compress.py` | L3 | `compress`, `METHODS` | A | S4: one interface for all compression methods; checked on a tiny random model, nb07 not yet run on real weights |
+| `adaloop/orchestration/inputs.py` | L3 | `item_prompt`, `item_inputs` | A | moved out of `evaluate.py` (compression builds inputs too) |
+| `adaloop/core/tokens/` | L4 | `extract_visual_tokens`, `prune_inputs`, selectors, `n_keep_for`; `methods/` (crisp_lite, rediprune, divprune, visionzip), `vision.py` (unit features, CLS attention) | A | see `docs/notes/compression_baselines.md` |
+| `adaloop/core/cost/compression.py` | L4 | `compression_flops` | A | analytic cost of the compression step |
 | `adaloop/core/cost/flops.py` | L4 | `cost_params`, `flops_prefill`, `flops_partial`, `flops_readout`, `flops_decode`, `flops_vit`, `flops_total`, `cost_ref` | A | S6; checked on a meta-device model only, notebook 06 step 4 not yet run |
 | `adaloop/core/plots/` | L4 | `set_paper_style`, `METHOD_COLORS`, `save_figure`, `save_table` (exposed via `api.py`) | A | paper style, method colours, figure/table output (drafts `execution_results/`, finals `paper/`); `plot_*` for F02-F05 (one file per figure) |
 | `utils/paths.py` | L5 | `find_repo_root` | A | nearest folder above this file with `pyproject.toml` (`utils/env.py` has its own cwd-first finder) |
 | `adaloop/orchestration/cost_timing.py` | L3 | `time_prefill`, `time_throughput` | A | S6; not yet run on the GPU host |
-| `adaloop/orchestration/evaluate.py` | L3 | `item_prompt`, `item_inputs`, `read_answer`, `evaluate_item`, `run_evaluation` (`batch_size`, `vlms`), `run_chunks`, `read_results` | A | created (merged from Jiaqi's repo); batched accuracy runs not yet checked on real weights; multi-copy threads not yet run on the GPU host |
+| `adaloop/orchestration/evaluate.py` | L3 | `read_answer`, `evaluate_item`, `run_evaluation` (`batch_size`, `vlms`), `run_chunks`, `read_results` | A | created (merged from Jiaqi's repo); batched accuracy runs not yet checked on real weights; multi-copy threads not yet run on the GPU host |
 | `adaloop/orchestration/copies.py` | L3 | `time_copies`, `compare_copies` | A | 1 copy vs all copies: s/item and same outputs; not yet run on the GPU host |
 | `adaloop/core/model/load.py` | L4 | `load_model`, `load_models`, `unload_model` | A | copy j on the j-th gpu group, cached per placement; multi-copy not yet run on the GPU host |
 | `adaloop/core/model/inference.py` | L4 | `generate`, `generate_batch`, `last_logits` | A | batch 1 is the reference; left-padded batch added |
@@ -27,7 +31,7 @@ Kept current by the agent after every step (see `docs/IMPLEMENTATION.md` §0). L
 | `scripts/mvp.py` | CLI | `smoke`, `splits`, `eval`, `full --shard i/n` | A | created; `full` uses `select_gpu_group(cfg, group=i)`, `smoke`/`eval` pick a free group; selection runs before `adaloop.api` is imported |
 | `utils/hashing.py` | L5 | `config_hash` (drops `HASH_EXCLUDE` = `gpu_groups`, `min_free_gib`), `git_hash` | A | placement is not hashed |
 
-Notebooks (they are the tests, see `AGENTS.md`): `01_huggingfaceload` (load, loops), `02_pruning` (visual tokens, selectors), `03_data_and_scoring` (S1 splits, items, scoring, evaluation runner), `04_thinking_off` (S2 answer prefill, `res_px`), `05_positions_and_loops` (S3 positions, S3b loop control and pass state), `06_full_baseline` (batch check, full run shards, summary, S6 cost model).
+Notebooks (they are the tests, see `AGENTS.md`): `01_huggingfaceload` (load, loops), `02_pruning` (visual tokens, selectors), `03_data_and_scoring` (S1 splits, items, scoring, evaluation runner), `04_thinking_off` (S2 answer prefill, `res_px`), `05_positions_and_loops` (S3 positions, S3b loop control and pass state), `06_full_baseline` (batch check, full run shards, summary, S6 cost model), `07_compression` (S4 methods).
 Modeling-code findings: `docs/notes/modeling_code.md` (pruning stays packed).
 Split manifests: `configs/splits/mvp_<benchmark>.json` (frozen, hashed). Run outputs: `execution_results/mvp/`.
 
@@ -37,7 +41,7 @@ Runs happen on Inara in the `learning_env` kernel (repo at `/coc/scratch/vchopra
 graph LR
   NB[notebooks/*.ipynb] --> API[adaloop/api.py]
   CLI[scripts/mvp.py] --> API
-  API --> ORCH[orchestration: evaluate, full_run, pass_state, cost_timing, audit]
+  API --> ORCH[orchestration: inputs, compress, evaluate, full_run, pass_state, cost_timing, audit]
   ORCH --> CORE[core: model + hooks, tokens, eval, cost]
   ORCH --> DATA[data: gqa, textvqa, splits]
   CORE --> SCHEMAS[schemas]

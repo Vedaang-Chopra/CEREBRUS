@@ -8,7 +8,8 @@ from torch.nn import functional as F
 from adaloop.schemas.vlm import LoadedVLM
 
 
-def _n_keep(n_tokens: int, k: float) -> int:
+def n_keep_for(n_tokens: int, k: float) -> int:
+    """How many of `n_tokens` a keep fraction `k` leaves; every method uses this count."""
     if not 0 < k <= 1:
         raise ValueError(f"k must be in (0, 1], got {k}")
     return max(1, int(n_tokens * k))
@@ -17,7 +18,7 @@ def _n_keep(n_tokens: int, k: float) -> int:
 def random_selector(visual_tokens: torch.Tensor, k: float, seed: int = 42) -> torch.Tensor:
     """Keep a seeded random fraction `k` of the tokens."""
     n_tokens = len(visual_tokens)
-    n_keep = _n_keep(n_tokens, k)
+    n_keep = n_keep_for(n_tokens, k)
     generator = torch.Generator().manual_seed(seed)
     indices = torch.randperm(n_tokens, generator=generator)[:n_keep].sort().values
     return indices.to(visual_tokens.device)
@@ -29,7 +30,7 @@ def uniform_selector(image_grid_thw: torch.Tensor, k: float) -> torch.Tensor:
     if t != 1:
         raise ValueError(f"only single-frame images are supported, got t={t}")
     n_tokens = h * w
-    n_keep = _n_keep(n_tokens, k)
+    n_keep = n_keep_for(n_tokens, k)
     if n_keep == n_tokens:
         return torch.arange(n_tokens)
 
@@ -46,6 +47,23 @@ def uniform_selector(image_grid_thw: torch.Tensor, k: float) -> torch.Tensor:
     return torch.tensor(sorted(selected))
 
 
+def fill_uniform(grid_h: int, grid_w: int, chosen: torch.Tensor, n_total: int) -> torch.Tensor:
+    """Add grid positions farthest from the chosen ones until `n_total` are kept; sorted indices."""
+    y, x = torch.meshgrid(torch.arange(grid_h), torch.arange(grid_w), indexing="ij")
+    coords = torch.stack([y, x], dim=-1).reshape(-1, 2).float()  # (N, 2)
+    selected = chosen.cpu().tolist()
+    distances = torch.full((len(coords),), float("inf"))
+    for index in selected:
+        distances = torch.minimum(distances, ((coords - coords[index]) ** 2).sum(-1))
+    distances[selected] = -1
+    while len(selected) < n_total:
+        index = int(distances.argmax())
+        selected.append(index)
+        distances = torch.minimum(distances, ((coords - coords[index]) ** 2).sum(-1))
+        distances[selected] = -1
+    return torch.tensor(sorted(selected))
+
+
 @torch.inference_mode()
 def question_embeddings(vlm: LoadedVLM, question: str) -> torch.Tensor:
     """Decoder input embeddings of the question tokens, [n_tokens, d]."""
@@ -59,7 +77,7 @@ def text_mean_selector(
     visual_tokens: torch.Tensor, text_embeddings: torch.Tensor, k: float
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Keep the tokens closest (cosine) to the mean question embedding; also return scores."""
-    n_keep = _n_keep(len(visual_tokens), k)
+    n_keep = n_keep_for(len(visual_tokens), k)
     visual = F.normalize(visual_tokens.float(), dim=-1)
     query = text_embeddings.float().to(visual.device)
     query = F.normalize(query.mean(dim=0), dim=-1)

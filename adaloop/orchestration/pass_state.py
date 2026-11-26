@@ -9,7 +9,8 @@ from adaloop.core.eval.scorers import score
 from adaloop.core.model.hooks import record_pass_states
 from adaloop.core.model.budget import generate_answers
 from adaloop.core.model.loops import MAX_LOOPS, set_loops
-from adaloop.orchestration.evaluate import item_inputs, read_answer
+from adaloop.orchestration.evaluate import read_answer
+from adaloop.orchestration.inputs import item_inputs
 from adaloop.schemas.items import Item
 from adaloop.schemas.vlm import GenerationResult, LoadedVLM
 

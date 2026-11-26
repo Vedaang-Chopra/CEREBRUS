@@ -16,27 +16,11 @@ from adaloop.core.eval.scorers import score, score_lmms
 from adaloop.core.eval.summary import summarize_rows
 from adaloop.core.model.budget import generate_answers
 from adaloop.core.model.loops import set_loops
-from adaloop.core.model.prompting import prepare_inputs
+from adaloop.orchestration.compress import compress
+from adaloop.orchestration.inputs import item_inputs, item_prompt
 from adaloop.schemas.items import Item
 from adaloop.schemas.vlm import GenerationResult, LoadedVLM
 from utils.hashing import config_hash, git_hash
-from utils.images import resize_long_side
-
-
-def item_prompt(item: Item, cfg: dict) -> str:
-    """The question text sent to the model (capitalized for TextVQA) plus the `question_suffix` prompt."""
-    # TextVQA: lmms-eval applies str.capitalize (first letter upper, the rest lower). Ported from
-    # EvolvingLMMs-Lab/lmms-eval:lmms_eval/tasks/textvqa/utils.py::textvqa_doc_to_text
-    # @ 9134731f4f617e62ee80bcae9d0d5d9695ea55ef.
-    question = item.question.capitalize() if item.benchmark == "textvqa" else item.question
-    return question + cfg["prompts"]["question_suffix"]
-
-
-def item_inputs(vlm: LoadedVLM, item: Item, cfg: dict) -> Mapping:
-    """Model inputs for one item (system prompt, resized image, question, effort, prefill); every run uses this."""
-    image = resize_long_side(item.image, cfg["res_px"])
-    return prepare_inputs(vlm, item_prompt(item, cfg), image, prefill=cfg.get("answer_prefill"),
-                          system=cfg["prompts"]["system"], reasoning_effort=cfg["reasoning_effort"])
 
 
 def read_answer(gen: GenerationResult, cfg: dict) -> str | None:
@@ -56,7 +40,7 @@ def _full_reply(gen: GenerationResult, prefill: str | None) -> str:
     return lead + gen.raw_text
 
 
-def _result_row(item: Item, cfg: dict, R: int, gen: GenerationResult, batch_size: int) -> dict:
+def _result_row(item: Item, cfg: dict, R: int, gen: GenerationResult, batch_size: int, info: dict) -> dict:
     """Score one generation and lay it out as a result row."""
     pred = read_answer(gen, cfg)
     answer_format, max_chars = cfg.get("answer_format"), cfg.get("answer_max_chars")
@@ -70,9 +54,16 @@ def _result_row(item: Item, cfg: dict, R: int, gen: GenerationResult, batch_size
         "split": item.split,
         "question_type": item.question_type,
         "model_variant": "base",
-        "k": 1.0,
+        "k": info["k"],
         "R": R,
-        "res_px": cfg["res_px"],
+        "res_px": info["res_px"],  # smaller than the config's for `lowres`
+        "selector": info["method"],
+        "n_vis_full": info["n_vis_full"],  # visual tokens before compression; `n_vis` is what the model got
+        # post-ViT methods run the vision tower before generate, so latency = vit_s + compression_s + generate_s
+        "vit_s": info["vit_s"],  # None: the vision tower runs inside generate (none, lowres)
+        "compression_s": info["compression_s"],
+        "compression_flops": info["compression_flops"],
+        "fallback": info["fallback"],
         "pred": pred,
         "answers": list(item.answers),
         "correct": score(item.benchmark, pred, item.answers),  # primary
@@ -97,18 +88,23 @@ def _result_row(item: Item, cfg: dict, R: int, gen: GenerationResult, batch_size
 
 
 def evaluate_item(vlm: LoadedVLM, item: Item, cfg: dict, R: int) -> dict:
-    """Answer one item at loop count R with all visual tokens; return its result row."""
+    """Answer one item at loop count R under `cfg["compressor"]` and `cfg["k"]`; return its result row."""
     set_loops(vlm, R)
-    gen = generate_answers(vlm, [item_inputs(vlm, item, cfg)], cfg)[0]
-    return _result_row(item, cfg, R, gen, batch_size=1)
+    inputs, info = compress(vlm, item_inputs(vlm, item, cfg), item, cfg.get("k", 1.0), cfg)
+    gen = generate_answers(vlm, [inputs], cfg)[0]
+    return _result_row(item, cfg, R, gen, batch_size=1, info=info)
 
 
 def _evaluate_batch(vlm: LoadedVLM, items: Sequence[Item], cfg: dict, R: int) -> list[dict]:
     """Like `evaluate_item` for several items generated as one batch."""
+    if cfg.get("k", 1.0) != 1.0:
+        raise ValueError("compression runs one item at a time; use batch_size 1")
     set_loops(vlm, R)
-    inputs_list = [item_inputs(vlm, item, cfg) for item in items]
-    gens = generate_answers(vlm, inputs_list, cfg, batched=True)
-    return [_result_row(item, cfg, R, gen, batch_size=len(items)) for item, gen in zip(items, gens)]
+    # at k = 1 there is nothing to compress, so a batch takes the inputs as they are (rows say selector "none")
+    prepared = [compress(vlm, item_inputs(vlm, item, cfg), item, 1.0, {**cfg, "compressor": "none"}) for item in items]
+    gens = generate_answers(vlm, [inputs for inputs, _ in prepared], cfg, batched=True)
+    return [_result_row(item, cfg, R, gen, batch_size=len(items), info=info)
+            for item, gen, (_, info) in zip(items, gens, prepared)]
 
 
 def _run_chunk(vlm: LoadedVLM, items: Sequence[Item], cfg: dict, R: int, batch_size: int) -> list[dict]:

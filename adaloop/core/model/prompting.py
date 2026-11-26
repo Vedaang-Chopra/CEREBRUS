@@ -49,7 +49,7 @@ def append_ids(inputs: Mapping, ids: list[int]) -> dict:
     shape = inputs["input_ids"].shape
     longer = dict(inputs)
     for key, value in inputs.items():
-        if value.shape != shape:
+        if not torch.is_tensor(value) or value.shape != shape:  # compressed inputs also carry vision features
             continue
         if key == "input_ids":
             tail = value.new_tensor([ids])

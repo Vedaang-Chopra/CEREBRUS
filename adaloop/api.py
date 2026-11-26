@@ -28,6 +28,7 @@ from adaloop.core.plots.style import set_paper_style
 from adaloop.core.plots.thinking_off import plot_thinking_off
 from adaloop.core.tokens.prune import extract_visual_tokens, prune_inputs
 from adaloop.core.tokens.selectors import (
+    n_keep_for,
     question_embeddings,
     random_selector,
     text_mean_selector,
@@ -37,12 +38,11 @@ from adaloop.data.gqa import build_gqa_splits, load_gqa
 from adaloop.data.splits import load_manifest, make_splits
 from adaloop.data.textvqa import build_textvqa_splits, load_textvqa
 from adaloop.orchestration.audit import wrong_predictions
+from adaloop.orchestration.compress import METHODS, compress
 from adaloop.orchestration.copies import compare_copies, time_copies
 from adaloop.orchestration.cost_timing import time_prefill, time_throughput
 from adaloop.orchestration.evaluate import (
     evaluate_item,
-    item_inputs,
-    item_prompt,
     read_answer,
     read_results,
     run_evaluation,
@@ -55,6 +55,7 @@ from adaloop.orchestration.full_run import (
     shard_items,
     summarize_full,
 )
+from adaloop.orchestration.inputs import item_inputs, item_prompt
 from adaloop.orchestration.pass_state import check_pass_state
 from adaloop.schemas.cost import CostParams
 from adaloop.schemas.items import Item
@@ -72,11 +73,13 @@ __all__ = [
     "Item",
     "LoadedVLM",
     "METHOD_COLORS",
+    "METHODS",
     "VARIANT_LINESTYLES",
     "build_gqa_splits",
     "build_textvqa_splits",
     "check_pass_state",
     "compare_copies",
+    "compress",
     "config_hash",
     "cost_params",
     "cost_ref",
@@ -108,6 +111,7 @@ __all__ = [
     "load_models",
     "load_textvqa",
     "make_splits",
+    "n_keep_for",
     "plot_accuracy_vs_r",
     "plot_cost_model",
     "plot_pass_state",

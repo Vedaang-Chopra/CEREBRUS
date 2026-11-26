@@ -53,3 +53,28 @@ Frozen model, dev split, GQA + TextVQA, R = 3, answer format from S2, k ∈ {25,
 Per method × k: accuracy, FLOPs (ViT + decoder + compression overhead), latency, compression time, actual visual
 token count. 20 items per benchmark first (check), then the full dev split (100 per benchmark).
 Winner = best accuracy at k = 25% and 50% within noise, ties broken by cost. Frozen in `configs/mvp.yaml` → used by S7–S10.
+
+## As built (S4a)
+Interface: `compress(vlm, inputs, item, k, cfg) -> (model inputs for generation, info)` in
+`adaloop/orchestration/compress.py`. Kept count `K = max(1, int(N * k))` for every method except `lowres`.
+At `K = N` nothing is scored: the same packed path runs with every token. Parameters: `compression:` in `configs/mvp.yaml`.
+Upstream clones: `old_code/third_party/{rediprune,divprune,visionzip}`; each ported file's header lists the changes.
+
+| Method | What runs here (deviations from the paper) |
+|---|---|
+| random, uniform, text_mean | random: seed = split seed + crc32(item id). text_mean: mean embedding of the question without the instruction suffix |
+| lowres | long side (step 4 px, at most `res_px`) whose `ceil(w/40) * ceil(h/40)` is closest to k × full count; the count is not exact |
+| crisp_lite | **not full CRISP.** spaCy nouns (NOUN, PROPN) → mean subword input embeddings → best cosine per projected token; top 75% of K, then 25% farthest-point fill. No per-noun quota (Eqs. 3-4), no feature-diversity stage (Eq. 5). No noun: rank by CLS attention (as the paper) |
+| rediprune | upstream `_select_text_cond` byte-identical, α = 0.5, τ = 0. Features = 2×2 units of the last ViT states (1024-d). The 2304-d question-tail embedding is cut to 1024-d by upstream's `adaptive_avg_pool1d` branch: the two spaces are not aligned, so relevance carries little meaning on this model |
+| divprune | upstream max-min on the projected tokens (cosine distance). An index picked twice (only possible with identical tokens) raises |
+| visionzip | upstream Qwen2.5-VL merge on the projected tokens. Score = CLS attention of the last ViT layer (our tower has a CLS token; upstream's Qwen path has none and sums over all queries), 2×2 mean; keys = rotary keys, 2×2 and head mean. Contextual = `int(0.05 * N)` tokens, dominant = the rest of K (upstream at 50%: 45% + 5%) |
+
+CDPruner-style (optional) is not built.
+
+FLOPs of the step (`core/cost/compression.py`): cosine scores, greedy loops, the question self-attention (rediprune), the
+CLS attention row and merge (visionzip). Not counted: softmax/argmax/sort, the spaCy tagger. Wall time `compression_s`
+includes all of them.
+
+Checked on a tiny random model (CPU): k = 100% gives identical last logits and ids for every method (R = 1, 3); exact
+kept counts at 25/50%; the CLS attention equals the layer's eager attention weights; VisionZip changes only the
+contextual target tokens. Not yet run on the real weights (nb07).
