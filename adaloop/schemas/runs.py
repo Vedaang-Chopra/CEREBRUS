@@ -36,8 +36,9 @@ class PolicyRow:
     """One method's path on one item (a row of policy_eval.parquet). Costs as in `TreeLeaf`.
 
     Methods with a trade-off weight set `lam` (cap_frac NaN); best_fixed and oracle are defined per cost cap and set
-    `cap_frac` (lam NaN). `k0` is 0.0 when the method has no common first keep fraction (tokens_only, upfront_15way,
-    oracle); best_fixed holds its cell's k there.
+    `cap_frac` (lam NaN; best_fixed, best_fixed_cell, oracle). `k0` is 0.0 when the method has no common first keep
+    fraction (tokens_only, upfront_15way, best_fixed, oracle); best_fixed_cell holds its cell's k there. best_fixed is
+    a random mix of two cells: its rows hold the expected `correct` and FLOPs of the item.
     """
 
     method: str

@@ -9,10 +9,17 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from adaloop.core.controller.baselines import hull_mix, upper_hull
 from adaloop.core.controller.curves import interpolation_weights
 from adaloop.core.controller.synthetic import synthetic_grid
 from adaloop.core.eval.bootstrap import holm_adjust, paired_bootstrap_p
-from adaloop.orchestration.cell_policies import best_fixed_rows, cell_arrays, grid_cells, oracle_rows
+from adaloop.orchestration.cell_policies import (
+    best_fixed_cell_rows,
+    best_fixed_rows,
+    cell_arrays,
+    grid_cells,
+    oracle_rows,
+)
 
 CTRL = {"splits": {"train": "ctrl_train", "dev": "dev", "eval": ["dev"]}, "cap_fracs": [0.5, 1.0]}
 
@@ -35,24 +42,48 @@ def test_holm_and_p() -> None:
     print("✓ PASS statistics: Holm (a missing claim still counts) and bootstrap p")
 
 
+def test_hull_by_hand() -> None:
+    # cells (cost, selection accuracy): (1, .2) (2, .3) (3, .8) (4, .9) (5, .7)
+    # (2, .3) is under the line (1, .2)-(3, .8); (5, .7) is past the most accurate cell: hull = cells 0, 2, 3
+    select = np.tile([0.2, 0.3, 0.8, 0.9, 0.7], (10, 1))
+    costs = np.tile([1e12, 2e12, 3e12, 4e12, 5e12], (4, 1))  # report items (FLOPs-sized numbers)
+    assert upper_hull(select.mean(axis=0), costs.mean(axis=0)) == [0, 2, 3]
+    for target, expected in [(1, [1, 0, 0, 0, 0]), (2, [0.5, 0, 0.5, 0, 0]), (3.5, [0, 0, 0.5, 0.5, 0]),
+                             (4.5, [0, 0, 0, 1, 0]), (5, [0, 0, 0, 1, 0])]:  # above the top: stay on it
+        assert np.allclose(hull_mix(select, costs, target * 1e12), expected), target
+    assert np.isclose(select.mean(axis=0) @ hull_mix(select, costs, 2e12), 0.5)
+    assert hull_mix(select, costs, 0.5e12) is None and hull_mix(select, costs, 5.1e12) is None
+    print("✓ PASS best_fixed hull: hand example, cost matched, flat above the top, no extrapolation")
+
+
 def test_cell_policies() -> None:
     grid, _ = synthetic_grid(n_items=20)
     cells = grid_cells(grid)
     keys, values, costs, cost_ref = cell_arrays(grid, "dev", cells)
     assert values.shape == (40, 15) and np.allclose(cost_ref, costs[:, cells.index((1.0, 3))])
-    best, oracle = best_fixed_rows(grid, CTRL), oracle_rows(grid, CTRL)
+    mix, single, oracle = best_fixed_rows(grid, CTRL), best_fixed_cell_rows(grid, CTRL), oracle_rows(grid, CTRL)
+    assert set(mix["method"]) == {"best_fixed"} and set(single["method"]) == {"best_fixed_cell"}
     for frac in CTRL["cap_fracs"]:
-        fixed, free = best[best["cap_frac"] == frac], oracle[oracle["cap_frac"] == frac]
+        mixed, fixed, free = (part[part["cap_frac"] == frac] for part in (mix, single, oracle))
         assert fixed["path"].nunique() <= 1
-        for part in (fixed, free):
+        for part in (mixed, fixed, free):
             if len(part):
-                assert part["flops_total"].mean() <= frac * part["cost_ref"].mean() * (1 + 1e-9)
+                assert part["flops_total"].mean() <= frac * part["cost_ref"].mean() * (1 + 1e-9) + 1  # whole FLOPs
+        top = mixed["path"].str.count("~").eq(0).all()  # on one cell: it may cost less than the cap
+        if len(mixed) and not top:
+            assert abs(mixed["flops_total"].mean() - frac * mixed["cost_ref"].mean()) <= 1
         if len(fixed):
             assert free["correct"].mean() >= fixed["correct"].mean()
-    print("✓ PASS cell policies: caps respected, one fixed cell, oracle >= best fixed")
+        if len(mixed):  # a mix is a fractional choice: it can beat the integer oracle by less than one item
+            assert free["correct"].mean() >= mixed["correct"].mean() - 1 / len(mixed)
+    # labels of the report split change no choice
+    shuffled = grid.assign(correct=np.where(grid["split"] == "dev", 1 - grid["correct"], grid["correct"]))
+    assert best_fixed_rows(shuffled, CTRL)["path"].equals(mix["path"])
+    print("✓ PASS cell policies: caps respected, one fixed cell, oracle bounds, no report label in the hull")
 
 
 if __name__ == "__main__":
     test_interpolation()
     test_holm_and_p()
+    test_hull_by_hand()
     test_cell_policies()

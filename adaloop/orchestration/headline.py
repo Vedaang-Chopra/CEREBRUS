@@ -14,9 +14,9 @@ from adaloop.core.eval.bootstrap import holm_adjust, paired_bootstrap_ci, paired
 from adaloop.orchestration.tree import check_test_allowed
 
 ITEM = ["benchmark", "item_id"]
-CAP_METHODS = ("best_fixed", "oracle")  # defined per cost cap: no curve to interpolate
-METHOD_ORDER = ("controller", "controller_no_h", "heuristic", "best_fixed", "early_exit_only", "tokens_only",
-                "upfront_15way", "random", "oracle")
+CAP_METHODS = ("best_fixed", "best_fixed_cell", "oracle")  # defined per cost cap: no curve to interpolate
+METHOD_ORDER = ("controller", "controller_no_h", "heuristic", "best_fixed", "best_fixed_cell", "early_exit_only",
+                "tokens_only", "upfront_15way", "random", "oracle")
 
 
 def report_split(ctrl: dict) -> str:
@@ -73,7 +73,8 @@ def method_at(rows: pd.DataFrame, method: str, frac: float, ctrl: dict) -> tuple
     Curve methods: k0 is the one with the best interpolated accuracy on dev, then the report split's curve of that k0
     is read at `frac` (its costs use no labels). No extrapolation: a curve that does not reach `frac` gives NaN and a
     note; `acc_within_cap` then still shows the best dev-chosen point that costs no more than `frac`.
-    best_fixed and oracle: their rows of this cap. All accuracies in %.
+    best_fixed (hull mix at exactly this cost; above its most accurate cell it stays there and costs less),
+    best_fixed_cell and oracle (mean FLOPs <= cap): their rows of this cap. All accuracies in %.
     """
     part = rows[rows["method"] == method]
     split, dev = report_split(ctrl), ctrl["splits"]["dev"]
@@ -84,7 +85,9 @@ def method_at(rows: pd.DataFrame, method: str, frac: float, ctrl: dict) -> tuple
     if method in CAP_METHODS:
         at_cap = part[(part["split"] == split) & np.isclose(part["cap_frac"], frac)]
         if at_cap.empty:
-            return {**out, "note": f"nothing fits {frac} x cost_ref"}, None
+            why = (f"{frac} x cost_ref is outside the cost range of the hull" if method == "best_fixed"
+                   else f"nothing fits {frac} x cost_ref")
+            return {**out, "note": why}, None
         scores = at_cap.set_index(ITEM)["correct"].sort_index().to_frame().T
         cost = at_cap["flops_total"].mean() / at_cap["cost_ref"].mean()
         out.update(k0=at_cap["k0"].iloc[0], cost_frac=cost, acc_within_cap=100.0 * at_cap["correct"].mean())

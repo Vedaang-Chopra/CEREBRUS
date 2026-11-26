@@ -1,4 +1,5 @@
 """Public entry points. Notebooks and scripts import only this module."""
+from adaloop.core.controller.baselines import hull_mix, upper_hull
 from adaloop.core.controller.chooser import Chooser, chooser_loss
 from adaloop.core.controller.curves import interpolation_weights
 from adaloop.core.controller.features import pass_features
@@ -98,7 +99,13 @@ from adaloop.orchestration.compare import (
 )
 from adaloop.orchestration.batch_diagnostic import diagnose_batch
 from adaloop.orchestration.batching import batchable_items, item_chunks
-from adaloop.orchestration.cell_policies import best_fixed_rows, cell_arrays, grid_cells, oracle_rows
+from adaloop.orchestration.cell_policies import (
+    best_fixed_cell_rows,
+    best_fixed_rows,
+    cell_arrays,
+    grid_cells,
+    oracle_rows,
+)
 from adaloop.orchestration.cells import check_batched
 from adaloop.orchestration.compress import METHODS, compress, encode_vision
 from adaloop.orchestration.controller import greedy_exits, run_controller, run_heuristic, run_policies, train_policy
@@ -208,7 +215,10 @@ __all__ = [
     "save_baseline_rows",
     "tokens_only_rows",
     "upfront_15way_rows",
+    "best_fixed_cell_rows",
     "best_fixed_rows",
+    "hull_mix",
+    "upper_hull",
     "cell_arrays",
     "grid_cells",
     "oracle_rows",

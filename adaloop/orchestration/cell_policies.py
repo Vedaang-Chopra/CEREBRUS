@@ -1,8 +1,9 @@
-"""S13 policies that pick fixed (k, R) cells: shared arrays and rows, best_fixed and the oracle per cost cap."""
+"""S13 policies over fixed (k, R) cells: shared arrays and rows; per cost cap best_fixed (hull mix), the single best
+fixed cell and the oracle."""
 import numpy as np
 import pandas as pd
 
-from adaloop.core.controller.baselines import best_fixed_cell
+from adaloop.core.controller.baselines import best_fixed_cell, hull_mix
 from adaloop.core.controller.rows import POLICY_COLUMNS
 from adaloop.core.cost.flops import REF_R
 from adaloop.core.eval.oracle import oracle_choices
@@ -52,8 +53,39 @@ def cell_rows(keys: pd.DataFrame, cells: list[tuple], picks: np.ndarray, values:
     return table[POLICY_COLUMNS]
 
 
+def _mix_name(cells: list[tuple], weights: np.ndarray) -> str:
+    """"k0.25,X@2:0.70~k0.5,X@1:0.30": the cells of a mix and their shares."""
+    return "~".join(f"k{cells[j][0]:g},X@{cells[j][1]}:{weights[j]:.2f}" for j in np.flatnonzero(weights))
+
+
 def best_fixed_rows(grid: pd.DataFrame, ctrl: dict) -> pd.DataFrame:
-    """Per cost cap one cell for every item: chosen on the train split among the cells that fit on the eval items.
+    """`best_fixed`: per cost cap the mix of two fixed cells on the upper hull, at mean FLOPs = the cap (`hull_mix`).
+
+    Hull from the train split's accuracy and the eval items' costs. A row holds the item's EXPECTED score and FLOPs
+    under the mix, so `correct` is not one of the benchmark's score values. Cap = cap_frac x mean cost_ref of the
+    evaluated split. A cap outside the cells' cost range gives no rows (printed).
+    """
+    cells = grid_cells(grid)
+    _, select_values, _, _ = cell_arrays(grid, ctrl["splits"]["train"], cells)
+    out = []
+    for split in ctrl["splits"]["eval"]:
+        keys, values, costs, cost_ref = cell_arrays(grid, split, cells)
+        for frac in ctrl["cap_fracs"]:
+            weights = hull_mix(select_values, costs, frac * cost_ref.mean())
+            if weights is None:
+                print(f"best_fixed {split}: {frac} x cost_ref is outside the cost range of the hull")
+                continue
+            cost = np.rint(costs @ weights).astype(np.int64)
+            table = keys.assign(
+                method="best_fixed", lam=np.nan, cap_frac=frac, seed=0, k0=0.0, path=_mix_name(cells, weights),
+                correct=values @ weights, flops_total=cost, flops_cell=cost, flops_discarded=0, flops_readout=0,
+                flops_state=0, cost_ref=cost_ref.astype(np.int64))
+            out.append(table[POLICY_COLUMNS])
+    return pd.concat(out, ignore_index=True)
+
+
+def best_fixed_cell_rows(grid: pd.DataFrame, ctrl: dict) -> pd.DataFrame:
+    """`best_fixed_cell` (prereg wording, secondary): per cost cap one cell for every item: chosen on the train split among the cells that fit on the eval items.
 
     Cap = cap_frac x mean cost_ref of the evaluated split. A cap that no cell fits gives no rows (printed).
     """
@@ -65,10 +97,10 @@ def best_fixed_rows(grid: pd.DataFrame, ctrl: dict) -> pd.DataFrame:
         for frac in ctrl["cap_fracs"]:
             best = best_fixed_cell(select_values, select_costs, costs, frac * cost_ref.mean())
             if best is None:
-                print(f"best_fixed {split}: no cell fits {frac} x cost_ref")
+                print(f"best_fixed_cell {split}: no cell fits {frac} x cost_ref")
                 continue
             picks = np.full(len(keys), best)
-            out.append(cell_rows(keys, cells, picks, values, costs, cost_ref, "best_fixed", k0=cells[best][0],
+            out.append(cell_rows(keys, cells, picks, values, costs, cost_ref, "best_fixed_cell", k0=cells[best][0],
                                  cap_frac=frac))
     return pd.concat(out, ignore_index=True)
 

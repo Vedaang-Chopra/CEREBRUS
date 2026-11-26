@@ -7,9 +7,10 @@ from adaloop.core.plots.checks import require_columns
 from adaloop.core.plots.colors import METHOD_COLORS
 from adaloop.core.plots.style import ONE_COLUMN_WIDTH_IN
 
-MARKERS = {"controller": "o", "controller_no_h": "o", "heuristic": "D", "best_fixed": "s", "early_exit_only": "^",
+MARKERS = {"controller": "o", "controller_no_h": "o", "heuristic": "D", "best_fixed": "s", "best_fixed_cell": "+",
+           "early_exit_only": "^",
            "tokens_only": "v", "upfront_15way": "P", "random": "x", "oracle": "*"}
-DASHED = ("controller_no_h", "random", "oracle")
+DASHED = ("controller_no_h", "best_fixed_cell", "random", "oracle")
 
 
 def plot_iso_cost(points: pd.DataFrame, headline_frac: float, title: str) -> Figure:

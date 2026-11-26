@@ -20,6 +20,7 @@ METHOD_COLORS: dict[str, str] = {
     "random": "#BBBBBB",
     "heuristic": OKABE_ITO["orange"],
     "best_fixed": OKABE_ITO["blue"],
+    "best_fixed_cell": OKABE_ITO["blue"],  # the single-cell reading: same colour, dashed
     "early_exit_only": OKABE_ITO["sky_blue"],
     "tokens_only": OKABE_ITO["bluish_green"],
     "upfront_15way": OKABE_ITO["reddish_purple"],

@@ -29,7 +29,7 @@ batch_trees: 32           # whole trees (25 nodes each) per step
 epochs: 50
 patience: 10              # stop after this many epochs without a better dev reward
 seeds: [0, 1, 2]
-lambdas: [0.0, 0.05, 0.1, 0.2, 0.4, 0.8]  # reward = correct - lambda * cost / cost_ref
+lambdas: [0.0, 0.05, 0.1, 0.2, 0.4, 0.8, 1.6, 3.2]  # reward = correct - lambda * cost / cost_ref
 
 # cost caps (x cost_ref = mean FLOPs of k = 1, R = 3) for the dev choice of (k0, lambda); headline 0.5
 cap_fracs: [0.25, 0.35, 0.5, 0.65, 0.8, 1.0, 1.25, 1.5]
@@ -49,8 +49,9 @@ baselines:
 
 # S14: accuracy at this cost (x cost_ref) by interpolation along each curve, chosen on `splits.dev`
 headline_frac: 0.5
-claims: [best_fixed, heuristic, early_exit_only, tokens_only, upfront_15way]  # the Holm family (controller - each)
-min_gain_pts: 1.0         # prereg decision rule on controller - best_fixed (DEC3 §1)
+# the Holm family (controller - each). best_fixed: the hull mix of fixed cells; best_fixed_cell is secondary
+claims: [best_fixed, heuristic, early_exit_only, tokens_only, upfront_15way]
+min_gain_pts: 1.0         # prereg decision rule on controller - best_fixed (hull mix) (DEC3 §1)
 bootstrap: {n_boot: 10000, seed: 0}
 
 # nb11 with SYNTHETIC = True: a made-up grid, written outside the real outputs

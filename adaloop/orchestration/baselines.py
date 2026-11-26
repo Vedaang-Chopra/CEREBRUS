@@ -11,7 +11,8 @@ from adaloop.orchestration.controller import run_controller
 from adaloop.orchestration.tree import build_tree
 from adaloop.schemas.cost import CostParams
 
-BASELINES = ("best_fixed", "early_exit_only", "tokens_only", "upfront_15way", "oracle", "random", "controller_no_h")
+BASELINES = ("best_fixed", "best_fixed_cell", "early_exit_only", "tokens_only", "upfront_15way", "oracle", "random",
+             "controller_no_h")
 ITEM = ["benchmark", "item_id"]
 
 
