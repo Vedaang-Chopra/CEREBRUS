@@ -55,3 +55,6 @@ No code is written for a step before the previous step's result is in. Infrastru
 - Sync rule: let implementation sessions run `scripts/sync_inara.sh` themselves?
 - Hermes: approve the install in the `basic-code-changes` session; commit `.claude/skills/` or keep local?
 - `configs/prereg.yaml`: the "what changed since Oct 1" sentence (needed before S12).
+
+## Later to-do (run separately, after the main path)
+- **S5 extra budgets:** compare all methods at k = 10% and 75% too (`compare.ks`), for the full accuracy-vs-tokens curve per method (paper figure). Separate run after the S5 dev run is done; do not edit `configs/mvp.yaml` while a run resumes. ~10 min batched.
