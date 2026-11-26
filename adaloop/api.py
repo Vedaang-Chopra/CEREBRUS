@@ -39,6 +39,15 @@ from adaloop.core.tokens.selectors import (
     text_mean_selector,
     uniform_selector,
 )
+from adaloop.core.train.lora import (
+    attach_lora,
+    expected_target_count,
+    load_lora,
+    lora_parameters,
+    lora_target_names,
+    remove_lora,
+)
+from adaloop.core.train.schedule import pairing_table, teacher_depth, variant_config, variant_name
 from adaloop.core.train.teacher import answer_log_probs, split_top
 from adaloop.core.train.teacher_store import load_records, read_index
 from adaloop.data.gqa import build_gqa_splits, load_gqa
@@ -81,6 +90,14 @@ from adaloop.orchestration.full_run import (
 )
 from adaloop.orchestration.grid import grid_items, merge_grid, rerun_items, run_grid
 from adaloop.orchestration.inputs import item_inputs, item_prompt
+from adaloop.orchestration.lora_checks import (
+    lora_eval_probe,
+    lora_grad_norms,
+    one_step_check,
+    probe_loss,
+    student_layer_calls,
+)
+from adaloop.orchestration.lora_data import load_targets, schedule_table, student_inputs, item_loss
 from adaloop.orchestration.pass_state import check_pass_state
 from adaloop.orchestration.teacher_cache import (
     build_teacher_cache,
@@ -92,6 +109,7 @@ from adaloop.orchestration.teacher_cache import (
     teacher_summary,
     teacher_total_records,
 )
+from adaloop.orchestration.train_lora import lora_run_dir, lora_run_estimate, train_lora
 from adaloop.schemas.cost import CostParams
 from adaloop.schemas.items import Item
 from adaloop.schemas.vlm import GenerationResult, LoadedVLM
@@ -102,6 +120,20 @@ from utils.images import load_image, resize_long_side
 from utils.io import load_config
 
 __all__ = [
+    "attach_lora",
+    "expected_target_count",
+    "item_loss",
+    "load_lora",
+    "load_targets",
+    "lora_eval_probe",
+    "lora_grad_norms",
+    "lora_parameters",
+    "lora_run_dir",
+    "lora_run_estimate",
+    "lora_target_names",
+    "one_step_check",
+    "pairing_table",
+    "probe_loss",
     "REF_R",
     "answer_log_probs",
     "build_teacher_cache",
@@ -112,6 +144,13 @@ __all__ = [
     "LoadedVLM",
     "METHOD_COLORS",
     "METHODS",
+    "remove_lora",
+    "schedule_table",
+    "student_inputs",
+    "student_layer_calls",
+    "teacher_depth",
+    "train_lora",
+    "variant_config",
     "VARIANT_LINESTYLES",
     "build_gqa_splits",
     "build_textvqa_splits",
@@ -222,5 +261,6 @@ __all__ = [
     "time_throughput",
     "uniform_selector",
     "unload_model",
+    "variant_name",
     "wrong_predictions",
 ]

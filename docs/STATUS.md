@@ -37,7 +37,7 @@ No code is written for a step before the previous step's result is in. Infrastru
 | S6 | FLOPs model + throughput → item counts | — | not started | can start now (no dependency on S2) |
 | S7 | Base grid 15 cells + noise re-run | — | not started | needs S2–S6 |
 | S8 | Multi-depth teacher cache (100% tokens, R=1..5, all lora_train) | 09 | code ready, not run on GPU | you: run 09, paste Step-2; then the full run (GPUs 0–7 allowed for it) |
-| S9 | Two LoRAs: A depth-matched, B fixed R=3 teacher | 10 | waits for S8 validation + your approval | needs S5 winner; peft not yet installed |
+| S9 | Two LoRAs: A depth-matched (teacher R = student R), B `fixed:5` teacher for compressed samples (default, to be confirmed; `fixed:3` still works) | 10 | code written, CPU-checked on a tiny model, not run on GPU; training waits for S8 validation + your approval | you: approve the B depth; run 10 on Inara and paste the outputs; peft==0.22.0 pinned in `environment.yml` / `pyproject.toml` |
 | S10 | Grids for base, A, B (15 cells each) | — | not started | |
 | S11 | Action tree from grid | — | not started | |
 | S12 | Controller (heuristic + learned) | — | not started | |

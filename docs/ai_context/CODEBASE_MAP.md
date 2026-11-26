@@ -10,7 +10,14 @@ Kept current by the agent after every step (see `docs/IMPLEMENTATION.md` §0). L
 | `adaloop/orchestration/inputs.py` | L3 | `item_prompt`, `item_inputs` | A | moved out of `evaluate.py` (compression builds inputs too) |
 | `adaloop/core/tokens/` | L4 | `extract_visual_tokens`, `prune_inputs`, selectors, `n_keep_for`; `methods/` (crisp_lite, rediprune, divprune, visionzip), `vision.py` (attention inputs, then CLS attention and keys per unit) | A | see `docs/notes/compression_baselines.md` |
 | `adaloop/orchestration/teacher_cache.py` | L3 | `teacher_items`, `build_teacher_cache`, `teacher_records`, `check_teacher_live`, `teacher_summary` | A | S8; tiny-model check only, nb09 not yet run |
-| `adaloop/core/train/` | L4 | `answer_log_probs`, `split_top`, `target_tensors` (`teacher.py`); `read_index`, `write_part`, `load_records` (`teacher_store.py`) | A | LoRA training (S9) stays on `wip/post-training` |
+| `adaloop/core/train/` | L4 | `answer_log_probs`, `split_top`, `target_tensors` (`teacher.py`); `read_index`, `write_part`, `load_records` (`teacher_store.py`) | A | S8 teacher store; the S9 files are listed below |
+| `adaloop/schemas/train.py` | L5 | `TeacherTarget`, `TrainSample` | A | S9 data contracts; CPU-checked only |
+| `adaloop/core/train/schedule.py` | L4 | `parse_teacher_rule`, `teacher_depth`, `variant_name`, `variant_config`, `sample_budget`, `train_sample`, `pairing_table` | A | S9 sample schedule and teacher rule (`lora.teacher_R`); CPU-checked |
+| `adaloop/core/train/lora.py` | L4 | `attach_lora`, `load_lora`, `save_lora`, `remove_lora`, `lora_target_names`, `expected_target_count`, `lora_parameters` | A | S9 PEFT attach (peft imported lazily); CPU-checked on a tiny model |
+| `adaloop/core/train/distill.py` | L4 | `kl_topk`, `distill_loss`, `training_mode` | A | S9 forward KL on teacher top-32 + tail; not run on GPU |
+| `adaloop/orchestration/lora_data.py` | L3 | `load_targets`, `student_inputs`, `item_loss`, `schedule_table` | A | S9 teacher records to student samples; not run on GPU |
+| `adaloop/orchestration/train_lora.py` | L3 | `train_lora`, `lora_run_dir`, `lora_run_estimate` | A | S9 training loop, resumable; not run on GPU |
+| `adaloop/orchestration/lora_checks.py` | L3 | `one_step_check`, `lora_grad_norms`, `student_layer_calls`, `probe_loss`, `lora_eval_probe` | A | S9 checks and probes (nb10); not run on GPU |
 | `adaloop/orchestration/grid.py` | L3 | `grid_items`, `rerun_items`, `run_grid`, `merge_grid` | A | S7; `full_run.py` stays the k = 1 batched baseline; tiny-model check only |
 | `adaloop/orchestration/cells.py` | L3 | `ChunkInputs`, `generate_cell`, `map_copies`, `check_batched` | A | batched compressed evaluation shared by S5/S7; batched = batch 1 not yet checked on real weights |
 | `adaloop/orchestration/batching.py` | L3 | `item_chunks`, `batchable_items` | A | equal-length batches; not yet checked on real weights |
