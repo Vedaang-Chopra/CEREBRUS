@@ -1,10 +1,10 @@
-"""Cells answered at batch 1, one JSONL per (benchmark, cell), resumable, finished S5 rows reused.
+"""Cells answered at batch 1, one JSONL per (benchmark, cell), resumable, S5 rows of the same config hash reused.
 
 A cell is {"cell": name, "keys": the config keys it sets}. Used by the resolution check and the Pareto sweep; batch 1
 throughout, so the same runner serves the accuracy run (several copies) and the latency pass (one copy).
 """
 import json
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import numpy as np
@@ -33,14 +33,45 @@ def _answer(vlm: LoadedVLM, item: Item, cell_cfg: dict, R: int) -> dict:
     return result_row(item, cell_cfg, R, gen, batch_size=1, info=info)
 
 
+def _cell_files(benchmark: str, cell: dict, cfg: dict, R: int, out_dir: Path, reuse_dir: str | Path | None) -> dict:
+    """The cell with its config, own file, and the finished rows: `old` from `reuse_dir`, `own` from `out_dir`."""
+    cell_cfg = {**cfg, **cell["keys"]}
+    digest = config_hash(cell_cfg)
+    path = out_dir / f"{benchmark}_{cell['cell']}_R{R}_{digest}.jsonl"
+    old = []
+    method, k = cell["keys"]["compressor"], cell["keys"].get("k")
+    if reuse_dir is not None and k is not None:  # the file name pattern of run_comparison
+        pattern = f"{benchmark}_{method}_k{round(100 * k)}_R{R}_n*_{digest}.jsonl"
+        old = [row for found in sorted(Path(reuse_dir).glob(pattern)) for row in read_results(found)]
+    own = read_results(path) if path.exists() else []
+    if {row["config_hash"] for row in old + own} - {digest}:
+        raise ValueError(f"{cell['cell']} {benchmark}: rows from another config than {digest}")
+    return {**cell, "cfg": cell_cfg, "path": path, "old": old, "own": own}
+
+
+def cell_status(items: Mapping[str, Sequence[Item]], cells: Sequence[dict], cfg: dict, R: int, out_dir: str | Path,
+                reuse_dir: str | Path | None = None) -> list[dict]:
+    """Per (benchmark, cell), counted from the files (nothing is written): of `n_items` answers, how many are
+    `reused` (in `reuse_dir`), `own` (only in `out_dir`) and `missing`."""
+    status = []
+    for benchmark, bench_items in items.items():
+        ids = {item.item_id for item in bench_items}
+        for cell in cells:
+            files = _cell_files(benchmark, cell, cfg, R, Path(out_dir), reuse_dir)
+            reused = ids & {row["item_id"] for row in files["old"]}
+            own = ids & {row["item_id"] for row in files["own"]} - reused
+            status.append({"benchmark": benchmark, "cell": cell["cell"], "n_items": len(ids), "reused": len(reused),
+                           "own": len(own), "missing": len(ids) - len(reused) - len(own)})
+    return status
+
+
 def run_batch1_cells(vlms: Sequence[LoadedVLM], items: Mapping[str, Sequence[Item]], cells: Sequence[dict],
-                     cfg: dict, R: int, out_dir: str | Path, reuse_dir: str | Path | None = None,
-                     must_reuse: Collection[str] = ()) -> list[dict]:
+                     cfg: dict, R: int, out_dir: str | Path, reuse_dir: str | Path | None = None) -> list[dict]:
     """Every cell on every benchmark's items at batch 1 (resumable); return the rows with cell, FLOPs and latency.
 
     `reuse_dir` holds `run_comparison` files: rows of a cell with the same config hash are taken from there and never
-    run again (`source` "reused"). Cells named in `must_reuse` are never run: a missing row is an error. Files are not
-    named by the item count, so a sample run's rows count in the full run.
+    run again (`source` "reused"); whatever is missing there and in `out_dir` is run. Files are not named by the item
+    count, so a sample run's rows count in the full run.
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -49,28 +80,12 @@ def run_batch1_cells(vlms: Sequence[LoadedVLM], items: Mapping[str, Sequence[Ite
     rows = []
     for benchmark, bench_items in items.items():
         ### Step-1:- What is already there, per cell: reused rows first, then this folder's own
-        todo = [{**cell, "cfg": {**cfg, **cell["keys"]}} for cell in cells]
+        todo = [_cell_files(benchmark, cell, cfg, R, out_dir, reuse_dir) for cell in cells]
         for cell in todo:
-            digest = config_hash(cell["cfg"])
-            cell["path"] = out_dir / f"{benchmark}_{cell['cell']}_R{R}_{digest}.jsonl"
-            old = []
-            if reuse_dir is not None:  # the file name pattern of run_comparison
-                method, k = cell["keys"]["compressor"], cell["keys"].get("k")
-                if k is not None:
-                    pattern = f"{benchmark}_{method}_k{round(100 * k)}_R{R}_n*_{digest}.jsonl"
-                    old = [row for path in sorted(Path(reuse_dir).glob(pattern)) for row in read_results(path)]
-            if cell["cell"] in must_reuse:
-                missing = {item.item_id for item in bench_items} - {row["item_id"] for row in old}
-                if missing:
-                    raise ValueError(f"{cell['cell']} {benchmark}: {len(missing)} items have no finished row with hash "
-                                     f"{digest} in {reuse_dir}; this cell is reused, never run again")
-            own = read_results(cell["path"]) if cell["path"].exists() else []
-            if own:  # rewrite clean lines before appending
-                cell["path"].write_text("".join(json.dumps(row) + "\n" for row in own))
-            if {row["config_hash"] for row in old + own} - {digest}:
-                raise ValueError(f"{cell['cell']} {benchmark}: rows from another config than {digest}")
-            cell["done"] = {row["item_id"]: {**row, "source": "run"} for row in own}
-            cell["done"].update({row["item_id"]: {**row, "source": "reused"} for row in old})
+            if cell["own"]:  # rewrite clean lines before appending
+                cell["path"].write_text("".join(json.dumps(row) + "\n" for row in cell["own"]))
+            cell["done"] = {row["item_id"]: {**row, "source": "run"} for row in cell["own"]}
+            cell["done"].update({row["item_id"]: {**row, "source": "reused"} for row in cell["old"]})
 
         ### Step-2:- Run what is missing, one item per copy at a time
         pending = [item for item in bench_items if any(item.item_id not in cell["done"] for cell in todo)]

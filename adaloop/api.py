@@ -106,7 +106,13 @@ from adaloop.orchestration.lora_checks import (
     student_layer_calls,
 )
 from adaloop.orchestration.lora_data import load_targets, schedule_table, student_inputs, item_loss
-from adaloop.orchestration.pareto import pareto_cells, pareto_reused_cells, pareto_table, run_pareto
+from adaloop.orchestration.pareto import (
+    pareto_cells,
+    pareto_seconds_per_answer,
+    pareto_status,
+    pareto_table,
+    run_pareto,
+)
 from adaloop.orchestration.pass_state import check_pass_state
 from adaloop.orchestration.profile import profile_cells, profile_item, profile_items, profile_table
 from adaloop.orchestration.resolution import (
@@ -165,7 +171,8 @@ __all__ = [
     "pairing_table",
     "pareto_cells",
     "pareto_front",
-    "pareto_reused_cells",
+    "pareto_seconds_per_answer",
+    "pareto_status",
     "pareto_table",
     "probe_loss",
     "REF_R",

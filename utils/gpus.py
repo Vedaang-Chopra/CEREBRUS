@@ -120,9 +120,18 @@ def claim_gpu_group(cfg: dict, lock_dir: str | Path) -> list[int]:
     raise RuntimeError(f"no free GPU group to claim: {'; '.join(skipped)}")
 
 
-def select_for_notebook(config: str | Path) -> tuple[list[int], int]:
-    """Select the GPUs for the config's `n_copies` (1: one free group, more: all groups); return (ids, n_copies)."""
-    cfg = load_config(find_repo_root() / config)
+def full_gpu_overrides(config: str | Path) -> dict:
+    """Config keys of a run over `full_gpu_groups` (unhashed): those groups as `gpu_groups`, one copy per group."""
+    groups = load_config(find_repo_root() / config)["full_gpu_groups"]
+    return {"gpu_groups": groups, "n_copies": len(groups)}
+
+
+def select_for_notebook(config: str | Path, overrides: dict | None = None) -> tuple[list[int], int]:
+    """Select the GPUs for the config's `n_copies` (1: one free group, more: all groups); return (ids, n_copies).
+
+    `overrides` replaces config keys first (`full_gpu_overrides`); pass the same to `setup_notebook`.
+    """
+    cfg = {**load_config(find_repo_root() / config), **(overrides or {})}
     n_copies = cfg["n_copies"]
     return select_gpu_group(cfg, "all" if n_copies > 1 else None), n_copies
 

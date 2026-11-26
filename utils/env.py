@@ -36,13 +36,13 @@ def _check_gpus(cfg: dict) -> None:
         print(f"CUDA_VISIBLE_DEVICES={visible}")
 
 
-def setup_notebook(config: str = "configs/mvp.yaml") -> tuple[Path, dict]:
+def setup_notebook(config: str = "configs/mvp.yaml", overrides: dict | None = None) -> tuple[Path, dict]:
     """Prepare a notebook session and return (repo root, loaded config).
 
     Changes into the repo root, puts it on sys.path, loads env.env if present
     (variables already set are kept),
     and silences transformers/datasets logs, FutureWarning and UserWarning.
-    A relative `config` path is resolved against the repo root.
+    A relative `config` path is resolved against the repo root. `overrides` replaces top-level config keys.
     Does not select GPUs (importing this module is already too late): it only checks
     CUDA_VISIBLE_DEVICES, set earlier by `utils.gpus.select_gpu_group`.
     """
@@ -57,6 +57,6 @@ def setup_notebook(config: str = "configs/mvp.yaml") -> tuple[Path, dict]:
     for category in (FutureWarning, UserWarning):
         warnings.filterwarnings("ignore", category=category)
     print(f"repo root: {root}")
-    cfg = load_config(root / config)
+    cfg = {**load_config(root / config), **(overrides or {})}
     _check_gpus(cfg)
     return root, cfg

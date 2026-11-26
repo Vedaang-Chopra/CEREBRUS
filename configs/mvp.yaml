@@ -1,7 +1,10 @@
 model_id: thinkingmachines/TML-d24-varloop-research
-# Only physical GPUs 0-3 may be used on Inara. One model copy needs 2 A40s, so each group runs one copy.
+# Only physical GPUs 0-3 may be used on Inara (exceptions: full_gpu_groups below). One model copy needs 2 A40s, so each group runs one copy.
 # full_baseline.yaml may override this on another server. Placement only: not part of the config hash.
 gpu_groups: [[0, 1], [2, 3]]
+# GPUs 0-7, big runs only: `scripts/mvp.py full` (one shard per group) and nb07 with ALL_GPUS (one copy per group).
+# Placement only: not hashed.
+full_gpu_groups: [[0, 1], [2, 3], [4, 5], [6, 7]]
 device_map: balanced
 # keys are visible-device indices (after CUDA_VISIBLE_DEVICES), not physical GPU ids
 max_memory: {0: 35GiB, 1: 35GiB}
@@ -19,7 +22,7 @@ eval_batch_size: 1
 batch_grouping: equal_length
 # items per benchmark of the batch-1, one-copy timing pass (S5 in nb07, grid timing in nb06). Not hashed.
 latency_items: 10
-res_px: 512
+res_px: 768  # long side; decided Nov 26 (docs/decisions.md). The 512 px results are the S5 record
 # system prompt and question suffix; the file's content replaces this value on load, so it is part of config_hash
 prompts: prompts.yaml
 # the reply ends with "ANSWER: <answer>"; only the text after the last marker is graded
@@ -102,9 +105,14 @@ pareto:
   methods: [random, uniform, text_mean, lowres, crisp_lite, rediprune, divprune, visionzip]
   ks: [0.1, 0.25, 0.5, 0.75, 1.0]
   ms: [0.0, 0.5, 1.0, 1.5, 3.0]  # 1.5 is TRIM's value
-  # finished S5 runs under out_dir: the S5 cells are read from there and never run again
+  # finished S5 runs under out_dir: a cell with the same config hash is read from there; every other cell is run
   reuse_dir: nb07/compare_dev
   reuse_latency_dir: nb07/compare_dev_latency
+  # time estimate before the run: median seconds per answer of the batch-1 rows at res_px in timing_dir (under
+  # out_dir); without such files, the number below
+  timing_dir: nb04/resolution_latency
+  seconds_per_answer: 1.0
+  seconds_source: "S5 batch-1 medians at 512 px, 0.77-1.02 s (docs/decisions.md, Nov 25); not a 768 px number"
 
 # Inference profiling (nb06 step 7): timing only, no accuracy. Not hashed; rows go to <out_dir>/profile/.
 profile:

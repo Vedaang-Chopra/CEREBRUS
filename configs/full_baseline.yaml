@@ -3,9 +3,8 @@ extends: mvp.yaml
 out_dir: execution_results/full_baseline
 # the full baseline uses every visual token; without this line it would inherit divprune and its config hash (and finished result files) would change
 compressor: none
-# gpu_groups: inherited from mvp.yaml ([[0, 1], [2, 3]]: notebooks and sample runs stay on physical GPUs 0-3).
-# `scripts/mvp.py full` only: one shard per group over GPUs 0-7 (big run, docs/decisions.md). Placement only: not hashed.
-full_gpu_groups: [[0, 1], [2, 3], [4, 5], [6, 7]]
+# gpu_groups and full_gpu_groups are inherited from mvp.yaml: notebooks and sample runs stay on physical GPUs 0-3;
+# `scripts/mvp.py full` runs one shard per full_gpu_groups entry over GPUs 0-7 (big run, docs/decisions.md).
 # test stays off until stage S12 (DEC3 §9)
 run_splits: [dev, ctrl_train]
 run_benchmarks: [gqa, textvqa]
