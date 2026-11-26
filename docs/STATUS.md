@@ -36,9 +36,9 @@ No code is written for a step before the previous step's result is in. Infrastru
 | S5 | Compression comparison (R=3, k 25/50/100%, accuracy + FLOPs + latency) | 07 | agent building | |
 | S6 | FLOPs model + throughput → item counts | — | not started | can start now (no dependency on S2) |
 | S7 | Base grid 15 cells + noise re-run | — | not started | needs S2–S6 |
-| S8 | Teacher cache | — | not started | needs S2, S5 |
-| S9 | Budget-tolerance LoRA | — | not started | needs S8; peft not yet installed |
-| S10 | LoRA grid | — | not started | |
+| S8 | Multi-depth teacher cache (100% tokens, R=1..5, all lora_train) | 09 | approved; agent building | GPUs 0–7 allowed for this run |
+| S9 | Two LoRAs: A depth-matched, B fixed R=3 teacher | 10 | waits for S8 validation + your approval | needs S5 winner; peft not yet installed |
+| S10 | Grids for base, A, B (15 cells each) | — | not started | |
 | S11 | Action tree from grid | — | not started | |
 | S12 | Controller (heuristic + learned) | — | not started | |
 | S13 | Baselines | — | not started | |
