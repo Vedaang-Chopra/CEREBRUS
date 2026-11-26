@@ -125,3 +125,4 @@ One entry per gate or design decision. Newest at the bottom. Format:
 - TextVQA gains +13 pts from 512 → 768 full (126 → 288 tokens). DivPrune at the 512-px token count from a 768 image: +7.3 vs 512 full [CI −2.2, +16.9]; from 1024 (keeping 25%): −6.1 [−17.4, +5.0].
 - Latency of the reused 512 rows comes from another session (1.02 s vs 0.80 s here): not comparable across sessions.
 - Decision on res_px: pending Vedaang (see main-discussion recommendation).
+- **Decision (Vedaang, Nov 26): res_px = 768** for every run from now on (S5b Pareto, S6 timing, S7 grid, S8, S9, S10). 512-px results stay as the S5 record and an appendix comparison. The S5 winner is re-checked at 768 in the Pareto sweep (k = 25/50%).
