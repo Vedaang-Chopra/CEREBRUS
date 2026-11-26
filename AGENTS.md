@@ -82,7 +82,7 @@ pyproject.toml, environment.yml
 - **Comments teach:** short why-comments, `### Step-N:- ...` inside longer functions, tensor-shape comments (`# (B, T, D)`). Paper/HF names for things (`n_layer`, `q_proj`), `B, T` for shapes.
 - **Asserts** for shape/sanity checks with a message; `try/except` only around network or file IO.
 - **Notebooks** guard expensive runs with a flag (`RUN_GRID = False`).
-- **Kept from this repo (differs from model_training):** notebooks import only `adaloop.api` (no deep paths); config values live in `configs/*.yaml` (not in cells or code). One exception: the first notebook cell runs `from utils.gpus import select_gpu_group` before `adaloop.api` is imported, because importing transformers model classes initializes CUDA and the GPU choice must come first. Only GPUs in `gpu_groups` (0–3 on Inara) are ever used.
+- **Kept from this repo (differs from model_training):** notebooks import only `adaloop.api` (no deep paths); config values live in `configs/*.yaml` (not in cells or code). One exception: the first notebook cell runs `from utils.gpus import select_gpu_group` before `adaloop.api` is imported, because importing transformers model classes initializes CUDA and the GPU choice must come first. Notebooks and small runs use `gpu_groups` (0–3 on Inara); big runs (Pareto sweep, grid, full baseline, S8 cache, S9 training, S10) may use `full_gpu_groups` (0–7), per `docs/decisions.md`.
 - **Don't copy:** commented-out code, unused imports, empty files, hard-coded paths/URLs, mixed spacing.
 
 ## Code rules
