@@ -1,4 +1,6 @@
 """Public entry points. Notebooks and scripts import only this module."""
+from adaloop.core.controller.chooser import Chooser, chooser_loss
+from adaloop.core.controller.curves import interpolation_weights
 from adaloop.core.controller.features import pass_features
 from adaloop.core.controller.heuristic import heuristic_actions
 from adaloop.core.controller.inputs import fit_normalizer, node_scalars, policy_inputs, tree_data
@@ -11,6 +13,7 @@ from adaloop.core.controller.objectives import (
 )
 from adaloop.core.controller.policy import Policy
 from adaloop.core.controller.rows import leaf_costs, policy_rows, select_on_dev
+from adaloop.core.controller.synthetic import SYNTHETIC_PARAMS, synthetic_grid, synthetic_upfront
 from adaloop.core.controller.tree import ACTIONS, action_mask, item_tree, path_name, walk
 from adaloop.core.cost.flops import (
     REF_R,
@@ -27,7 +30,7 @@ from adaloop.core.cost.flops import (
     row_flops,
 )
 from adaloop.core.cost.meta import cost_params_from_config
-from adaloop.core.eval.bootstrap import paired_bootstrap_ci
+from adaloop.core.eval.bootstrap import holm_adjust, paired_bootstrap_ci, paired_bootstrap_p
 from adaloop.core.eval.extract import extract_answer
 from adaloop.core.eval.pareto import pareto_front
 from adaloop.core.eval.scorers import score, score_gqa, score_gqa_lmms, score_lmms, score_textvqa
@@ -45,6 +48,7 @@ from adaloop.core.plots.compression import plot_pareto
 from adaloop.core.plots.cost_model import plot_cost_model
 from adaloop.core.plots.grid_surface import plot_cell_pareto, plot_kr_accuracy
 from adaloop.core.plots.headroom import plot_headroom
+from adaloop.core.plots.iso_cost import plot_iso_cost
 from adaloop.core.plots.pass_state import plot_pass_state
 from adaloop.core.plots.resolution import plot_resolution
 from adaloop.core.plots.save import save_figure, save_table
@@ -77,6 +81,14 @@ from adaloop.data.splits import load_manifest, make_splits
 from adaloop.data.textvqa import build_textvqa_splits, load_textvqa
 from adaloop.orchestration.analysis import batch_regime_table, cell_table, headroom_table, load_grid, noise_rate
 from adaloop.orchestration.audit import wrong_predictions
+from adaloop.orchestration.baselines import (
+    early_exit_rows,
+    no_h_rows,
+    random_rows,
+    save_baseline_rows,
+    tokens_only_rows,
+    upfront_15way_rows,
+)
 from adaloop.orchestration.compare import (
     comparison_cells,
     comparison_table,
@@ -86,6 +98,7 @@ from adaloop.orchestration.compare import (
 )
 from adaloop.orchestration.batch_diagnostic import diagnose_batch
 from adaloop.orchestration.batching import batchable_items, item_chunks
+from adaloop.orchestration.cell_policies import best_fixed_rows, cell_arrays, grid_cells, oracle_rows
 from adaloop.orchestration.cells import check_batched
 from adaloop.orchestration.compress import METHODS, compress, encode_vision
 from adaloop.orchestration.controller import greedy_exits, run_controller, run_heuristic, run_policies, train_policy
@@ -113,6 +126,16 @@ from adaloop.orchestration.full_run import (
     summarize_full,
 )
 from adaloop.orchestration.grid import grid_dir, grid_items, merge_grid, rerun_items, run_grid
+from adaloop.orchestration.headline import (
+    by_cap_table,
+    comparison_vs_controller,
+    headline_table,
+    iso_cost_points,
+    report_split,
+    run_headline,
+    split_label,
+)
+from adaloop.orchestration.headroom_gate import headroom_gate
 from adaloop.orchestration.inputs import item_inputs, item_prompt
 from adaloop.orchestration.lora_checks import (
     lora_eval_probe,
@@ -140,6 +163,7 @@ from adaloop.orchestration.resolution import (
     resolution_token_counts,
     run_resolution,
 )
+from adaloop.orchestration.synthetic_run import write_synthetic_grid
 from adaloop.orchestration.teacher_cache import (
     build_teacher_cache,
     check_teacher_live,
@@ -160,6 +184,7 @@ from adaloop.orchestration.tree import (
     load_controller_inputs,
     run_tree,
 )
+from adaloop.orchestration.upfront import load_upfront, run_upfront, upfront_dir, upfront_features
 from adaloop.schemas.cost import CostParams
 from adaloop.schemas.items import Item
 from adaloop.schemas.vlm import GenerationResult, LoadedVLM
@@ -171,6 +196,38 @@ from utils.io import load_config
 
 __all__ = [
     "ACTIONS",
+    "Chooser",
+    "chooser_loss",
+    "interpolation_weights",
+    "holm_adjust",
+    "paired_bootstrap_p",
+    "plot_iso_cost",
+    "early_exit_rows",
+    "no_h_rows",
+    "random_rows",
+    "save_baseline_rows",
+    "tokens_only_rows",
+    "upfront_15way_rows",
+    "best_fixed_rows",
+    "cell_arrays",
+    "grid_cells",
+    "oracle_rows",
+    "by_cap_table",
+    "comparison_vs_controller",
+    "headline_table",
+    "iso_cost_points",
+    "report_split",
+    "run_headline",
+    "split_label",
+    "headroom_gate",
+    "write_synthetic_grid",
+    "load_upfront",
+    "run_upfront",
+    "upfront_dir",
+    "upfront_features",
+    "SYNTHETIC_PARAMS",
+    "synthetic_grid",
+    "synthetic_upfront",
     "Policy",
     "action_mask",
     "backward_values",

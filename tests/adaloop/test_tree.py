@@ -6,65 +6,19 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
-import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from adaloop.core.controller.inputs import tree_data
 from adaloop.core.controller.rows import policy_rows
+from adaloop.core.controller.synthetic import HIDDEN, synthetic_grid
+from adaloop.core.controller.synthetic import SYNTHETIC_PARAMS as PARAMS
 from adaloop.core.controller.tree import EXIT, LOOK, LOOP, action_mask, walk
-from adaloop.core.cost.flops import (
-    flops_features,
-    flops_partial,
-    flops_prefill,
-    flops_readout,
-    flops_total,
-)
+from adaloop.core.cost.flops import flops_partial, flops_prefill, flops_readout
 from adaloop.orchestration.tree import build_tree, check_test_allowed
-from adaloop.schemas.cost import CostParams
 
-PARAMS = CostParams(embed=0, prelude=600, core=1200, core_message=40, coda=600, lm_head=900, vit_patch=50,
-                    vit_layers=300, vit_projector=80, core_start=2, core_end=4, attn_dims=(8,) * 6,
-                    attn_windows=(None,) * 6, kv_dims=(4,) * 6, vit_n_layers=3, vit_hidden=16, vit_merge=2)
 CTRL = {"k0": [0.25, 0.5], "look": {"mode": "restart", "k": 1.0}, "charge_features": True,
         "features": ["delta_norm", "kl_prev", "entropy", "top1_prob", "vis_attn_mass"]}
-KS, RS, HIDDEN, HEADS = (0.25, 0.5, 1.0), (1, 2, 3, 4, 5), 24, 4
-
-
-def synthetic_grid(n_items: int = 6, splits: tuple[str, ...] = ("ctrl_train", "dev"), d: int = HIDDEN,
-                   seed: int = 0) -> tuple[pd.DataFrame, dict]:
-    """(grid rows, features) shaped like the S7 outputs, FLOPs from PARAMS. `n_items` per benchmark and split."""
-    rng = np.random.default_rng(seed)
-    rows, features = [], {}
-    for split in splits:
-        for benchmark in ("gqa", "textvqa"):
-            for i in range(n_items):
-                item_id = f"{split}{i}"
-                n_vis_full, n_txt, hard = int(rng.integers(40, 120)), int(rng.integers(10, 30)), rng.random()
-                feats = features[benchmark, item_id] = {}
-                for k in KS:
-                    n_vis = round(k * n_vis_full)
-                    n = n_vis + n_txt
-                    extra = flops_features(PARAMS, n, n_vis, HEADS, HIDDEN)
-                    for R in RS:
-                        skill = (k * 0.6 + R * 0.08) - hard * 0.7  # more tokens and loops help hard items more
-                        correct = float(skill + rng.normal(0, 0.15) > 0)
-                        flops = flops_total(PARAMS, n, 3, R, [(1, 8, 8)])
-                        compression = 0 if k == 1.0 else 5000
-                        rows.append({"item_id": item_id, "benchmark": benchmark, "split": split,
-                                     "model_variant": "base", "rerun_id": 0, "k": k, "R": R, "correct": correct,
-                                     "n_vis": n_vis, "n_vis_full": n_vis_full, "n_txt": n_txt,
-                                     "flops_vit": flops["flops_vit"], "flops_prefill": flops["flops_prefill"],
-                                     "flops_compression": compression,
-                                     "flops_total": flops["flops_total"] + compression, "config_hash": "synthetic"})
-                        h = torch.from_numpy(rng.normal(0, 1, d)).half()
-                        h[:2] = torch.tensor([skill, hard]).half()  # something to learn
-                        feats[k, R] = {"h_last": h, "delta_norm": float("nan") if R == 1 else rng.random(),
-                                       "kl_prev": float("nan") if R == 1 else rng.random() / R,
-                                       "entropy": float(max(0.0, 1 - skill)), "top1_prob": float(rng.random()),
-                                       "vis_attn_mass": float(rng.random()), **extra}
-    return pd.DataFrame(rows), features
 
 
 def test_leaves_match_grid() -> None:

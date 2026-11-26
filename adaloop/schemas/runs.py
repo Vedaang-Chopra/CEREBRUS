@@ -33,10 +33,16 @@ class TreeLeaf:
 
 @dataclass(frozen=True)
 class PolicyRow:
-    """One method's path on one item (a row of policy_eval.parquet). Costs as in `TreeLeaf`."""
+    """One method's path on one item (a row of policy_eval.parquet). Costs as in `TreeLeaf`.
+
+    Methods with a trade-off weight set `lam` (cap_frac NaN); best_fixed and oracle are defined per cost cap and set
+    `cap_frac` (lam NaN). `k0` is 0.0 when the method has no common first keep fraction (tokens_only, upfront_15way,
+    oracle); best_fixed holds its cell's k there.
+    """
 
     method: str
     lam: float
+    cap_frac: float
     seed: int
     model_variant: str
     item_id: str

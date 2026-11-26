@@ -26,7 +26,7 @@ def policy_rows(data: TreeData, exits: tuple[np.ndarray, np.ndarray], method: st
         return array[item, b, q].round().astype(np.int64)
 
     table = data.keys.assign(
-        method=method, lam=lam, seed=seed, k0=data.k0,
+        method=method, lam=lam, cap_frac=np.nan, seed=seed, k0=data.k0,
         path=[path_name(int(p), int(r) + 1) for p, r in zip(b, q)], correct=data.correct[item, b, q],
         flops_total=at(leaf_costs(data, readout, state)), flops_cell=at(data.flops_cell),
         flops_discarded=at(data.flops_discarded), flops_readout=at(readout * data.flops_readout),

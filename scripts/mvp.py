@@ -5,15 +5,16 @@
   python scripts/mvp.py eval --benchmark gqa --split dev --loops 1 3 5 --limit 20
   python scripts/mvp.py full --shard 0/4        # configs/full_baseline.yaml; shard i of n on full_gpu_groups[i] (GPUs 0-7)
   python scripts/mvp.py grid --shard 0/2        # S7: configs/mvp.yaml; shard i of n on gpu_groups[i]
+  python scripts/mvp.py upfront                 # S13: upfront features of the grid items (no decoder pass), one copy
   python scripts/mvp.py teacher --shard 0/4     # S8: configs/train_lora.yaml (GPUs 0-7), one process per shard
   python scripts/mvp.py train --variant A       # S9: full LoRA run, configs/train_lora.yaml (a free pair of 0-7)
   python scripts/mvp.py train --variant B --smoke   # S9 smoke run (pairs of smoke.gpu_groups); A and B may run at once
 
 `smoke` and `eval` replace Jiaqi-Gao/adaloop-vlm:scripts/{smoke_test,run_grid}.py @ e870bff.
-`smoke` and `eval` pick a free GPU group; `splits` needs no GPU.
+`smoke`, `eval` and `upfront` pick a free GPU group; `splits` needs no GPU.
 The group is selected before `adaloop.api` is imported (that import initializes CUDA).
 `train` claims its GPU pair with a lock, so two runs started together get different pairs.
-`full`, `grid`, `teacher` and `train` are resumable: rerun the same command after an interruption.
+`full`, `grid`, `upfront`, `teacher` and `train` are resumable: rerun the same command after an interruption.
 """
 import argparse
 import json
@@ -90,6 +91,14 @@ def cmd_grid(api: ModuleType, cfg: dict, args: argparse.Namespace) -> None:
     api.run_grid(vlms, items, cfg, out_dir, shard=args.shard, rerun_id=1, only=again)
 
 
+def cmd_upfront(api: ModuleType, cfg: dict, args: argparse.Namespace) -> None:
+    """Save the upfront features of the grid items (--limit: only the first ones) next to the grid, resumable."""
+    items = api.grid_items(cfg, ROOT)[: args.limit]
+    folder = api.upfront_dir(cfg, ROOT)
+    written = api.run_upfront(api.load_model(cfg), items, cfg, folder)
+    print(f"{written} new of {len(items)} items | {folder}")
+
+
 def cmd_teacher(api: ModuleType, cfg: dict, args: argparse.Namespace) -> None:
     """Build shard i of n of the teacher cache on GPU group i, resumable."""
     vlm = api.load_model(cfg)
@@ -126,7 +135,7 @@ def select_gpus(cfg: dict, args: argparse.Namespace) -> None:
         i, n = args.shard
         print(f"shard {i}/{n} | GPU group {i}")
         select_gpu_group({**cfg, "gpu_groups": groups}, group=i)
-    elif args.command in ("smoke", "eval"):
+    elif args.command in ("smoke", "eval", "upfront"):
         select_gpu_group(cfg)
     elif args.command == "train":
         if args.variant not in cfg["lora_variants"]:
@@ -138,7 +147,7 @@ def select_gpus(cfg: dict, args: argparse.Namespace) -> None:
 def main() -> None:
     """Parse arguments and run one command."""
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["smoke", "splits", "eval", "full", "grid", "teacher", "train"])
+    parser.add_argument("command", choices=["smoke", "splits", "eval", "full", "grid", "upfront", "teacher", "train"])
     parser.add_argument("--config", default=None, help="default: per command (full, teacher, train have their own)")
     parser.add_argument("--benchmark", default="gqa", choices=BENCHMARKS)
     parser.add_argument("--split", default="dev")
@@ -158,7 +167,7 @@ def main() -> None:
     from adaloop import api  # only now: this import initializes CUDA
 
     {"smoke": cmd_smoke, "splits": cmd_splits, "eval": cmd_eval, "full": cmd_full, "grid": cmd_grid,
-     "teacher": cmd_teacher, "train": cmd_train}[args.command](api, cfg, args)
+     "upfront": cmd_upfront, "teacher": cmd_teacher, "train": cmd_train}[args.command](api, cfg, args)
 
 
 if __name__ == "__main__":

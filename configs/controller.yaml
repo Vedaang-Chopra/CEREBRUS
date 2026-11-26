@@ -41,3 +41,17 @@ heuristic:
   eta_quantiles: [0.0, 0.25, 0.5, 0.75, 0.9, 1.0]
   zeta_quantiles: [0.0, 0.25, 0.5, 0.75]
   tau1: [0.3, 0.5, 0.7, 0.9, 0.97, 1.01]
+
+# S13 baselines. early_exit_only, tokens_only and upfront_15way use the training settings above.
+baselines:
+  tokens_only: {ks: [0.25, 0.5, 1.0], R: 3}  # choose k at this R
+  random_seed: 0                            # shuffle of the controller's paths over items
+
+# S14: accuracy at this cost (x cost_ref) by interpolation along each curve, chosen on `splits.dev`
+headline_frac: 0.5
+claims: [best_fixed, heuristic, early_exit_only, tokens_only, upfront_15way]  # the Holm family (controller - each)
+min_gain_pts: 1.0         # prereg decision rule on controller - best_fixed (DEC3 §1)
+bootstrap: {n_boot: 10000, seed: 0}
+
+# nb11 with SYNTHETIC = True: a made-up grid, written outside the real outputs
+synthetic: {out_dir: execution_results/synthetic_nb11, n_items: 40, epochs: 6, n_boot: 1000}

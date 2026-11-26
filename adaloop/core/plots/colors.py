@@ -16,6 +16,8 @@ OKABE_ITO = {
 
 METHOD_COLORS: dict[str, str] = {
     "controller": OKABE_ITO["vermillion"],
+    "controller_no_h": OKABE_ITO["vermillion"],  # ablation of the controller: same colour, dashed
+    "random": "#BBBBBB",
     "heuristic": OKABE_ITO["orange"],
     "best_fixed": OKABE_ITO["blue"],
     "early_exit_only": OKABE_ITO["sky_blue"],
