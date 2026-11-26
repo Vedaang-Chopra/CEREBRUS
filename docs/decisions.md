@@ -54,3 +54,8 @@ One entry per gate or design decision. Newest at the bottom. Format:
 ## Nov 25, 2026 — S8/S9 distillation design: under discussion (not yet in DEC3)
 - Proposal (Vedaang): depth-matched distillation (teacher 100% tokens at the student's R) instead of a fixed R=3 teacher. Literature check (LoopOPD 2610.10623, LoopFormer 2602.11451, ELT 2604.09168, MELT 2605.07721, InternVL3.5 ViCO 2508.18265): looped papers use the deepest loop as teacher to make short loops match long ones; ViCO (forward KL, full-token teacher, same model) is the direct precedent for depth-matched budget tolerance; none compares same-depth vs deep teacher or combines token budget with loop depth (within these 5 papers).
 - main-discussion recommendation, pending Vedaang's OK: depth-matched main, cross-depth with R=5 teacher as the only ablation (drop fixed R=3); S8 caches only the planned (item, R) training samples; S10 grid for base + both LoRAs; S15 adds A7 (distillation target).
+
+## Nov 25, 2026 · nb06 · loops at full tokens, batch check, cost model (git bca6a36, nb06)
+- Dev n=20 per benchmark, k=100%, no thinking, batch 8. GQA accuracy R=1..5: 55 / 60 / 55 / 65 / 60. TextVQA: 53 / 63 / 54.5 / 54 / 59. Parse 95-100%. At n=20 the R trend is within noise (1 item = 5 pts); the full dev / grid decides.
+- Batch 8 = batch 1 predictions on 8 items: batched runs are allowed.
+- Cost: measured R5/R1 prefill time ratio 3.41 vs analytic 3.05 (within ±25%): the FLOPs model holds. Throughput at R=3: batch 1 1.08 s/item, batch 8 0.37 s/item per copy (2x A40).

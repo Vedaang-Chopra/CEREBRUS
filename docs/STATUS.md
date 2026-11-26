@@ -17,7 +17,7 @@ No code is written for a step before the previous step's result is in. Infrastru
 |---|---|---|---|---|
 | 1 | S2 answer format | 04 | P (no thinking) or T (thinking, 256 budget)? Parse ≥95%? | **done: P for the POC**, thinking for final results |
 | 2 | S3/S3b checks | 05 | k=100% pruning exact? pass p of R=5 = fresh R=p? | **done: both yes (bit-exact)** |
-| 3 | Loops at full tokens | 06 (Step-1..3 on 20 items) | does accuracy change with R = 1..5? batched = batch 1? | code ready; nb05 already shows GQA 50→65 from R=1→5 |
+| 3 | Loops at full tokens | 06 (Step-1..3 on 20 items) | does accuracy change with R = 1..5? batched = batch 1? | **done**: batched = batch 1; R trend within noise at n=20; FLOPs model within ±25% |
 | 4 | Tokens × loops, small | small k × R table on 20 items (k ∈ 25/50/100%, R ∈ 1/3/5) | how much does accuracy drop at low k? (this is what the LoRA must fix) | not built: one small addition after step 3 |
 | 5 | Post-training (S8 teacher cache, S9 budget-tolerance LoRA) | 10 | does LoRA recover accuracy at low k without hurting k=100%? | after step 4; draft code parked on branch `wip/post-training` |
 
