@@ -49,10 +49,13 @@ def teacher_dir(cfg: dict, root: str | Path) -> Path:
 
 
 def teacher_items(cfg: dict, root: str | Path, limit: int | None = None,
-                  shard: tuple[int, int] = (0, 1)) -> list[Item]:
-    """lora_train items of this shard (only their images are decoded); `limit` per benchmark, None = all."""
+                  shard: tuple[int, int] = (0, 1), lazy: bool = False) -> list[Item]:
+    """lora_train items of this shard (only their images are decoded); `limit` per benchmark, None = all.
+
+    `lazy`: images are decoded on each read instead of being held in RAM (see `load_gqa`).
+    """
     return [item for benchmark in cfg["teacher"]["benchmarks"]
-            for item in LOADERS[benchmark](cfg, TRAIN_SPLIT, limit=limit, root=root, shard=shard)]
+            for item in LOADERS[benchmark](cfg, TRAIN_SPLIT, limit=limit, root=root, shard=shard, lazy=lazy)]
 
 
 def teacher_total_records(cfg: dict, root: str | Path) -> int:

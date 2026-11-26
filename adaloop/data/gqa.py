@@ -2,12 +2,14 @@
 
 Adapted from Jiaqi-Gao/adaloop-vlm:adaloop/benchmarks/gqa.py @ e870bff.
 """
+from functools import partial
 from pathlib import Path
 
 from datasets import load_dataset
 
+from adaloop.data.rows import row_image
 from adaloop.data.splits import build_manifest, load_manifest
-from adaloop.schemas.items import Item
+from adaloop.schemas.items import Item, LazyItem
 
 BENCHMARK = "gqa"
 
@@ -24,10 +26,11 @@ def build_gqa_splits(cfg: dict, root: str | Path = ".") -> dict:
 
 
 def load_gqa(cfg: dict, split: str, limit: int | None = None, root: str | Path = ".",
-             shard: tuple[int, int] = (0, 1)) -> list[Item]:
+             shard: tuple[int, int] = (0, 1), lazy: bool = False) -> list[Item]:
     """Load the first `limit` questions of `split` (manifest order) as Items, images decoded as RGB.
 
     `shard` (i, n) keeps every n-th of them starting at i, so only those images are decoded.
+    `lazy` decodes no image here: each read of `item.image` decodes it from the dataset (training).
     """
     bcfg = cfg["benchmarks"][BENCHMARK]
     manifest = build_gqa_splits(cfg, root)
@@ -41,12 +44,13 @@ def load_gqa(cfg: dict, split: str, limit: int | None = None, root: str | Path =
     items = []
     for qid in ids:
         row = questions[row_of_question[qid]]
-        items.append(Item(
+        image = partial(row_image, images, row_of_image[row["imageId"]])
+        items.append((LazyItem if lazy else Item)(
             item_id=qid,
             benchmark=BENCHMARK,
             split=split,
             image_id=row["imageId"],
-            image=images[row_of_image[row["imageId"]]]["image"].convert("RGB"),
+            image=image if lazy else image(),
             question=row["question"],
             answers=(row["answer"],),
             question_type=row["types"]["structural"],

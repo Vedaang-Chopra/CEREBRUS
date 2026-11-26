@@ -24,6 +24,12 @@ if TYPE_CHECKING:
     from peft import PeftModel
 
 
+def require_compressor(cfg: dict) -> None:
+    """Refuse to train before the compressor is frozen (S5): "none" or missing."""
+    if cfg.get("compressor") in (None, "none"):
+        raise ValueError("freeze compressor (S5) in configs/mvp.yaml first")
+
+
 def lora_hash(cfg: dict) -> str:
     """Hash of the config values that change the trained weights (the number of steps is not one: runs resume)."""
     method = cfg["compressor"]
@@ -110,6 +116,7 @@ def train_lora(
     `cfg` is a `variant_config`. `out_dir` gets `adapter/`, `train_state.pt`, `history.jsonl` and `run.json`; a run
     found there is resumed. `steps` and `eff_batch` default to cfg["train"].
     """
+    require_compressor(cfg)
     train = cfg["train"]
     steps = train["steps"] if steps is None else steps
     eff_batch = train["eff_batch"] if eff_batch is None else eff_batch

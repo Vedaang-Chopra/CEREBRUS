@@ -109,7 +109,7 @@ from adaloop.orchestration.teacher_cache import (
     teacher_summary,
     teacher_total_records,
 )
-from adaloop.orchestration.train_lora import lora_run_dir, lora_run_estimate, train_lora
+from adaloop.orchestration.train_lora import lora_run_dir, lora_run_estimate, require_compressor, train_lora
 from adaloop.schemas.cost import CostParams
 from adaloop.schemas.items import Item
 from adaloop.schemas.vlm import GenerationResult, LoadedVLM
@@ -145,6 +145,7 @@ __all__ = [
     "METHOD_COLORS",
     "METHODS",
     "remove_lora",
+    "require_compressor",
     "schedule_table",
     "student_inputs",
     "student_layer_calls",

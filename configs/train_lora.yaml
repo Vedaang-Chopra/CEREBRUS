@@ -1,7 +1,7 @@
 # Post-training (docs/DEC3_MVP.md S8-S9): the teacher cache and the two budget-tolerance LoRAs.
 extends: mvp.yaml
 
-# S8 ONLY: Vedaang allowed GPUs 0-7 for the teacher cache run (docs/decisions.md, Nov 25). Every other run keeps 0-3.
+# Big runs only (S8 teacher cache, S9 full training) may use GPUs 0-7; notebooks and smoke runs keep 0-3.
 gpu_groups: [[0, 1], [2, 3], [4, 5], [6, 7]]
 # notebook: model copies. 1 takes the first free pair; the full run uses one terminal shard per pair.
 n_copies: 1
@@ -18,11 +18,7 @@ teacher:
   out_dir: execution_results/teacher
 
 # --- S9: budget-tolerance LoRAs. None of the keys below changes the teacher cache or its hash. ---
-# S9 training runs on one of the GPU pairs of mvp.yaml (0-3), not on the S8-only groups above.
-
-# visual-token selection for the student at k < 1: the S5 winner. text_mean until S5 is frozen; this line overrides
-# mvp.yaml, so set it to the winner (or delete it once mvp.yaml has it).
-compressor: text_mean
+# The student's visual-token selection is `compressor` of mvp.yaml (the S5 winner); training refuses "none".
 
 lora:
   # teacher depth of a compressed student: "same" (R_teacher = R_student) | "fixed:N" | "plus:N" (min(R + N, 5)).
@@ -51,7 +47,8 @@ train:                      # data: every lora_train item of teacher.benchmarks
   gradient_checkpointing: true
   out_dir: execution_results/lora
 
-smoke:                      # notebooks/10_post_training
+smoke:                      # notebooks/10_post_training and `scripts/mvp.py train --smoke`
+  gpu_groups: [[0, 1], [2, 3]]  # pairs the CLI smoke may claim
   n_per_benchmark: 25       # lora_train items per benchmark (50 in all)
   steps: 100                # per variant
   eff_batch: 4              # smaller than the full run, to keep the notebook short

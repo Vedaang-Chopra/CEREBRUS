@@ -4,15 +4,18 @@ Notebooks import `select_gpu_group` from here, the one notebook import allowed o
 importing `adaloop.api` already initializes CUDA, so the GPU choice must come first.
 Nothing in this module's import chain may import torch or transformers.
 """
+import fcntl
 import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import IO
 
 from utils.io import load_config
 from utils.paths import find_repo_root
 
 SMI_QUERY = ["nvidia-smi", "--query-gpu=index,memory.free", "--format=csv,noheader,nounits"]
+_CLAIMS: list[IO] = []  # open lock files of claimed groups; closing one (or process exit) releases it
 
 
 def free_gpu_mib() -> dict[int, int] | None:
@@ -82,6 +85,39 @@ def select_gpu_group(config: str | Path | dict, group: int | str | None = None) 
     print(f"using GPUs {ids} | free {', '.join(f'{free[gpu] / 1024:.1f}' for gpu in chosen)} GiB")
     print(table)
     return chosen
+
+
+def claim_gpu_group(cfg: dict, lock_dir: str | Path) -> list[int]:
+    """Like `select_gpu_group(cfg)`, but the group is also locked until this process exits; return its GPU ids.
+
+    For runs started side by side: free memory alone would let both pick a group before either has allocated.
+    Only processes that claim with the same `lock_dir` see the lock; others are seen through free memory alone.
+    Call before CUDA starts. Without nvidia-smi nothing is locked or set and [] is returned.
+    """
+    if "torch" in sys.modules and sys.modules["torch"].cuda.is_initialized():
+        raise RuntimeError("claim_gpu_group must run before CUDA is initialized")
+    if free_gpu_mib() is None:
+        print("no nvidia-smi: GPU selection skipped")
+        return []
+    Path(lock_dir).mkdir(parents=True, exist_ok=True)
+    skipped = []
+    for ids in cfg["gpu_groups"]:
+        handle = open(Path(lock_dir) / f"gpus_{'_'.join(map(str, ids))}.lock", "a")
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            handle.close()
+            skipped.append(f"{ids} locked by another run")
+            continue
+        free = free_gpu_mib()  # read under the lock: an earlier holder may have allocated since
+        if all(free.get(gpu, 0) >= cfg["min_free_gib"] * 1024 for gpu in ids):
+            _CLAIMS.append(handle)
+            _set_visible(ids)
+            print(f"claimed GPUs {ids} | free {', '.join(f'{free[gpu] / 1024:.1f}' for gpu in ids)} GiB")
+            return list(ids)
+        handle.close()
+        skipped.append(f"{ids} has less than {cfg['min_free_gib']} GiB free")
+    raise RuntimeError(f"no free GPU group to claim: {'; '.join(skipped)}")
 
 
 def select_for_notebook(config: str | Path) -> tuple[list[int], int]:

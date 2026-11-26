@@ -6,11 +6,14 @@
   python scripts/mvp.py full --shard 0/2        # configs/full_baseline.yaml; shard i of n on gpu_groups[i]
   python scripts/mvp.py grid --shard 0/2        # S7: configs/mvp.yaml; shard i of n on gpu_groups[i]
   python scripts/mvp.py teacher --shard 0/4     # S8: configs/train_lora.yaml (GPUs 0-7), one process per shard
+  python scripts/mvp.py train --variant A       # S9: full LoRA run, configs/train_lora.yaml (a free pair of 0-7)
+  python scripts/mvp.py train --variant B --smoke   # S9 smoke run (pairs of smoke.gpu_groups); A and B may run at once
 
 `smoke` and `eval` replace Jiaqi-Gao/adaloop-vlm:scripts/{smoke_test,run_grid}.py @ e870bff.
 `smoke` and `eval` pick a free GPU group; `splits` needs no GPU.
 The group is selected before `adaloop.api` is imported (that import initializes CUDA).
-`full`, `grid` and `teacher` are resumable: rerun the same command after an interruption.
+`train` claims its GPU pair with a lock, so two runs started together get different pairs.
+`full`, `grid`, `teacher` and `train` are resumable: rerun the same command after an interruption.
 """
 import argparse
 import json
@@ -21,7 +24,7 @@ from types import ModuleType
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from utils.gpus import select_gpu_group  # noqa: E402
+from utils.gpus import claim_gpu_group, select_gpu_group  # noqa: E402
 from utils.io import load_config  # noqa: E402
 
 BENCHMARKS = ["gqa", "textvqa"]
@@ -95,6 +98,25 @@ def cmd_teacher(api: ModuleType, cfg: dict, args: argparse.Namespace) -> None:
     print(f"{done['new_records']} new records in {done['seconds']:.0f} s | {done['folder']}")
 
 
+def cmd_train(api: ModuleType, cfg: dict, args: argparse.Namespace) -> None:
+    """Train the LoRA of one variant on lora_train against the S8 cache (full, or the smoke settings); resumable."""
+    api.require_compressor(cfg)  # before the data and the model are loaded
+    vcfg = api.variant_config(cfg, args.variant)
+    smoke = cfg["smoke"]
+    name, limit, steps, eff_batch = "full", None, None, None  # None: cfg["train"]
+    if args.smoke:
+        name, limit, steps, eff_batch = "smoke", smoke["n_per_benchmark"], smoke["steps"], smoke["eff_batch"]
+    items = api.teacher_items(vcfg, ROOT, limit=limit, lazy=True)
+    targets = api.load_targets(items, vcfg, ROOT)
+    vlm = api.load_model(vcfg)
+    peft_model = api.attach_lora(vlm, vcfg)
+    run_dir = api.lora_run_dir(vcfg, ROOT, name)
+    history = api.train_lora(vlm, peft_model, items, targets, vcfg, run_dir, steps=steps, eff_batch=eff_batch)
+    print(f"{len(history)} steps done | {run_dir}")
+    if args.smoke:
+        print(api.lora_run_estimate(history, vcfg, eff_batch))
+
+
 def select_gpus(cfg: dict, args: argparse.Namespace) -> None:
     """Pick the GPU group for the command; for `full`, also turn args.shard into (i, n)."""
     if args.command in ("full", "grid", "teacher"):
@@ -104,21 +126,29 @@ def select_gpus(cfg: dict, args: argparse.Namespace) -> None:
         select_gpu_group(cfg, group=i)
     elif args.command in ("smoke", "eval"):
         select_gpu_group(cfg)
+    elif args.command == "train":
+        if args.variant not in cfg["lora_variants"]:
+            raise SystemExit(f"train needs --variant, one of {list(cfg['lora_variants'])}; got {args.variant!r}")
+        groups = cfg["smoke"]["gpu_groups"] if args.smoke else cfg["gpu_groups"]
+        claim_gpu_group({**cfg, "gpu_groups": groups}, ROOT / cfg["train"]["out_dir"] / "gpu_locks")
 
 
 def main() -> None:
     """Parse arguments and run one command."""
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["smoke", "splits", "eval", "full", "grid", "teacher"])
-    parser.add_argument("--config", default=None, help="default: per command (full, teacher have their own)")
+    parser.add_argument("command", choices=["smoke", "splits", "eval", "full", "grid", "teacher", "train"])
+    parser.add_argument("--config", default=None, help="default: per command (full, teacher, train have their own)")
     parser.add_argument("--benchmark", default="gqa", choices=BENCHMARKS)
     parser.add_argument("--split", default="dev")
     parser.add_argument("--loops", type=int, nargs="+", default=[3])
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--shard", default="0/1", help="full, grid, teacher: i/n, 0-based i, one gpu_groups entry per shard")
+    parser.add_argument("--variant", help="train: a key of lora_variants (A, B)")
+    parser.add_argument("--smoke", action="store_true", help="train: the cfg['smoke'] items, steps and eff_batch")
     args = parser.parse_args()
     if args.config is None:
-        defaults = {"full": "configs/full_baseline.yaml", "teacher": "configs/train_lora.yaml"}
+        defaults = {"full": "configs/full_baseline.yaml", "teacher": "configs/train_lora.yaml",
+                    "train": "configs/train_lora.yaml"}
         args.config = defaults.get(args.command, "configs/mvp.yaml")
     cfg = load_config(ROOT / args.config)
     select_gpus(cfg, args)
@@ -126,7 +156,7 @@ def main() -> None:
     from adaloop import api  # only now: this import initializes CUDA
 
     {"smoke": cmd_smoke, "splits": cmd_splits, "eval": cmd_eval, "full": cmd_full, "grid": cmd_grid,
-     "teacher": cmd_teacher}[args.command](api, cfg, args)
+     "teacher": cmd_teacher, "train": cmd_train}[args.command](api, cfg, args)
 
 
 if __name__ == "__main__":

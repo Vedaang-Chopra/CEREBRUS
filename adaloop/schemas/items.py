@@ -21,3 +21,16 @@ class Item:
     answers: tuple[str, ...]
     question_type: str = ""
     meta: dict = field(default_factory=dict)
+
+
+class LazyItem(Item):
+    """An `Item` built with a zero-argument image loader: every read of `image` decodes anew, nothing is kept."""
+
+    @property
+    def image(self) -> Image.Image:
+        source = self.__dict__["_image"]
+        return source() if callable(source) else source  # dataclasses.replace passes a decoded image back in
+
+    @image.setter  # reached only from the dataclass __init__; the instance stays frozen
+    def image(self, source) -> None:
+        self.__dict__["_image"] = source
