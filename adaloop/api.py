@@ -46,7 +46,13 @@ from adaloop.orchestration.audit import wrong_predictions
 from adaloop.orchestration.compare import comparison_cells, comparison_table, pick_winner, run_comparison
 from adaloop.orchestration.compress import METHODS, compress
 from adaloop.orchestration.copies import compare_copies, time_copies
-from adaloop.orchestration.cost_timing import time_prefill, time_throughput
+from adaloop.orchestration.cost_timing import (
+    cost_grid,
+    estimate_grid_hours,
+    time_grid,
+    time_prefill,
+    time_throughput,
+)
 from adaloop.orchestration.evaluate import (
     evaluate_item,
     read_answer,
@@ -90,10 +96,12 @@ __all__ = [
     "comparison_table",
     "compress",
     "config_hash",
+    "cost_grid",
     "cost_params",
     "cost_ref",
     "count_layer_calls",
     "estimate_full_run",
+    "estimate_grid_hours",
     "evaluate_item",
     "expected_layer_calls",
     "extract_answer",
@@ -163,6 +171,7 @@ __all__ = [
     "summarize_full",
     "summarize_rows",
     "text_mean_selector",
+    "time_grid",
     "time_copies",
     "time_prefill",
     "time_throughput",

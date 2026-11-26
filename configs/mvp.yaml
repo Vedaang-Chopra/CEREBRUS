@@ -44,6 +44,9 @@ compression:
   crisp_lite: {spacy_model: en_core_web_sm, uniform_frac: 0.25}
   visionzip: {contextual_frac: 0.05}  # of the full token count, as upstream; the dominant tokens fill the rest of k
 
+# noise ceiling: items run a second time at every cell (rerun_id = 1)
+n_rerun: 100
+
 # S5 comparison (nb07): methods against each other at R passes; k = 1 is run once, with compressor none
 compare:
   methods: [random, uniform, text_mean, lowres, crisp_lite, rediprune, divprune, visionzip]
