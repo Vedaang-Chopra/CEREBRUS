@@ -28,7 +28,7 @@ No code is written for a step before the previous step's result is in. Infrastru
 | Stage | What | Notebook | State | Next action |
 |---|---|---|---|---|
 | S0 | Env, package, model load, loop control, pruning port | 01, 02 | code done; env pinned to `learning_env` | archive 01/02 once you commit your edits; `scripts/mvp.py smoke` not run yet |
-| S1 | GQA + TextVQA loaders, splits, scorers, eval runner | 03 | **data checks PASS** (splits frozen, `configs/splits/`) | you: finish the evaluation section |
+| S1 | GQA + TextVQA loaders, splits, scorers, eval runner | 03 | **data checks PASS** (splits frozen, `configs/splits/`) | you: run the evaluation section (Step-5: GQA + TextVQA, 20 items each) |
 | S2 | Thinking off, `res_px` | 04 | **done**: no thinking for the POC (P: GQA 60, TextVQA 59 on 20 items) | res_px 768/1024 not compared → **resolution check today** |
 | S3 | Original positions after pruning | 05 | **done**: not supported → pruning stays packed; k=100% bit-exact | — |
 | S3b | Layer-call count, pass-p state vs fresh R=p run | 05 | **done**: bit-identical for p=1..5 (n=20) | — |
@@ -70,7 +70,7 @@ Vedaang decision: no post-training today; finish every inference baseline and th
 | 2 | nb07 `RUN_BATCH_CHECK` + `RUN_BATCH_DIAG` | nb07 | may the grid batch? |
 | 3 | `scripts/mvp.py smoke` | terminal | S0 Done-when |
 | 4 | nb06 `RUN_GRID_TIME` | nb06 | S6 budget line, grid item counts |
-| 5 | nb06 `RUN_FULL` (k=100%, R=1..5, dev + ctrl_train) | nb06 / CLI | F05 accuracy vs R |
+| 5 | nb06 `RUN_FULL` prints the commands; run `scripts/mvp.py full --shard i/4`, one terminal each, GPUs 0–7, resumable (k=100%, R=1..5, dev + ctrl_train) | CLI | F05 accuracy vs R |
 | 6 | Resolution check (512 / 768 / 1024 px, full and DivPrune at matched tokens) | nb04 step 5, `RUN_RESOLUTION` (built, tiny-model check only; ready to run) | does a sharper image + pruning beat 512 px? |
 | 7 | S5b Pareto sweep + KV bytes; profiling | nb07 step 7, `RUN_PARETO` (built, ready to run) / nb06 step 7, `RUN_PROFILE` (built, tiny-model CPU check only; about 1.5-2 h on one copy (estimate), GPUs otherwise idle) | F06 curves, where time goes |
 | 8 | nb08 1 item → 20 → full grid + re-run | nb08 / CLI, GPUs 0–7 | S7 grid.parquet, noise rate, F07, F08 |

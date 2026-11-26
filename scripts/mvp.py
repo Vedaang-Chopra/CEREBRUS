@@ -3,7 +3,7 @@
   python scripts/mvp.py smoke
   python scripts/mvp.py splits
   python scripts/mvp.py eval --benchmark gqa --split dev --loops 1 3 5 --limit 20
-  python scripts/mvp.py full --shard 0/2        # configs/full_baseline.yaml; shard i of n on gpu_groups[i]
+  python scripts/mvp.py full --shard 0/4        # configs/full_baseline.yaml; shard i of n on full_gpu_groups[i] (GPUs 0-7)
   python scripts/mvp.py grid --shard 0/2        # S7: configs/mvp.yaml; shard i of n on gpu_groups[i]
   python scripts/mvp.py teacher --shard 0/4     # S8: configs/train_lora.yaml (GPUs 0-7), one process per shard
   python scripts/mvp.py train --variant A       # S9: full LoRA run, configs/train_lora.yaml (a free pair of 0-7)
@@ -59,16 +59,16 @@ def cmd_eval(api: ModuleType, cfg: dict, args: argparse.Namespace) -> None:
         print(json.dumps(summary))
 
 
-def parse_shard(text: str, cfg: dict) -> tuple[int, int]:
-    """Parse `i/n` (i is 0-based); refuse shards that do not fit `gpu_groups`."""
+def parse_shard(text: str, groups: list[list[int]]) -> tuple[int, int]:
+    """Parse `i/n` (i is 0-based); refuse shards that do not fit the command's GPU groups."""
     try:
         i_text, n_text = text.split("/")
         i, n = int(i_text), int(n_text)
     except ValueError:
         raise SystemExit(f"--shard must look like 0/2, got {text!r}")
-    n_groups = len(cfg["gpu_groups"])
+    n_groups = len(groups)
     if not 1 <= n <= n_groups:
-        raise SystemExit(f"--shard {text}: n must be between 1 and {n_groups} (len of gpu_groups)")
+        raise SystemExit(f"--shard {text}: n must be between 1 and {n_groups} (number of GPU groups)")
     if not 0 <= i < n:
         raise SystemExit(f"--shard {text}: i must be between 0 and {n - 1}")
     return i, n
@@ -120,10 +120,12 @@ def cmd_train(api: ModuleType, cfg: dict, args: argparse.Namespace) -> None:
 def select_gpus(cfg: dict, args: argparse.Namespace) -> None:
     """Pick the GPU group for the command; for `full`, also turn args.shard into (i, n)."""
     if args.command in ("full", "grid", "teacher"):
-        args.shard = parse_shard(args.shard, cfg)
+        # `full` has its own, larger list: notebooks stay on `gpu_groups`
+        groups = cfg["full_gpu_groups"] if args.command == "full" else cfg["gpu_groups"]
+        args.shard = parse_shard(args.shard, groups)
         i, n = args.shard
         print(f"shard {i}/{n} | GPU group {i}")
-        select_gpu_group(cfg, group=i)
+        select_gpu_group({**cfg, "gpu_groups": groups}, group=i)
     elif args.command in ("smoke", "eval"):
         select_gpu_group(cfg)
     elif args.command == "train":
@@ -142,7 +144,7 @@ def main() -> None:
     parser.add_argument("--split", default="dev")
     parser.add_argument("--loops", type=int, nargs="+", default=[3])
     parser.add_argument("--limit", type=int, default=None)
-    parser.add_argument("--shard", default="0/1", help="full, grid, teacher: i/n, 0-based i, one gpu_groups entry per shard")
+    parser.add_argument("--shard", default="0/1", help="full, grid, teacher: i/n, 0-based i, one GPU group per shard")
     parser.add_argument("--variant", help="train: a key of lora_variants (A, B)")
     parser.add_argument("--smoke", action="store_true", help="train: the cfg['smoke'] items, steps and eff_batch")
     args = parser.parse_args()

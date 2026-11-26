@@ -36,6 +36,19 @@ def result_path(cfg: dict, root: str | Path, benchmark: str, split: str, R: int,
     return Path(root) / cfg["out_dir"] / name
 
 
+def _run_files(cfg: dict, root: str | Path, benchmark: str, split: str, R: int) -> list[Path]:
+    """Every result file of one benchmark x split x R of this run config, whatever its shard count."""
+    digest = config_hash(full_run_config(cfg, cfg["batch_size"]))
+    pattern = f"{benchmark}_{split}_res{cfg['res_px']}_R{R}_*_{digest}.jsonl"
+    return sorted((Path(root) / cfg["out_dir"]).glob(pattern))
+
+
+def _done_elsewhere(cfg: dict, root: str | Path, benchmark: str, split: str, R: int, n_shards: int) -> set[str]:
+    """item_ids finished in files of another shard count (files of this count hold other shards or are our own)."""
+    return {row["item_id"] for path in _run_files(cfg, root, benchmark, split, R)
+            if f"of{n_shards}_" not in path.name for row in read_results(path)}
+
+
 def _check_scope(cfg: dict) -> None:
     """Refuse the frozen test split and pruning settings that are not wired in yet."""
     if "test" in cfg["run_splits"]:
@@ -48,6 +61,9 @@ def run_full(vlm: LoadedVLM | None, cfg: dict, root: str | Path, shard: tuple[in
              vlms: Sequence[LoadedVLM] | None = None) -> None:
     """Run this shard's items for every benchmark x split x R in the config; resumable.
 
+    Items finished in files of another shard count are skipped, so the shard count may change between runs
+    (stop the old processes first).
+
     `vlms` uses several copies in this process (see `run_evaluation`); file names do not change.
     """
     _check_scope(cfg)
@@ -59,8 +75,12 @@ def run_full(vlm: LoadedVLM | None, cfg: dict, root: str | Path, shard: tuple[in
             items = shard_items(LOADERS[benchmark](cfg, split, root=root), shard_i, n_shards)
             for R in cfg["R_grid"]:
                 out = result_path(cfg, root, benchmark, split, R, batch_size, shard)
-                print(f"[{benchmark} {split}] R={R} | shard {shard_i}/{n_shards} | {len(items)} items | {out.name}")
-                run_evaluation(vlm, items, run_cfg, R, out, resume=True, batch_size=batch_size, vlms=vlms)
+                elsewhere = _done_elsewhere(cfg, root, benchmark, split, R, n_shards)
+                todo = [item for item in items if item.item_id not in elsewhere]
+                print(f"[{benchmark} {split}] R={R} | shard {shard_i}/{n_shards} | {len(todo)} items "
+                      f"({len(items) - len(todo)} done under another shard count) | {out.name}")
+                if todo:
+                    run_evaluation(vlm, todo, run_cfg, R, out, resume=True, batch_size=batch_size, vlms=vlms)
 
 
 def _remaining_items(cfg: dict, root: str | Path, shard: tuple[int, int]) -> dict[int, int]:
@@ -73,7 +93,7 @@ def _remaining_items(cfg: dict, root: str | Path, shard: tuple[int, int]) -> dic
             for R in cfg["R_grid"]:
                 out = result_path(cfg, root, benchmark, split, R, batch_size, shard)
                 done = {row["item_id"] for row in read_results(out)} if out.exists() else set()
-                remaining[R] += len(ids - done)
+                remaining[R] += len(ids - done - _done_elsewhere(cfg, root, benchmark, split, R, shard[1]))
     return remaining
 
 
@@ -115,15 +135,12 @@ def estimate_full_run(vlm: LoadedVLM | None, cfg: dict, root: str | Path, shard:
 def summarize_full(cfg: dict, root: str | Path) -> list[dict]:
     """One row per benchmark x split x R over all shard files of this run config, de-duplicated."""
     _check_scope(cfg)
-    batch_size = cfg["batch_size"]
-    digest = config_hash(full_run_config(cfg, batch_size))
-    folder = Path(root) / cfg["out_dir"]
     table = []
     for benchmark in cfg["run_benchmarks"]:
         for split in cfg["run_splits"]:
             for R in cfg["R_grid"]:
                 rows = {}
-                for path in sorted(folder.glob(f"{benchmark}_{split}_res{cfg['res_px']}_R{R}_*_{digest}.jsonl")):
+                for path in _run_files(cfg, root, benchmark, split, R):
                     for row in read_results(path):
                         rows[row["item_id"]] = row
                 if not rows:
