@@ -1,4 +1,4 @@
-# Post-training (docs/DEC3_MVP.md S8-S9). Only the teacher cache (S8) is on main.
+# Post-training (docs/DEC3_MVP.md S8-S9): the teacher cache and the two budget-tolerance LoRAs.
 extends: mvp.yaml
 
 # S8 ONLY: Vedaang allowed GPUs 0-7 for the teacher cache run (docs/decisions.md, Nov 25). Every other run keeps 0-3.
@@ -16,3 +16,47 @@ teacher:
   flush_every: 64        # items between writes; a killed run loses at most this many per copy
   check_prob_tol: 0.02   # cache vs fresh teacher-forced forward: largest allowed gap in a top-token probability
   out_dir: execution_results/teacher
+
+# --- S9: budget-tolerance LoRAs. None of the keys below changes the teacher cache or its hash. ---
+# S9 training runs on one of the GPU pairs of mvp.yaml (0-3), not on the S8-only groups above.
+
+# visual-token selection for the student at k < 1: the S5 winner. text_mean until S5 is frozen; this line overrides
+# mvp.yaml, so set it to the winner (or delete it once mvp.yaml has it).
+compressor: text_mean
+
+lora:
+  # teacher depth of a compressed student: "same" (R_teacher = R_student) | "fixed:N" | "plus:N" (min(R + N, 5)).
+  # Full-token samples (k = 1) always use "same". `variant_config(cfg, "A"|"B")` sets it from lora_variants.
+  teacher_R: same
+  r: 16
+  alpha: 32
+  dropout: 0.0
+  # attention projections q/k/v/o `.linear` of the core layers 6-17 (48 modules, checked on attach)
+  target_regex: '.*language_model\.layers\.(6|7|8|9|10|11|12|13|14|15|16|17)\.self_attn\.(q_proj|k_proj|v_proj|o_proj)\.linear'
+  k_train: [0.25, 0.5]
+  identity_frac: 0.1        # share of samples at k = 1.0
+  R_choices: [1, 2, 3, 4, 5]  # student loop counts, uniform
+  seed: 0                   # adapter init and sample schedule; the same for every variant
+
+# variant -> teacher_R rule; the adapter folder and run name follow from the rule
+lora_variants: {A: same, B: "fixed:5"}
+
+train:                      # data: every lora_train item of teacher.benchmarks
+  lr: 1.0e-4                # keep the ".0": PyYAML reads "1e-4" as a string
+  weight_decay: 0.0
+  max_grad_norm: 1.0
+  eff_batch: 16             # samples per optimizer step (accumulated one sample at a time)
+  steps: 1000               # optimizer steps of the full run, per variant
+  checkpoint_every: 25
+  gradient_checkpointing: true
+  out_dir: execution_results/lora
+
+smoke:                      # notebooks/10_post_training
+  n_per_benchmark: 25       # lora_train items per benchmark (50 in all)
+  steps: 100                # per variant
+  eff_batch: 4              # smaller than the full run, to keep the notebook short
+  probe_items: 10           # items of the fixed before/after loss
+  probe_R: [1, 3, 5]
+  eval_items_per_benchmark: 10  # dev
+  eval_k: [0.25, 1.0]
+  eval_R: [1, 3, 5]

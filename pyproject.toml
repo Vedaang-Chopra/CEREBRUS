@@ -28,11 +28,12 @@ dependencies = [
   "requests",
   "wandb==0.31.0",
   "spacy==3.8.18",  # crisp_lite; also: python -m spacy download en_core_web_sm
+  "peft==0.22.0",  # S9 LoRA
 ]
 
 [project.optional-dependencies]
-# Needed by later stages, not yet in learning_env: peft (S9 LoRA), statsmodels (S14).
-later = ["peft", "statsmodels"]
+# Needed by later stages, not yet in learning_env: statsmodels (S14).
+later = ["statsmodels"]
 
 [tool.setuptools.packages.find]
 include = ["adaloop*", "utils*"]
