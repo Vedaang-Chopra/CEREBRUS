@@ -3,9 +3,11 @@
 Run: `python tests/adaloop/test_baselines.py` (or pytest) from the repo root.
 """
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -20,6 +22,8 @@ from adaloop.orchestration.cell_policies import (
     grid_cells,
     oracle_rows,
 )
+from adaloop.orchestration.grid import grid_dir
+from adaloop.orchestration.headroom_gate import headroom_gate
 
 CTRL = {"splits": {"train": "ctrl_train", "dev": "dev", "eval": ["dev"]}, "cap_fracs": [0.5, 1.0]}
 
@@ -82,8 +86,35 @@ def test_cell_policies() -> None:
     print("✓ PASS cell policies: caps respected, one fixed cell, oracle bounds, no report label in the hull")
 
 
+def test_headroom_gate_by_hand() -> None:
+    # R = 3 cells A (k=.25, cost 1), B (k=.5, cost 3), C (k=1, cost 4 = cost_ref); cap 0.5 -> 2. 4 items per split.
+    # ctrl_train accuracy A .25, B .75, C .75: hull A-B, at cost 2 half A half B. dev scores below.
+    # hull: mean(A, B) = (25 + 75) / 2 = 50. single cell <= 2: A = 25. oracle: items 2 and 3 get B = 75.
+    # the re-run repeats every score: noise 0. headroom: hull 75 - 50 = 25, cell 75 - 25 = 50.
+    cells = {0.25: (1, [1, 0, 0, 0], [1, 0, 0, 0]), 0.5: (3, [1, 1, 1, 0], [1, 1, 1, 0]),
+             1.0: (4, [1, 1, 1, 0], [1, 1, 1, 1])}  # k -> (cost, ctrl_train scores, dev scores)
+    rows = [{"benchmark": "gqa", "item_id": f"{split}{i}", "split": split, "model_variant": "base", "rerun_id": rerun,
+             "k": k, "R": 3, "correct": float(scores[i]), "flops_total": cost * 10**9}
+            for k, (cost, train, dev) in cells.items()
+            for split, scores in (("ctrl_train", train), ("dev", dev))
+            for i in range(4) for rerun in ((0, 1) if split == "dev" else (0,))]
+    with tempfile.TemporaryDirectory() as tmp:
+        cfg = {"out_dir": tmp, "grid_batch": {"size": 8}, "batch_grouping": "equal_length", "splits": {"seed": 0},
+               "headroom": {"select_split": "ctrl_train", "report_split": "dev", "cap_fracs": [0.5],
+                            "headline_frac": 0.5, "min_pts": 30.0, "n_boot": 200}}
+        folder = grid_dir(cfg, tmp)
+        folder.mkdir(parents=True)
+        pd.DataFrame(rows).to_parquet(folder / "grid.parquet", index=False)
+        gate = headroom_gate(cfg, tmp).iloc[0]  # no Step-2b rows here: re-run noise only
+    got = [gate[name] for name in ("oracle", "best_fixed", "best_fixed_cell", "noise_used", "headroom", "headroom_cell")]
+    assert np.allclose(got, [75, 50, 25, 0, 25, 50]), got
+    assert gate["noise_source"] == "re-run" and not gate["met"] and gate["met_cell"]
+    print("✓ PASS headroom gate: hand example over the hull mix and over the single cell")
+
+
 if __name__ == "__main__":
     test_interpolation()
     test_holm_and_p()
     test_hull_by_hand()
     test_cell_policies()
+    test_headroom_gate_by_hand()

@@ -1,9 +1,13 @@
-"""S14 headroom gate: oracle - best fixed - noise oracle, with the noise taken as the larger of two measurements."""
+"""S14 headroom gate: oracle - best fixed - noise oracle, with the noise taken as the larger of two measurements.
+
+Best fixed is the hull mix of the headline (`hull_mix`); the single best cell (nb08's T2) is printed next to it.
+"""
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
+from adaloop.core.controller.baselines import hull_mix
 from adaloop.core.cost.flops import REF_R
 from adaloop.core.eval.bootstrap import diff_of_means_ci
 from adaloop.core.eval.oracle import noise_oracle_gain, oracle_choices
@@ -46,27 +50,51 @@ def batch_noise(b1: pd.DataFrame, bn: pd.DataFrame, benchmark: str, frac: float)
     return out
 
 
+def rerun_noise(rows: pd.DataFrame, variant: str, benchmark: str, frac: float) -> np.ndarray | None:
+    """Per re-run item the noise-oracle gain in points, over all cells (as `headroom_table` computes it)."""
+    part = rows[(rows["model_variant"] == variant) & (rows["benchmark"] == benchmark)]
+    again = part[part["rerun_id"] == 1]
+    if again.empty:
+        return None
+    first = part[part["rerun_id"] == 0].merge(again[["item_id"]].drop_duplicates(), on="item_id")
+    cells = grid_cells(first)
+    # re-run items come from several splits: they are pooled under one name for the arrays
+    (_, values, costs, cost_ref), (_, values_again, costs_again, _) = (
+        cell_arrays(run.assign(split="dev"), "dev", cells) for run in (first, again))
+    gain = noise_oracle_gain(values, costs, values_again, costs_again, frac * cost_ref.mean())
+    return None if gain is None else 100.0 * gain
+
+
 def headroom_gate(cfg: dict, root: str | Path, variant: str = "base", name: str = "grid") -> pd.DataFrame:
     """Per benchmark at `headroom.headline_frac`: headroom = oracle - best_fixed - max(re-run noise, batch noise).
 
-    Dev numbers (`cfg["headroom"]`); best fixed is chosen per benchmark on ctrl_train, as in nb08 (T2), so it is not
-    the pooled cell of the headline. Both noise numbers are listed. The batch noise is the at-cap value, or the
-    uncapped one when the two Step-2b cells cannot fit the cap (`noise_source` says which was used).
+    Dev numbers (`cfg["headroom"]`). `best_fixed` is the hull mix built per benchmark with the headline's data rules:
+    accuracy from ctrl_train, costs of the report items, at mean FLOPs = the cap (above its most accurate cell it costs
+    less). `headroom`, its CI and `met` use it. `best_fixed_cell`, `headroom_cell`, ... are the same with the single best
+    cell <= cap, as in nb08 (T2). Both noise numbers are listed; the batch noise is the at-cap value, or the uncapped
+    one when the two Step-2b cells cannot fit the cap (`noise_source` says which was used).
     """
     settings = cfg["headroom"]
     frac, split = settings["headline_frac"], settings["report_split"]
     grid = pd.read_parquet(grid_dir(cfg, root, name) / "grid.parquet")  # main and re-run rows
     rows = grid[grid["split"] != "test"]  # this gate is a dev measurement
-    base = headroom_table(rows, cfg, variant)
-    base = base[np.isclose(base["cap_frac"], frac)]
+    table = headroom_table(rows, cfg, variant)
+    table = table[np.isclose(table["cap_frac"], frac)]
     batch = load_batch_rows(cfg, root, variant, name)
     main = rows[(rows["model_variant"] == variant) & (rows["rerun_id"] == 0)]
     out = []
-    for row in base.itertuples():
-        record = {"benchmark": row.benchmark, "cap_frac": frac, "best_fixed": row.best_fixed, "oracle": row.oracle,
-                  "noise_rerun": row.noise_oracle, "noise_batch_at_cap": np.nan, "noise_batch_uncapped": np.nan,
-                  "n_batch": 0, "noise_used": row.noise_oracle, "noise_source": "re-run",
-                  "headroom": row.headroom, "headroom_low": row.headroom_low, "headroom_high": row.headroom_high}
+    for row in table.itertuples():
+        bench = main[main["benchmark"] == row.benchmark]
+        cells = grid_cells(bench)
+        _, select_values, _, _ = cell_arrays(bench, settings["select_split"], cells)
+        _, values, costs, cost_ref = cell_arrays(bench, split, cells)
+        cap = frac * cost_ref.mean()
+        ### Step-1:- Noise: the larger of the two measurements
+        gain = rerun_noise(rows, variant, row.benchmark, frac)
+        record = {"benchmark": row.benchmark, "cap_frac": frac, "oracle": row.oracle, "best_fixed": np.nan,
+                  "best_fixed_cell": row.best_fixed, "noise_rerun": row.noise_oracle, "noise_batch_at_cap": np.nan,
+                  "noise_batch_uncapped": np.nan, "n_batch": 0, "noise_used": row.noise_oracle,
+                  "noise_source": "none" if gain is None else "re-run"}
         if batch is not None:
             noise = batch_noise(*batch, row.benchmark, frac)
             record["n_batch"] = noise["n"]
@@ -74,18 +102,23 @@ def headroom_gate(cfg: dict, root: str | Path, variant: str = "base", name: str 
                 if noise[key] is not None:
                     record[f"noise_batch_{key}"] = noise[key].mean()
             key = "at_cap" if noise["at_cap"] is not None else "uncapped"
-            value = noise[key].mean()
-            if not np.isnan(row.best_fixed) and not value <= row.noise_oracle:  # NaN re-run noise: batch is used
-                cells = grid_cells(main)
-                _, values, costs, cost_ref = cell_arrays(main[main["benchmark"] == row.benchmark], split, cells)
-                picks = oracle_choices(values, costs, frac * cost_ref.mean())
-                gap = 100.0 * (values[np.arange(len(values)), picks] - values[:, cells.index((row.best_k, row.best_R))])
-                record.update(noise_used=value, noise_source=f"batch ({key})")
-                record["headroom"], record["headroom_low"], record["headroom_high"] = diff_of_means_ci(
-                    gap, noise[key], settings["n_boot"], cfg["splits"]["seed"])
-        if np.isnan(record["noise_used"]):
-            record["noise_source"] = "none"
-        record["met"] = bool(record["headroom"] >= settings["min_pts"])
+            if gain is None or noise[key].mean() > gain.mean():
+                gain = noise[key]
+                record.update(noise_used=gain.mean(), noise_source=f"batch ({key})")
+        ### Step-2:- Headroom over the hull mix and over the single cell
+        picks = oracle_choices(values, costs, cap)
+        weights = hull_mix(select_values, costs, cap)
+        fixed = {"": None if weights is None else values @ weights,
+                 "_cell": None if np.isnan(row.best_fixed) else values[:, cells.index((row.best_k, row.best_R))]}
+        if weights is not None:
+            record["best_fixed"] = 100.0 * fixed[""].mean()
+        for suffix, scores in fixed.items():
+            head = low = high = np.nan
+            if scores is not None and picks is not None and gain is not None:
+                gap = 100.0 * (values[np.arange(len(values)), picks] - scores)
+                head, low, high = diff_of_means_ci(gap, gain, settings["n_boot"], cfg["splits"]["seed"])
+            record.update({f"headroom{suffix}": head, f"headroom{suffix}_low": low, f"headroom{suffix}_high": high,
+                           f"met{suffix}": bool(head >= settings["min_pts"])})
         record["split"] = f"{split} (optimistic: not the test split)"
         out.append(record)
     return pd.DataFrame(out)
