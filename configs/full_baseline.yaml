@@ -11,4 +11,4 @@ run_benchmarks: [gqa, textvqa]
 k_grid: [1.0]
 R_grid: [1, 2, 3, 4, 5]
 # 1 is the reference path; notebooks/06 checks batched answers match first
-batch_size: 8
+batch_size: 1  # batched outputs differ from batch 1 (nb07 check, Nov 26); speed comes from copies

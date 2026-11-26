@@ -126,3 +126,7 @@ One entry per gate or design decision. Newest at the bottom. Format:
 - Latency of the reused 512 rows comes from another session (1.02 s vs 0.80 s here): not comparable across sessions.
 - Decision on res_px: pending Vedaang (see main-discussion recommendation).
 - **Decision (Vedaang, Nov 26): res_px = 768** for every run from now on (S5b Pareto, S6 timing, S7 grid, S8, S9, S10). 512-px results stay as the S5 record and an appendix comparison. The S5 winner is re-checked at 768 in the Pareto sweep (k = 25/50%).
+
+## Nov 26, 2026 · batching is off for every run
+- nb07 equal-length batch check (768 px, batch up to 8, no padding inside a batch, 16 dev items per benchmark × rediprune/visionzip/text_mean at k=25% + none at k=100%): **13 of 128 batched outputs differ from batch 1**, also at k=100% with no pruning (e.g. "sitting on a bench" vs "sitting on bench", "6:00" vs "6:30", "Firefox" vs "firefox"). Padding is not the cause; batch shape changes the BF16 kernels and flips near-ties.
+- Decision: batch 1 everywhere (`eval_batch_size: 1`, full_baseline `batch_size: 1`, teacher `batch_size: 1`). Speed comes from model copies (4 on GPUs 0–7 for big runs). Equal-length grouping code stays, unused. The earlier nb06 "batch 8 = batch 1 on 8/8" was a small sample.

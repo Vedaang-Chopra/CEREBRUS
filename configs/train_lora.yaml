@@ -12,7 +12,7 @@ teacher:
   top_n: 32              # log-probs kept per answer token, plus the log-mass of all other tokens
   max_new_tokens: 32     # the answer message is already open: a short answer and its end token
   benchmarks: [gqa, textvqa]
-  batch_size: 8          # one R per batch (nb06: batch 8 gives the answers of batch 1)
+  batch_size: 1          # batched outputs differ from batch 1 (nb07 check, Nov 26); speed comes from copies
   flush_every: 64        # items between writes; a killed run loses at most this many per copy
   check_prob_tol: 0.02   # cache vs fresh teacher-forced forward: largest allowed gap in a top-token probability
   out_dir: execution_results/teacher
