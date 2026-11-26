@@ -63,3 +63,7 @@ One entry per gate or design decision. Newest at the bottom. Format:
 ## Nov 25, 2026 · S8 · multi-depth teacher cache approved
 - Decision (Vedaang): S8 caches the frozen full-token teacher at R = 1..5 for all 8,549 lora_train items (42,745 records), schema and checks in DEC3 S8 and `docs/04_prompts/s8_build.md`. GPUs 0–7 may be used for the S8 cache run (exception to the 0–3 rule, S8 only). Estimate from nb06 throughput (0.37 s/item at R=3, batch 8): ~2 h on 2 copies, ~1 h on 4.
 - S9 (not started until S8 is validated and Vedaang approves): A = depth-matched (teacher R = student R), B = fixed R=3 teacher; 10% full-token samples depth-matched in both; forward KL top-32 + tail bucket; identical training settings. S10 compares base, A, B on the 15-cell grid.
+
+## Nov 25, 2026 · S5 · batching off for compressed runs
+- nb07 batch check (8 items × rediprune, visionzip at k=25%, R=3): batched generation changed 2 of 16 outputs vs batch 1 (gqa 20442346 rediprune yes→no; textvqa 35744 visionzip). At k=100% (nb06) batch 8 = batch 1 on 8/8.
+- Decision: `eval_batch_size: 1` for S5 (the rows already done were batch 1, so all methods are compared under the same regime). Speed comes from 2 copies. Root cause (BF16 numerics with padding vs a bug) is checked before the S7 grid uses batching.
