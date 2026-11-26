@@ -68,6 +68,7 @@ from adaloop.orchestration.full_run import (
     shard_items,
     summarize_full,
 )
+from adaloop.orchestration.grid import grid_items, merge_grid, rerun_items, run_grid
 from adaloop.orchestration.inputs import item_inputs, item_prompt
 from adaloop.orchestration.pass_state import check_pass_state
 from adaloop.schemas.cost import CostParams
@@ -118,6 +119,7 @@ __all__ = [
     "generate_answers",
     "generate_batch",
     "git_hash",
+    "grid_items",
     "item_inputs",
     "item_prompt",
     "last_logits",
@@ -130,6 +132,7 @@ __all__ = [
     "load_models",
     "load_textvqa",
     "make_splits",
+    "merge_grid",
     "n_keep_for",
     "paired_bootstrap_ci",
     "pass_features",
@@ -148,12 +151,14 @@ __all__ = [
     "record_attention_mass",
     "record_first_logits",
     "record_pass_states",
+    "rerun_items",
     "resize_long_side",
     "row_flops",
     "result_path",
     "run_comparison",
     "run_evaluation",
     "run_full",
+    "run_grid",
     "run_item_cells",
     "save_figure",
     "save_features",

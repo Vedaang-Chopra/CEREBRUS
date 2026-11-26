@@ -44,6 +44,11 @@ compression:
   crisp_lite: {spacy_model: en_core_web_sm, uniform_frac: 0.25}
   visionzip: {contextual_frac: 0.05}  # of the full token count, as upstream; the dominant tokens fill the rest of k
 
+# S7 grid (nb08, `scripts/mvp.py grid`): cells are k_grid x R_grid under `compressor`; test stays sealed until S12
+grid:
+  splits: [dev, ctrl_train]
+  benchmarks: [gqa, textvqa]
+
 # noise ceiling: items run a second time at every cell (rerun_id = 1)
 n_rerun: 100
 

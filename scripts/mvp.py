@@ -4,11 +4,12 @@
   python scripts/mvp.py splits
   python scripts/mvp.py eval --benchmark gqa --split dev --loops 1 3 5 --limit 20
   python scripts/mvp.py full --shard 0/2        # configs/full_baseline.yaml; shard i of n on gpu_groups[i]
+  python scripts/mvp.py grid --shard 0/2        # S7: configs/mvp.yaml; shard i of n on gpu_groups[i]
 
 `smoke` and `eval` replace Jiaqi-Gao/adaloop-vlm:scripts/{smoke_test,run_grid}.py @ e870bff.
 `smoke` and `eval` pick a free GPU group; `splits` needs no GPU.
 The group is selected before `adaloop.api` is imported (that import initializes CUDA).
-`full` is resumable: rerun the same command after an interruption.
+`full` and `grid` are resumable: rerun the same command after an interruption.
 """
 import argparse
 import json
@@ -75,9 +76,19 @@ def cmd_full(api: ModuleType, cfg: dict, args: argparse.Namespace) -> None:
     api.run_full(vlm, cfg, ROOT, shard=args.shard)
 
 
+def cmd_grid(api: ModuleType, cfg: dict, args: argparse.Namespace) -> None:
+    """Run shard i of n of the grid and of its noise re-run on GPU group i, resumable."""
+    items = api.grid_items(cfg, ROOT)
+    again = api.rerun_items(items, cfg["n_rerun"], cfg["splits"]["seed"])
+    vlms = [api.load_model(cfg)]
+    out_dir = ROOT / cfg["out_dir"] / "grid"
+    api.run_grid(vlms, items, cfg, out_dir, shard=args.shard)
+    api.run_grid(vlms, again, cfg, out_dir, shard=args.shard, rerun_id=1)
+
+
 def select_gpus(cfg: dict, args: argparse.Namespace) -> None:
     """Pick the GPU group for the command; for `full`, also turn args.shard into (i, n)."""
-    if args.command == "full":
+    if args.command in ("full", "grid"):
         args.shard = parse_shard(args.shard, cfg)
         i, n = args.shard
         print(f"shard {i}/{n} | GPU group {i}")
@@ -89,13 +100,13 @@ def select_gpus(cfg: dict, args: argparse.Namespace) -> None:
 def main() -> None:
     """Parse arguments and run one command."""
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["smoke", "splits", "eval", "full"])
+    parser.add_argument("command", choices=["smoke", "splits", "eval", "full", "grid"])
     parser.add_argument("--config", default=None, help="default: configs/full_baseline.yaml for full, else configs/mvp.yaml")
     parser.add_argument("--benchmark", default="gqa", choices=BENCHMARKS)
     parser.add_argument("--split", default="dev")
     parser.add_argument("--loops", type=int, nargs="+", default=[3])
     parser.add_argument("--limit", type=int, default=None)
-    parser.add_argument("--shard", default="0/1", help="full only: i/n, 0-based i, one gpu_groups entry per shard")
+    parser.add_argument("--shard", default="0/1", help="full and grid only: i/n, 0-based i, one gpu_groups entry per shard")
     args = parser.parse_args()
     if args.config is None:
         args.config = "configs/full_baseline.yaml" if args.command == "full" else "configs/mvp.yaml"
@@ -104,7 +115,7 @@ def main() -> None:
 
     from adaloop import api  # only now: this import initializes CUDA
 
-    {"smoke": cmd_smoke, "splits": cmd_splits, "eval": cmd_eval, "full": cmd_full}[args.command](api, cfg, args)
+    {"smoke": cmd_smoke, "splits": cmd_splits, "eval": cmd_eval, "full": cmd_full, "grid": cmd_grid}[args.command](api, cfg, args)
 
 
 if __name__ == "__main__":
