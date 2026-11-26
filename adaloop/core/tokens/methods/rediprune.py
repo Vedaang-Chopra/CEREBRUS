@@ -1,12 +1,13 @@
-"""ReDiPrune: greedy relevance + diversity selection, before the projector."""
+"""ReDiPrune: greedy relevance + diversity selection, here on the projected tokens."""
 # Ported from UA-CVML/ReDiPrune:LLaVA-NeXT/llavavid/model/llava_arch.py @ ba04aa4427f7 (Apache-2.0)
 # `_select_text_cond` is unchanged. `extract_question_embedding` changes:
 #   - method -> function: `embed_tokens`, `image_token_id`, `hidden_size` replace `self` and IMAGE_TOKEN_INDEX
 #   - token embeddings are cast to float32 (our embeddings are bfloat16)
 #   - the attention mask must be boolean (as upstream passes it); the caller converts it
 # Not ported: environment variables (alpha, tau come from the config; keep_ratio from k), the video/frame loop.
-# Our use (docs/notes/compression_baselines.md): features are 2x2 units (mean of 4 patch states, 1024-d), and the
-# 2304-d question embedding is brought to 1024-d by upstream's own dimension matching.
+# Deviation (docs/notes/compression_baselines.md): upstream scores before the projector. Here the features are the
+# projected tokens (N, 2304): our pre-merger features are 1024-d and the 2304-d question embedding could only be
+# matched to them by pooling. With equal widths upstream's dimension-matching branch does not run.
 import torch
 from torch.nn import functional as F
 

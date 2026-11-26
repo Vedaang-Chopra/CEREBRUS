@@ -34,7 +34,7 @@ answer_prefill: "<|message_model|><|content_text|>ANSWER:"  # S2 decision (Nov 2
 no_think_prefill: "<|message_model|><|content_text|>ANSWER:"
 out_dir: execution_results/mvp
 # bump when a code change alters outputs for the same config (generation, extraction, scoring)
-code_version: 6
+code_version: 7
 
 # Visual-token compression (docs/notes/compression_baselines.md). The keep fraction `k` is set per run (default 1.0).
 # none | random | uniform | text_mean | lowres | crisp_lite | rediprune | divprune | visionzip; frozen after S5

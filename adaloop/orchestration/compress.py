@@ -22,7 +22,7 @@ from adaloop.core.tokens.selectors import (
     text_mean_selector,
     uniform_selector,
 )
-from adaloop.core.tokens.vision import capture_last_attention, unit_features
+from adaloop.core.tokens.vision import capture_last_attention
 from adaloop.orchestration.inputs import item_inputs
 from adaloop.schemas.items import Item
 from adaloop.schemas.vlm import LoadedVLM
@@ -60,7 +60,7 @@ def lowres_res_px(vlm: LoadedVLM, image: Image.Image, res_px: int, k: float) -> 
 
 
 def _select(vlm: LoadedVLM, inputs: Mapping, item: Item, cfg: dict, method: str, k: float,
-            tokens: torch.Tensor, vision_outputs, attention: dict) -> tuple[torch.Tensor, torch.Tensor, dict]:
+            tokens: torch.Tensor, attention: dict) -> tuple[torch.Tensor, torch.Tensor, dict]:
     """(kept indices, token features (changed only by visionzip), extras for the cost count and info)."""
     N = len(tokens)
     K = n_keep_for(N, k)
@@ -88,8 +88,8 @@ def _select(vlm: LoadedVLM, inputs: Mapping, item: Item, cfg: dict, method: str,
         mask = inputs["attention_mask"].to(ids.device).bool()
         query = extract_question_embedding(embed_tokens, vlm.model.config.image_token_id,
                                            language_model.config.hidden_size, ids, mask)[0]
-        features = unit_features(vision_outputs.last_hidden_state, vlm.model.config.vision_config.spatial_merge_size)
-        indices = _select_text_cond(features, query.to(features.device), K / N, params["alpha"], params["tau"])
+        # post-projector: tokens and question embedding have the same width (upstream scores before the projector)
+        indices = _select_text_cond(tokens.float(), query.to(tokens.device), K / N, params["alpha"], params["tau"])
         tail = ids[0, (ids[0] == vlm.model.config.image_token_id).nonzero()[-1, 0] + 1:]
         return indices, tokens, {"n_words": min(len(tail), 128)}
     if method == "crisp_lite":
@@ -146,7 +146,7 @@ def compress(vlm: LoadedVLM, inputs: Mapping, item: Item, k: float, cfg: dict) -
     vit_end = _clock(vlm)
 
     ### Step-2:- Choose the tokens, then drop the others from the prompt and the features
-    indices, features, extras = _select(vlm, inputs, item, cfg, method, k, tokens, vision_outputs, attention)
+    indices, features, extras = _select(vlm, inputs, item, cfg, method, k, tokens, attention)
     if features is not tokens:
         vision_outputs = copy(vision_outputs)
         vision_outputs.pooler_output = (features,)
@@ -155,7 +155,7 @@ def compress(vlm: LoadedVLM, inputs: Mapping, item: Item, k: float, cfg: dict) -
 
     tower = vlm.model.config.vision_config
     flops = compression_flops(
-        method, N, len(indices), tokens.shape[-1], tower.hidden_size, n_words=extras.get("n_words", 0),
+        method, N, len(indices), tokens.shape[-1], n_words=extras.get("n_words", 0),
         head_dim=tower.hidden_size // tower.num_attention_heads, n_heads=tower.num_attention_heads,
         n_patches_per_unit=tower.spatial_merge_size**2, n_contextual=extras.get("n_contextual", 0))
     info.update(n_vis=len(indices), vit_s=vit_end - start, compression_s=end - vit_end, compression_flops=flops,

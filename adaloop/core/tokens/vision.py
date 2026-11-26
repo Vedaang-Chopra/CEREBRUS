@@ -8,12 +8,6 @@ from transformers.models.inkling2.modeling_inkling2 import apply_rotary_pos_emb_
 from adaloop.schemas.vlm import LoadedVLM
 
 
-def unit_features(last_hidden_state: torch.Tensor, merge: int) -> torch.Tensor:
-    """Pre-merger features per unit: mean of the patch states. Input (1 + N*merge^2, D), CLS first; output (N, D)."""
-    patches = last_hidden_state[1:].float()
-    return patches.reshape(-1, merge**2, patches.shape[-1]).mean(dim=1)
-
-
 @contextmanager
 def capture_last_attention(vlm: LoadedVLM) -> Iterator[dict]:
     """Yield a dict that gets `cls_attention` (N,) and `keys` (1, N, head_dim) per unit from the last ViT layer."""
