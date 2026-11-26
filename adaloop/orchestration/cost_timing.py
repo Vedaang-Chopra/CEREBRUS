@@ -11,7 +11,7 @@ from adaloop.core.model.inference import generate
 from adaloop.core.model.loops import set_loops
 from adaloop.core.tokens.prune import extract_visual_tokens, prune_inputs
 from adaloop.orchestration.compress import compress
-from adaloop.orchestration.features import run_item_cells
+from adaloop.orchestration.features import run_items_cells
 from adaloop.orchestration.inputs import item_inputs
 from adaloop.schemas.items import Item
 from adaloop.schemas.vlm import LoadedVLM
@@ -69,17 +69,19 @@ def cost_grid(vlm: LoadedVLM, item: Item, cfg: dict, n_out: int) -> list[dict]:
 
 
 def time_grid(vlm: LoadedVLM, items: Sequence[Item], cfg: dict) -> tuple[list[dict], float]:
-    """Run every cell on `items` exactly as the grid does (features on); return (rows, wall seconds per item).
+    """Run every cell on `items` as the grid does (features on, `eval_batch_size`); return (rows, seconds per item).
 
-    One warmup item is run first and not counted. The seconds cover all k x R cells of one item on one model copy.
+    One warmup batch is run first and not counted. The seconds cover all k x R cells of one item on one model copy.
     """
-    run_item_cells(vlm, items[0], cfg)  # warmup
+    size = cfg["eval_batch_size"]
+    run_items_cells(vlm, items[:size], cfg)  # warmup
     rows = []
     start = time.perf_counter()
-    for n, item in enumerate(items, 1):
-        rows += run_item_cells(vlm, item, cfg)[0]
-        if n == 1 or n % 10 == 0:
-            print(f"[{n}/{len(items)}] {(time.perf_counter() - start) / n:.1f} s/item (all cells)")
+    for first in range(0, len(items), size):
+        for item_rows, _ in run_items_cells(vlm, items[first : first + size], cfg):
+            rows += item_rows
+        done = min(first + size, len(items))
+        print(f"[{done}/{len(items)}] {(time.perf_counter() - start) / done:.1f} s/item (all cells)")
     return rows, (time.perf_counter() - start) / len(items)
 
 

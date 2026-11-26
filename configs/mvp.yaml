@@ -11,6 +11,9 @@ min_free_gib: 38
 # the sample runs. Neither changes one item's output, so neither is hashed.
 n_copies: 2
 sample_items: 20
+# items per generation batch in the S5 comparison and the S7 grid (one method, k, R per batch). Not hashed:
+# nb07/nb08 check that batched outputs equal batch 1. 1 gives per-item latency and time to first token.
+eval_batch_size: 8
 res_px: 512
 # system prompt and question suffix; the file's content replaces this value on load, so it is part of config_hash
 prompts: prompts.yaml

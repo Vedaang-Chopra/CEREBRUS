@@ -4,8 +4,8 @@ import json
 import subprocess
 from pathlib import Path
 
-# placement and sample size: they must not change a run's hash (or break resume)
-HASH_EXCLUDE = {"gpu_groups", "min_free_gib", "n_copies", "sample_items"}
+# placement, sample size and how items are batched: they must not change a run's hash (or break resume)
+HASH_EXCLUDE = {"gpu_groups", "min_free_gib", "n_copies", "sample_items", "eval_batch_size"}
 
 
 def config_hash(cfg: dict) -> str:

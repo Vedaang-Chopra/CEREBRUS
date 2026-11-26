@@ -2,7 +2,6 @@
 import time
 import zlib
 from collections.abc import Mapping
-from contextlib import nullcontext
 from copy import copy
 
 import torch
@@ -22,9 +21,10 @@ from adaloop.core.tokens.selectors import (
     text_mean_selector,
     uniform_selector,
 )
-from adaloop.core.tokens.vision import capture_last_attention
+from adaloop.core.tokens.vision import capture_attention_inputs, unit_cls_attention
 from adaloop.orchestration.inputs import item_inputs
 from adaloop.schemas.items import Item
+from adaloop.schemas.vision import VisionRun
 from adaloop.schemas.vlm import LoadedVLM
 from utils.images import resize_long_side
 from utils.timing import cuda_sync
@@ -59,9 +59,19 @@ def lowres_res_px(vlm: LoadedVLM, image: Image.Image, res_px: int, k: float) -> 
     return min(range(top, 0, -4), key=lambda side: abs(count(side) - target))
 
 
+@torch.no_grad()
+def encode_vision(vlm: LoadedVLM, inputs: Mapping) -> VisionRun:
+    """Run the vision tower once on one item's `item_inputs`; pass the result to every `compress` call of the item."""
+    start = _clock(vlm)
+    with capture_attention_inputs(vlm) as captured:
+        tokens, outputs = extract_visual_tokens(vlm, inputs)
+    return VisionRun(tokens, outputs, captured, _clock(vlm) - start)
+
+
 def _select(vlm: LoadedVLM, inputs: Mapping, item: Item, cfg: dict, method: str, k: float,
-            tokens: torch.Tensor, attention: dict) -> tuple[torch.Tensor, torch.Tensor, dict]:
+            vision: VisionRun) -> tuple[torch.Tensor, torch.Tensor, dict]:
     """(kept indices, token features (changed only by visionzip), extras for the cost count and info)."""
+    tokens = vision.tokens
     N = len(tokens)
     K = n_keep_for(N, k)
     if K == N:  # nothing to choose: the same packed path, with every token
@@ -98,24 +108,27 @@ def _select(vlm: LoadedVLM, inputs: Mapping, item: Item, cfg: dict, method: str,
         if nouns:
             scores = noun_relevance(tokens, word_embeddings(embed_tokens, vlm.processor.tokenizer, nouns))
         else:
-            scores = attention["cls_attention"]
+            scores = unit_cls_attention(vlm, vision.attention_inputs)[0]
         n_fill = int(K * params["uniform_frac"])
         relevant = scores.topk(K - n_fill).indices
         extras = {"n_words": len(nouns), "fallback": None if nouns else "no_noun_cls_attention"}
         return fill_uniform(h, w, relevant, K), tokens, extras
     # visionzip: contextual tokens are a fixed share of the full count; dominant tokens fill the rest of K
     n_contextual = min(max(int(params["contextual_frac"] * N), 1), K)
-    indices, merged = visionzip_merge(attention["cls_attention"], attention["keys"], tokens,
+    attention, keys = unit_cls_attention(vlm, vision.attention_inputs)
+    indices, merged = visionzip_merge(attention, keys, tokens,
                                       K - n_contextual, n_contextual)
     return indices, merged, {"n_contextual": n_contextual}
 
 
 @torch.no_grad()  # not inference_mode: LoRA training (S9) feeds these tensors to autograd
-def compress(vlm: LoadedVLM, inputs: Mapping, item: Item, k: float, cfg: dict) -> tuple[Mapping, dict]:
+def compress(vlm: LoadedVLM, inputs: Mapping, item: Item, k: float, cfg: dict,
+             vision: VisionRun | None = None) -> tuple[Mapping, dict]:
     """Return (model inputs for generation, info) for keep fraction `k` under `cfg["compressor"]`.
 
     `inputs` is `item_inputs(vlm, item, cfg)`. `none` returns it untouched; `lowres` prepares the item again at a
-    smaller size; every other method runs the vision tower here and returns packed inputs with `mm_encoder_outputs`.
+    smaller size; every other method returns packed inputs with `mm_encoder_outputs`, from `vision`
+    (`encode_vision` of these inputs; computed here when None). Its time is reported as `vit_s` either way.
     info: method, k, res_px, grid_hw (units of the image the model gets), n_vis_full, n_vis, vit_s, compression_s,
     compression_flops, fallback.
     """
@@ -137,16 +150,14 @@ def compress(vlm: LoadedVLM, inputs: Mapping, item: Item, k: float, cfg: dict) -
         grid_hw = tuple(inputs["image_grid_thw"][0, 1:].tolist())
         return inputs, {**info, "res_px": res_px, "n_vis": _n_visual(vlm, inputs), "grid_hw": grid_hw}
 
-    ### Step-1:- Vision tower (with the last layer's attention when the method reads it)
-    needs_attention = method == "visionzip" or (
-        method == "crisp_lite" and not question_nouns(item.question, cfg["compression"][method]["spacy_model"]))
-    start = _clock(vlm)
-    with capture_last_attention(vlm) if needs_attention and k < 1 else nullcontext({}) as attention:
-        tokens, vision_outputs = extract_visual_tokens(vlm, inputs)
-    vit_end = _clock(vlm)
+    ### Step-1:- The vision tower, once per item (the caller may share it)
+    if vision is None:
+        vision = encode_vision(vlm, inputs)
+    tokens, vision_outputs = vision.tokens, vision.outputs
 
     ### Step-2:- Choose the tokens, then drop the others from the prompt and the features
-    indices, features, extras = _select(vlm, inputs, item, cfg, method, k, tokens, attention)
+    start = _clock(vlm)
+    indices, features, extras = _select(vlm, inputs, item, cfg, method, k, vision)
     if features is not tokens:
         vision_outputs = copy(vision_outputs)
         vision_outputs.pooler_output = (features,)
@@ -158,6 +169,6 @@ def compress(vlm: LoadedVLM, inputs: Mapping, item: Item, k: float, cfg: dict) -
         method, N, len(indices), tokens.shape[-1], n_words=extras.get("n_words", 0),
         head_dim=tower.hidden_size // tower.num_attention_heads, n_heads=tower.num_attention_heads,
         n_patches_per_unit=tower.spatial_merge_size**2, n_contextual=extras.get("n_contextual", 0))
-    info.update(n_vis=len(indices), vit_s=vit_end - start, compression_s=end - vit_end, compression_flops=flops,
+    info.update(n_vis=len(indices), vit_s=vision.seconds, compression_s=end - start, compression_flops=flops,
                 fallback=extras.get("fallback"))
     return packed, info

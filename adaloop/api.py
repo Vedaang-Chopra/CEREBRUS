@@ -46,7 +46,8 @@ from adaloop.data.splits import load_manifest, make_splits
 from adaloop.data.textvqa import build_textvqa_splits, load_textvqa
 from adaloop.orchestration.audit import wrong_predictions
 from adaloop.orchestration.compare import comparison_cells, comparison_table, pick_winner, run_comparison
-from adaloop.orchestration.compress import METHODS, compress
+from adaloop.orchestration.cells import check_batched
+from adaloop.orchestration.compress import METHODS, compress, encode_vision
 from adaloop.orchestration.copies import compare_copies, time_copies
 from adaloop.orchestration.cost_timing import (
     cost_grid,
@@ -61,7 +62,7 @@ from adaloop.orchestration.evaluate import (
     read_results,
     run_evaluation,
 )
-from adaloop.orchestration.features import load_features, run_item_cells, save_features
+from adaloop.orchestration.features import load_features, run_item_cells, run_items_cells, save_features
 from adaloop.orchestration.full_run import (
     estimate_full_run,
     full_run_config,
@@ -106,6 +107,7 @@ __all__ = [
     "VARIANT_LINESTYLES",
     "build_gqa_splits",
     "build_textvqa_splits",
+    "check_batched",
     "check_pass_state",
     "compare_copies",
     "comparison_cells",
@@ -114,6 +116,7 @@ __all__ = [
     "config_hash",
     "cost_grid",
     "cost_params",
+    "encode_vision",
     "cost_ref",
     "count_layer_calls",
     "estimate_full_run",
@@ -177,6 +180,7 @@ __all__ = [
     "run_full",
     "run_grid",
     "run_item_cells",
+    "run_items_cells",
     "save_figure",
     "save_features",
     "save_table",

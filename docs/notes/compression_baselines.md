@@ -96,3 +96,14 @@ with 2 copies it includes contention between them.
 Winner rule: per item, mean correctness over both k; best method by that mean over both benchmarks; methods whose paired
 95% bootstrap interval against the best contains 0 are tied; lowest mean FLOPs among the tied wins. Controls are
 eligible. With few items everything ties, so only the full-dev run can freeze `compressor`.
+
+## Batched evaluation (S5, S7)
+`orchestration/cells.py`. Items are taken `eval_batch_size` at a time; the vision tower runs once per item
+(`encode_vision`) and every method and k reuses it (`none` and `lowres` run it inside `generate`, as before); one batch
+holds one (method, k, R), left padded, with the kept token count free to differ per item. `eval_batch_size` and
+`n_copies` are not hashed: finished rows are reused whatever wrote them. Row meaning: `vit_s` is the item's one vision
+run, `flops_vit` is counted per row as before. VisionZip's CLS attention is now computed after the vision pass, so it
+is in `compression_s` (earlier rows had it in `vit_s`; the sum is unchanged). Batched rows have no time to first token
+or per-item latency: the comparison averages `latency_s` over batch-1 rows only, and the grid's `t_prefill_ms` /
+`t_decode_ms` are empty for batched rows. Batched features differ from batch 1 in floating-point bits.
+Checks: nb07 step 6 (same generated ids), nb08 (same outputs, features within tolerance).
