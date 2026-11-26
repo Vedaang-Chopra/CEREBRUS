@@ -24,11 +24,15 @@ def build_textvqa_splits(cfg: dict, root: str | Path = ".") -> dict:
     return build_manifest(path, question_ids, list(data["image_id"]), cfg["splits"], {"dataset": bcfg["source"]})
 
 
-def load_textvqa(cfg: dict, split: str, limit: int | None = None, root: str | Path = ".") -> list[Item]:
-    """Load the first `limit` questions of `split` (manifest order) as Items, images decoded as RGB."""
+def load_textvqa(cfg: dict, split: str, limit: int | None = None, root: str | Path = ".",
+                 shard: tuple[int, int] = (0, 1)) -> list[Item]:
+    """Load the first `limit` questions of `split` (manifest order) as Items, images decoded as RGB.
+
+    `shard` (i, n) keeps every n-th of them starting at i, so only those images are decoded.
+    """
     bcfg = cfg["benchmarks"][BENCHMARK]
     manifest = build_textvqa_splits(cfg, root)
-    ids = manifest["splits"][split][:limit]
+    ids = manifest["splits"][split][:limit][shard[0] :: shard[1]]
 
     data = load_dataset(bcfg["source"], split=bcfg["hf_split"])
     row_of_question = {str(qid): i for i, qid in enumerate(data["question_id"])}

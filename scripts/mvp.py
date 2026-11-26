@@ -5,11 +5,12 @@
   python scripts/mvp.py eval --benchmark gqa --split dev --loops 1 3 5 --limit 20
   python scripts/mvp.py full --shard 0/2        # configs/full_baseline.yaml; shard i of n on gpu_groups[i]
   python scripts/mvp.py grid --shard 0/2        # S7: configs/mvp.yaml; shard i of n on gpu_groups[i]
+  python scripts/mvp.py teacher --shard 0/4     # S8: configs/train_lora.yaml (GPUs 0-7), one process per shard
 
 `smoke` and `eval` replace Jiaqi-Gao/adaloop-vlm:scripts/{smoke_test,run_grid}.py @ e870bff.
 `smoke` and `eval` pick a free GPU group; `splits` needs no GPU.
 The group is selected before `adaloop.api` is imported (that import initializes CUDA).
-`full` and `grid` are resumable: rerun the same command after an interruption.
+`full`, `grid` and `teacher` are resumable: rerun the same command after an interruption.
 """
 import argparse
 import json
@@ -86,9 +87,17 @@ def cmd_grid(api: ModuleType, cfg: dict, args: argparse.Namespace) -> None:
     api.run_grid(vlms, again, cfg, out_dir, shard=args.shard, rerun_id=1)
 
 
+def cmd_teacher(api: ModuleType, cfg: dict, args: argparse.Namespace) -> None:
+    """Build shard i of n of the teacher cache on GPU group i, resumable."""
+    vlm = api.load_model(cfg)
+    items = api.teacher_items(cfg, ROOT, limit=args.limit, shard=args.shard)
+    done = api.build_teacher_cache([vlm], items, cfg, ROOT, shard=args.shard)
+    print(f"{done['new_records']} new records in {done['seconds']:.0f} s | {done['folder']}")
+
+
 def select_gpus(cfg: dict, args: argparse.Namespace) -> None:
     """Pick the GPU group for the command; for `full`, also turn args.shard into (i, n)."""
-    if args.command in ("full", "grid"):
+    if args.command in ("full", "grid", "teacher"):
         args.shard = parse_shard(args.shard, cfg)
         i, n = args.shard
         print(f"shard {i}/{n} | GPU group {i}")
@@ -100,22 +109,24 @@ def select_gpus(cfg: dict, args: argparse.Namespace) -> None:
 def main() -> None:
     """Parse arguments and run one command."""
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["smoke", "splits", "eval", "full", "grid"])
-    parser.add_argument("--config", default=None, help="default: configs/full_baseline.yaml for full, else configs/mvp.yaml")
+    parser.add_argument("command", choices=["smoke", "splits", "eval", "full", "grid", "teacher"])
+    parser.add_argument("--config", default=None, help="default: per command (full, teacher have their own)")
     parser.add_argument("--benchmark", default="gqa", choices=BENCHMARKS)
     parser.add_argument("--split", default="dev")
     parser.add_argument("--loops", type=int, nargs="+", default=[3])
     parser.add_argument("--limit", type=int, default=None)
-    parser.add_argument("--shard", default="0/1", help="full and grid only: i/n, 0-based i, one gpu_groups entry per shard")
+    parser.add_argument("--shard", default="0/1", help="full, grid, teacher: i/n, 0-based i, one gpu_groups entry per shard")
     args = parser.parse_args()
     if args.config is None:
-        args.config = "configs/full_baseline.yaml" if args.command == "full" else "configs/mvp.yaml"
+        defaults = {"full": "configs/full_baseline.yaml", "teacher": "configs/train_lora.yaml"}
+        args.config = defaults.get(args.command, "configs/mvp.yaml")
     cfg = load_config(ROOT / args.config)
     select_gpus(cfg, args)
 
     from adaloop import api  # only now: this import initializes CUDA
 
-    {"smoke": cmd_smoke, "splits": cmd_splits, "eval": cmd_eval, "full": cmd_full, "grid": cmd_grid}[args.command](api, cfg, args)
+    {"smoke": cmd_smoke, "splits": cmd_splits, "eval": cmd_eval, "full": cmd_full, "grid": cmd_grid,
+     "teacher": cmd_teacher}[args.command](api, cfg, args)
 
 
 if __name__ == "__main__":

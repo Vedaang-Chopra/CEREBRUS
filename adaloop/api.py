@@ -39,6 +39,8 @@ from adaloop.core.tokens.selectors import (
     text_mean_selector,
     uniform_selector,
 )
+from adaloop.core.train.teacher import answer_log_probs, split_top
+from adaloop.core.train.teacher_store import load_records, read_index
 from adaloop.data.gqa import build_gqa_splits, load_gqa
 from adaloop.data.splits import load_manifest, make_splits
 from adaloop.data.textvqa import build_textvqa_splits, load_textvqa
@@ -71,6 +73,16 @@ from adaloop.orchestration.full_run import (
 from adaloop.orchestration.grid import grid_items, merge_grid, rerun_items, run_grid
 from adaloop.orchestration.inputs import item_inputs, item_prompt
 from adaloop.orchestration.pass_state import check_pass_state
+from adaloop.orchestration.teacher_cache import (
+    build_teacher_cache,
+    check_teacher_live,
+    teacher_dir,
+    teacher_items,
+    teacher_records,
+    teacher_run_config,
+    teacher_summary,
+    teacher_total_records,
+)
 from adaloop.schemas.cost import CostParams
 from adaloop.schemas.items import Item
 from adaloop.schemas.vlm import GenerationResult, LoadedVLM
@@ -82,6 +94,9 @@ from utils.io import load_config
 
 __all__ = [
     "REF_R",
+    "answer_log_probs",
+    "build_teacher_cache",
+    "check_teacher_live",
     "CostParams",
     "GenerationResult",
     "Item",
@@ -130,6 +145,7 @@ __all__ = [
     "load_manifest",
     "load_model",
     "load_models",
+    "load_records",
     "load_textvqa",
     "make_splits",
     "merge_grid",
@@ -146,6 +162,7 @@ __all__ = [
     "prune_inputs",
     "question_embeddings",
     "random_selector",
+    "read_index",
     "read_answer",
     "read_results",
     "record_attention_mass",
@@ -173,8 +190,15 @@ __all__ = [
     "set_paper_style",
     "setup_notebook",
     "shard_items",
+    "split_top",
     "summarize_full",
     "summarize_rows",
+    "teacher_dir",
+    "teacher_items",
+    "teacher_records",
+    "teacher_run_config",
+    "teacher_summary",
+    "teacher_total_records",
     "text_mean_selector",
     "time_grid",
     "time_copies",

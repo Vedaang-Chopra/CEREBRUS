@@ -1,0 +1,18 @@
+# Post-training (docs/DEC3_MVP.md S8-S9). Only the teacher cache (S8) is on main.
+extends: mvp.yaml
+
+# S8 ONLY: Vedaang allowed GPUs 0-7 for the teacher cache run (docs/decisions.md, Nov 25). Every other run keeps 0-3.
+gpu_groups: [[0, 1], [2, 3], [4, 5], [6, 7]]
+# notebook: model copies. 1 takes the first free pair; the full run uses one terminal shard per pair.
+n_copies: 1
+
+# The teacher is the frozen model with every visual token, in the S2 setup of mvp.yaml with `no_think_prefill`.
+teacher:
+  R_list: [1, 2, 3, 4, 5]
+  top_n: 32              # log-probs kept per answer token, plus the log-mass of all other tokens
+  max_new_tokens: 32     # the answer message is already open: a short answer and its end token
+  benchmarks: [gqa, textvqa]
+  batch_size: 8          # one R per batch (nb06: batch 8 gives the answers of batch 1)
+  flush_every: 64        # items between writes; a killed run loses at most this many per copy
+  check_prob_tol: 0.02   # cache vs fresh teacher-forced forward: largest allowed gap in a top-token probability
+  out_dir: execution_results/teacher

@@ -23,11 +23,15 @@ def build_gqa_splits(cfg: dict, root: str | Path = ".") -> dict:
     return build_manifest(path, questions["id"], questions["imageId"], cfg["splits"], meta)
 
 
-def load_gqa(cfg: dict, split: str, limit: int | None = None, root: str | Path = ".") -> list[Item]:
-    """Load the first `limit` questions of `split` (manifest order) as Items, images decoded as RGB."""
+def load_gqa(cfg: dict, split: str, limit: int | None = None, root: str | Path = ".",
+             shard: tuple[int, int] = (0, 1)) -> list[Item]:
+    """Load the first `limit` questions of `split` (manifest order) as Items, images decoded as RGB.
+
+    `shard` (i, n) keeps every n-th of them starting at i, so only those images are decoded.
+    """
     bcfg = cfg["benchmarks"][BENCHMARK]
     manifest = build_gqa_splits(cfg, root)
-    ids = manifest["splits"][split][:limit]
+    ids = manifest["splits"][split][:limit][shard[0] :: shard[1]]
 
     questions = load_dataset(bcfg["source"], bcfg["questions_config"], split=bcfg["hf_split"])
     images = load_dataset(bcfg["source"], bcfg["images_config"], split=bcfg["hf_split"])

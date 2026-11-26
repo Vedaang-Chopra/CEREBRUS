@@ -4,6 +4,7 @@ Timing and memory measurement adapted from Jiaqi-Gao/adaloop-vlm:adaloop/models/
 """
 import time
 from collections.abc import Mapping, Sequence
+from copy import copy
 
 import torch
 from transformers import StoppingCriteriaList
@@ -126,7 +127,7 @@ def generate(
 
 def _left_pad(inputs_list: Sequence[Mapping], pad_id: int) -> dict:
     """Merge single-item inputs into one left-padded batch; image tensors are concatenated in row order."""
-    keys = set().union(*inputs_list)
+    keys = set().union(*inputs_list) - {"mm_encoder_outputs"}
     width = max(x["input_ids"].shape[1] for x in inputs_list)  # T
     batch = {}
     for key in keys:
@@ -142,6 +143,13 @@ def _left_pad(inputs_list: Sequence[Mapping], pad_id: int) -> dict:
             pad = value.new_full((1, width - value.shape[1]), fill)
             rows.append(torch.cat([pad, value], dim=1))
         batch[key] = torch.cat(rows)  # (B, T)
+    if any("mm_encoder_outputs" in x for x in inputs_list):  # vision outputs computed beforehand, one per item
+        if not all("mm_encoder_outputs" in x for x in inputs_list):
+            raise ValueError("a batch cannot mix precomputed vision outputs with pixel inputs")
+        images = [x["mm_encoder_outputs"]["image"] for x in inputs_list]
+        joined = copy(images[0])
+        joined.pooler_output = tuple(features for image in images for features in image.pooler_output)
+        batch["mm_encoder_outputs"] = {"image": joined}
     return batch
 
 
@@ -152,11 +160,13 @@ def generate_batch(
     max_new_tokens: int,
     think_budget: int | None = None,
     stop_ids: list[int] | None = None,
-) -> list[GenerationResult]:
+    return_logits: bool = False,
+) -> list[GenerationResult] | tuple[list[GenerationResult], list[torch.Tensor]]:
     """Greedy-decode several single-item inputs as one left-padded batch; one result per item, in order.
 
     For accuracy runs. `generate` (batch 1) is the reference and the only path with per-item measurements:
     here `generate_s` is batch time / batch size, and `ttft_s` and `peak_mem_gb` are None.
+    `return_logits` also returns, per item, the raw logits (n_new, V) that produced its n_new tokens.
     """
     batch = _left_pad(inputs_list, vlm.model.generation_config.pad_token_id)
     prompt_width = batch["input_ids"].shape[1]
@@ -166,19 +176,22 @@ def generate_batch(
     cuda_sync(vlm.devices)
     start = time.perf_counter()
     outputs = vlm.model.generate(
-        **batch, max_new_tokens=max_new_tokens, do_sample=False, use_cache=True, **stop_kwargs
+        **batch, max_new_tokens=max_new_tokens, do_sample=False, use_cache=True,
+        return_dict_in_generate=True, output_logits=return_logits, **stop_kwargs
     )
     cuda_sync(vlm.devices)
     batch_s = time.perf_counter() - start
-    new_ids = outputs[:, prompt_width:].cpu()  # (B, new)
+    new_ids = outputs.sequences[:, prompt_width:].cpu()  # (B, new)
 
-    results = []
-    for inputs, token_ids in zip(inputs_list, new_ids):
+    results, logits = [], []
+    for row, (inputs, token_ids) in enumerate(zip(inputs_list, new_ids)):
         # a finished row is filled with pad up to the longest row: cut after its first stop token, as batch 1 does
         stops = torch.isin(token_ids, eos_ids).nonzero()
         if len(stops):
             token_ids = token_ids[: int(stops[0]) + 1]
         input_ids = inputs["input_ids"]
+        if return_logits:  # outputs.logits is one (B, V) tensor per step
+            logits.append(torch.stack([step[row] for step in outputs.logits[: len(token_ids)]]))
         n_think, n_answer = _message_counts(vlm, token_ids, input_ids)
         results.append(
             GenerationResult(
@@ -195,7 +208,7 @@ def generate_batch(
                 n_answer_tokens=n_answer,
             )
         )
-    return results
+    return (results, logits) if return_logits else results
 
 
 @torch.inference_mode()
