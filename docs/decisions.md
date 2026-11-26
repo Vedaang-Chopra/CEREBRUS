@@ -111,3 +111,17 @@ One entry per gate or design decision. Newest at the bottom. Format:
 - Oracle per cost cap: per-item cell choice with **mean** FLOPs ≤ cap (exact DP). The stricter per-item reading is reported as `oracle_eligible`, not used.
 - Noise oracle: the part of the oracle score that does not survive a re-run (choose cells on one run, score on the other, both directions averaged), on all re-run items (ctrl_train + dev). Chosen over the build-spec §2.4 simulated flip-rate version because it uses measured data only. If greedy runs are deterministic it is ~0; item-sampling noise is covered by paired bootstrap CIs.
 - Caps {0.25 … 1.5} × cost_ref (k=100%, R=3), headline 0.5. FLOPs include the vision tower; by the nb06 cost table, k=25–50% at R=1–2 should fall under 0.5 (to confirm on the grid).
+
+## Nov 26, 2026 · S2 · resolution check (git f613eb4, nb04, dev n=100 per benchmark, R=3, batch 1, no thinking)
+| cell | GQA | TextVQA | all | visual tokens (mean) | GFLOPs |
+|---|---|---|---|---|---|
+| full 512 | 59.0 | 55.8 | 57.4 | 126 | 2926 |
+| full 768 | 57.0 | **68.8** | **62.9** | 233 | 4243 |
+| full 1024 | 57.0 | 68.3 | 62.6 | 339 | 5593 |
+| DivPrune 768 → 512-px count | 56.0 | 63.1 | 59.5 | 126 | 3253 |
+| DivPrune 1024 → 512-px count | 56.0 | 49.7 | 52.8 | 126 | 3633 |
+| DivPrune 1024, k=25% | 52.0 | 50.7 | 51.4 | 85 | 3258 |
+- GQA images are small (long side ~616 px): 768 and 1024 give the same input (178 tokens); 15/200 items do not grow at all. The GQA differences are noise.
+- TextVQA gains +13 pts from 512 → 768 full (126 → 288 tokens). DivPrune at the 512-px token count from a 768 image: +7.3 vs 512 full [CI −2.2, +16.9]; from 1024 (keeping 25%): −6.1 [−17.4, +5.0].
+- Latency of the reused 512 rows comes from another session (1.02 s vs 0.80 s here): not comparable across sessions.
+- Decision on res_px: pending Vedaang (see main-discussion recommendation).
