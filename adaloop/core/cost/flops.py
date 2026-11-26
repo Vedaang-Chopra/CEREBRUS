@@ -126,6 +126,16 @@ def flops_readout(params: CostParams, n_tokens: int) -> int:
     return _coda(params, n_tokens) + 2 * params.lm_head
 
 
+def flops_features(params: CostParams, n_tokens: int, n_vis: int, n_heads: int, hidden: int) -> dict[str, int]:
+    """Extra cost of one pass's controller features on a prompt of n_tokens.
+
+    `flops_readout`: coda + lm_head, needed by entropy, kl_prev and top1_prob (nothing extra when the pass is the
+    last one, which reads out anyway). `flops_state`: delta_norm (two norms and a difference) and the visual
+    attention mass (a sum over n_vis weights per head). `h_last` is a copy.
+    """
+    return {"flops_readout": flops_readout(params, n_tokens), "flops_state": 5 * hidden + n_vis * n_heads}
+
+
 def flops_decode(params: CostParams, n_out: int, ctx: int, R: int) -> int:
     """n_out cached steps after a prompt of ctx tokens; every step runs all R passes and lm_head."""
     if R < 1:

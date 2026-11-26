@@ -78,3 +78,12 @@ includes all of them.
 Checked on a tiny random model (CPU): k = 100% gives identical last logits and ids for every method (R = 1, 3); exact
 kept counts at 25/50%; the CLS attention equals the layer's eager attention weights; VisionZip changes only the
 contextual target tokens. Not yet run on the real weights (nb07).
+
+## Features (S4b)
+`orchestration/features.py::run_item_cells`; one record per (k, p), from the R = p run, in `features/<variant>/<config_hash>/<item_id>.pt`:
+`h_last` (fp16, last core layer, last prompt position), `delta_norm` = ‖h_p − h_{p−1}‖ / ‖h_{p−1}‖, `vis_attn_mass`
+(last core layer 17, heads mean, attention of the last prompt position on the kept visual tokens), `entropy`,
+`top1_prob`, `kl_prev` = KL(p_p ‖ p_{p−1}) from first answer-token logits (R = p vs R = p − 1 runs), `flops_readout`,
+`flops_state`, `n_tokens`, `n_vis`. NaN where there is no earlier pass.
+The grid generates every R on its own, so all features of pass p come from that R = p run (nb05: its states equal pass p
+of an R = 5 run bit for bit).

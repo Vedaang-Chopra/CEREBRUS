@@ -40,8 +40,8 @@ def _full_reply(gen: GenerationResult, prefill: str | None) -> str:
     return lead + gen.raw_text
 
 
-def _result_row(item: Item, cfg: dict, R: int, gen: GenerationResult, batch_size: int, info: dict) -> dict:
-    """Score one generation and lay it out as a result row."""
+def result_row(item: Item, cfg: dict, R: int, gen: GenerationResult, batch_size: int, info: dict) -> dict:
+    """Score one generation and lay it out as a result row (`info` from `compress`)."""
     pred = read_answer(gen, cfg)
     answer_format, max_chars = cfg.get("answer_format"), cfg.get("answer_max_chars")
     format_ok = None  # None: the config sets no format / no length limit
@@ -92,7 +92,7 @@ def evaluate_item(vlm: LoadedVLM, item: Item, cfg: dict, R: int) -> dict:
     set_loops(vlm, R)
     inputs, info = compress(vlm, item_inputs(vlm, item, cfg), item, cfg.get("k", 1.0), cfg)
     gen = generate_answers(vlm, [inputs], cfg)[0]
-    return _result_row(item, cfg, R, gen, batch_size=1, info=info)
+    return result_row(item, cfg, R, gen, batch_size=1, info=info)
 
 
 def _evaluate_batch(vlm: LoadedVLM, items: Sequence[Item], cfg: dict, R: int) -> list[dict]:
@@ -103,7 +103,7 @@ def _evaluate_batch(vlm: LoadedVLM, items: Sequence[Item], cfg: dict, R: int) ->
     # at k = 1 there is nothing to compress, so a batch takes the inputs as they are (rows say selector "none")
     prepared = [compress(vlm, item_inputs(vlm, item, cfg), item, 1.0, {**cfg, "compressor": "none"}) for item in items]
     gens = generate_answers(vlm, [inputs for inputs, _ in prepared], cfg, batched=True)
-    return [_result_row(item, cfg, R, gen, batch_size=len(items), info=info)
+    return [result_row(item, cfg, R, gen, batch_size=len(items), info=info)
             for item, gen, (_, info) in zip(items, gens, prepared)]
 
 

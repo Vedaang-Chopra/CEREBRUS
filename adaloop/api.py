@@ -1,9 +1,11 @@
 """Public entry points. Notebooks and scripts import only this module."""
+from adaloop.core.controller.features import pass_features
 from adaloop.core.cost.flops import (
     REF_R,
     cost_params,
     cost_ref,
     flops_decode,
+    flops_features,
     flops_partial,
     flops_prefill,
     flops_readout,
@@ -14,7 +16,7 @@ from adaloop.core.eval.extract import extract_answer
 from adaloop.core.eval.scorers import score, score_gqa, score_gqa_lmms, score_lmms, score_textvqa
 from adaloop.core.eval.summary import summarize_rows
 from adaloop.core.model.budget import generate_answers
-from adaloop.core.model.hooks import record_pass_states
+from adaloop.core.model.hooks import record_attention_mass, record_first_logits, record_pass_states
 from adaloop.core.model.inference import generate, generate_batch, last_logits
 from adaloop.core.model.load import load_model, load_models, unload_model
 from adaloop.core.model.loops import count_layer_calls, expected_layer_calls, set_loops
@@ -47,6 +49,7 @@ from adaloop.orchestration.evaluate import (
     read_results,
     run_evaluation,
 )
+from adaloop.orchestration.features import load_features, run_item_cells, save_features
 from adaloop.orchestration.full_run import (
     estimate_full_run,
     full_run_config,
@@ -90,6 +93,7 @@ __all__ = [
     "extract_answer",
     "extract_visual_tokens",
     "flops_decode",
+    "flops_features",
     "flops_partial",
     "flops_prefill",
     "flops_readout",
@@ -104,6 +108,7 @@ __all__ = [
     "item_prompt",
     "last_logits",
     "load_config",
+    "load_features",
     "load_gqa",
     "load_image",
     "load_manifest",
@@ -112,6 +117,7 @@ __all__ = [
     "load_textvqa",
     "make_splits",
     "n_keep_for",
+    "pass_features",
     "plot_accuracy_vs_r",
     "plot_cost_model",
     "plot_pass_state",
@@ -122,12 +128,16 @@ __all__ = [
     "random_selector",
     "read_answer",
     "read_results",
+    "record_attention_mass",
+    "record_first_logits",
     "record_pass_states",
     "resize_long_side",
     "result_path",
     "run_evaluation",
     "run_full",
+    "run_item_cells",
     "save_figure",
+    "save_features",
     "save_table",
     "score",
     "score_gqa",

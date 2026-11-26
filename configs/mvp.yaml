@@ -44,6 +44,10 @@ compression:
   crisp_lite: {spacy_model: en_core_web_sm, uniform_frac: 0.25}
   visionzip: {contextual_frac: 0.05}  # of the full token count, as upstream; the dominant tokens fill the rest of k
 
+# the grid (S7): keep fractions x loop passes; configs/full_baseline.yaml keeps k at 1.0
+k_grid: [0.25, 0.5, 1.0]
+R_grid: [1, 2, 3, 4, 5]
+
 benchmarks:
   gqa:
     source: lmms-lab-encoder/GQA
