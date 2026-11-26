@@ -181,6 +181,8 @@ method, lam, seed, model_variant, item_id, benchmark, path, correct, flops_total
 
 ## 7. Stages (do them in order; each has a Done-when)
 
+> **Scope change (Vedaang, Nov 26):** build S11–S14 right after S7, on the frozen model (`base` variant only). S8–S10 (post-training) come after S14 and are redesigned (`docs/notes/post_training_data.md`, `docs/notes/post_training_open_questions.md`); the S8/S9 rows below are outdated. S11 trees and S12–S14 use `base` only until S10 exists.
+
 Owner columns match `docs/TEAM_PLAN.md` roles: **V** = Vedaang, **A** = data/eval teammate, **B** = experiments teammate.
 
 | Stage | Owner | What | Done when |

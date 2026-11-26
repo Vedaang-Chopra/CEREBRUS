@@ -3,6 +3,9 @@
 Updated by main-discussion after every stage. Last update: **Wed Nov 25, 2026**.
 **How to build the project:** `docs/DEC3_MVP.md` is the plan until Dec 3 (stages S0–S17, each with a Done-when). After Dec 3: `docs/IMPLEMENTATION.md` (full paper). This file only tracks progress.
 
+
+**Scope (Vedaang, Nov 26):** Dec 3 = S0–S7 + S11–S14 (controller on the frozen model). S8–S10 post-training comes after S11–S14 (data build continues on CPU). See decisions.md.
+
 ## Your loop for every stage
 1. An agent writes the code + its notebook; main-discussion reviews and syncs it to Inara.
 2. **You run the notebook** on Inara (VS Code, `learning_env` kernel, GPUs 2–3), save it, and say "NN done".

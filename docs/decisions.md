@@ -135,3 +135,8 @@ One entry per gate or design decision. Newest at the bottom. Format:
 - Decision (Vedaang, main-discussion agrees): the S7 grid (nb08) and the S10 LoRA/post-training grids run at batch 8 to save GPU time. Every compared cell uses the same regime (same item order, same batch composition). Latency (nb06), S5 and the nb07 Pareto sweep stay batch 1.
 - Implementation (agent commit 1b17a20): equal-length batches (no padding), cut from the full item list so resume/shards/copies don't change them; output in `execution_results/mvp/grid_b8/` and `grid_sample_b8/` (existing hashes unchanged); unhashed key `grid_batch`. On 800 items: 216 batches, mean size 3.7, 54% of items in full batches, 9% alone → speedup well below 8×.
 - Cost of batching is measured once (nb08 Step-2b: 100 dev items per benchmark, R = 3, k = 25% and 100%, batch 1 vs 8: accuracy, paired CI, % changed answers) and reported in the paper. The noise re-run keeps batch composition, so it excludes batching effects. Batch-8 rows have no TTFT/prefill/decode times.
+
+## Nov 26, 2026 · Scope for Dec 3: controller first, post-training after
+- Decision (Vedaang): the Dec 3 paper = S0–S7 + S11–S14 (controller on the frozen model, baselines, headline). S8–S10 (post-training) is the next step after S11–S14, added to the paper if time allows, otherwise future work.
+- Reason: S11–S14 needs only the S7 grid (features saved per item) and little GPU; S8–S10 needs a new data/teacher/training stack on a 26.4B MoE model (whole-model fine-tuning does not fit on Inara) plus 3 more grids.
+- Post-training prep continues on CPU only: FineVision data build (`docs/notes/post_training_data.md`), open design questions (`docs/notes/post_training_open_questions.md`) sent for external review.
