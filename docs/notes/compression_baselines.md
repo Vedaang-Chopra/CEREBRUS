@@ -87,3 +87,12 @@ contextual target tokens. Not yet run on the real weights (nb07).
 `flops_state`, `n_tokens`, `n_vis`. NaN where there is no earlier pass.
 The grid generates every R on its own, so all features of pass p come from that R = p run (nb05: its states equal pass p
 of an R = 5 run bit for bit).
+
+## Comparison as built (S5)
+`orchestration/compare.py`, nb07 step 6. Cells: `none` at k = 1 once, then each method at k ∈ {0.25, 0.5}, R = 3.
+FLOPs per row (`row_flops`): vision tower on the grid it ran on (full for post-ViT methods, smaller for `lowres`) +
+prompt forward + decode at the packed length + the compression step. Latency = `vit_s` + `compression_s` + `generate_s`;
+with 2 copies it includes contention between them.
+Winner rule: per item, mean correctness over both k; best method by that mean over both benchmarks; methods whose paired
+95% bootstrap interval against the best contains 0 are tied; lowest mean FLOPs among the tied wins. Controls are
+eligible. With few items everything ties, so only the full-dev run can freeze `compressor`.

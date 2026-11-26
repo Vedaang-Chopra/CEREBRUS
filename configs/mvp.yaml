@@ -44,6 +44,13 @@ compression:
   crisp_lite: {spacy_model: en_core_web_sm, uniform_frac: 0.25}
   visionzip: {contextual_frac: 0.05}  # of the full token count, as upstream; the dominant tokens fill the rest of k
 
+# S5 comparison (nb07): methods against each other at R passes; k = 1 is run once, with compressor none
+compare:
+  methods: [random, uniform, text_mean, lowres, crisp_lite, rediprune, divprune, visionzip]
+  ks: [0.25, 0.5]
+  R: 3
+  n_boot: 10000  # paired bootstrap resamples for "within noise"
+
 # the grid (S7): keep fractions x loop passes; configs/full_baseline.yaml keeps k at 1.0
 k_grid: [0.25, 0.5, 1.0]
 R_grid: [1, 2, 3, 4, 5]

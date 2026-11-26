@@ -9,6 +9,7 @@ Public entry points: `adaloop/api.py`. Notebooks and `scripts/mvp.py` import onl
 | Inputs | `load_image`, `resize_long_side`, `prepare_inputs` (`system`, `reasoning_effort`, `prefill`); benchmark items go through `item_inputs` | `utils/images.py`, `core/model/prompting.py` |
 | Loops | `set_loops`, `count_layer_calls`, `expected_layer_calls` | `core/model/loops.py` |
 | Pass states | `record_pass_states` (last core layer, last prompt position, per pass), `check_pass_state` | `core/model/hooks.py`, `orchestration/pass_state.py` |
+| Comparison (S5) | `comparison_cells`, `run_comparison` (method x k from `cfg["compare"]`, resumable), `comparison_table`, `pick_winner` (paired bootstrap, `paired_bootstrap_ci`), `row_flops`, `plot_compression` (F06) | `orchestration/compare.py`, `core/eval/bootstrap.py`, `core/plots/compression.py` |
 | Features (S4b) | `run_item_cells(vlm, item, cfg)` → (rows, {(k, p): features}) over `k_grid` x `R_grid`; `pass_features`, `record_attention_mass`, `record_first_logits`, `flops_features`, `save_features`, `load_features`. Needs `answer_prefill` | `orchestration/features.py`, `core/controller/features.py`, `core/model/hooks.py` |
 | Inference | `generate` (with TTFT, time, peak memory), `generate_batch` (left-padded, accuracy runs only), `last_logits`; `generate_answers` (a run under a config: thinking budget with a forced answer, no cache reuse) | `core/model/inference.py`, `core/model/budget.py`, `core/model/stopping.py` |
 | Pruning | `extract_visual_tokens`, selectors, `n_keep_for`, `prune_inputs` | `core/tokens/` |

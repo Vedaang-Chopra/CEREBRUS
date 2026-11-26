@@ -181,6 +181,20 @@ def flops_total(
     return parts
 
 
+def row_flops(params: CostParams, row: dict) -> dict[str, int]:
+    """`flops_total` of one result row plus its compression step (`flops_compression`, included in the total).
+
+    The vision tower runs on the row's `grid_hw` (the full image for post-ViT methods, smaller for `lowres`);
+    the decoder runs on `n_input`, the prompt after compression.
+    """
+    height, width = row["grid_hw"]
+    parts = flops_total(params, row["n_input"], row["n_out_tokens"], row["R"], [(1, height, width)],
+                        n_reprefill=row.get("n_reprefill_tokens", 0))
+    parts["flops_compression"] = row["compression_flops"]
+    parts["flops_total"] += row["compression_flops"]
+    return parts
+
+
 def cost_ref(params: CostParams, n_tokens_full: int, n_out: int, image_grid_thw: Sequence[Sequence[int]]) -> int:
     """Total FLOPs with all visual tokens (k = 1.0) at R = 3."""
     return flops_total(params, n_tokens_full, n_out, REF_R, image_grid_thw)["flops_total"]

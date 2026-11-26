@@ -73,6 +73,7 @@ def result_row(item: Item, cfg: dict, R: int, gen: GenerationResult, batch_size:
         "answer_len_ok": None if max_chars is None else pred is not None and len(pred) <= max_chars,
         "hit_limit": gen.hit_limit,
         "n_vis": gen.n_visual_tokens,
+        "grid_hw": list(info["grid_hw"]),  # units the vision tower ran on (smaller for lowres)
         "n_input": gen.n_input_tokens,
         "n_out_tokens": len(gen.token_ids),  # all generated tokens of both phases: the decode cost
         "n_think_tokens": gen.n_think_tokens,

@@ -11,7 +11,9 @@ from adaloop.core.cost.flops import (
     flops_readout,
     flops_total,
     flops_vit,
+    row_flops,
 )
+from adaloop.core.eval.bootstrap import paired_bootstrap_ci
 from adaloop.core.eval.extract import extract_answer
 from adaloop.core.eval.scorers import score, score_gqa, score_gqa_lmms, score_lmms, score_textvqa
 from adaloop.core.eval.summary import summarize_rows
@@ -23,6 +25,7 @@ from adaloop.core.model.loops import count_layer_calls, expected_layer_calls, se
 from adaloop.core.model.prompting import prepare_inputs
 from adaloop.core.plots.accuracy_vs_r import plot_accuracy_vs_r
 from adaloop.core.plots.colors import METHOD_COLORS, VARIANT_LINESTYLES
+from adaloop.core.plots.compression import plot_compression
 from adaloop.core.plots.cost_model import plot_cost_model
 from adaloop.core.plots.pass_state import plot_pass_state
 from adaloop.core.plots.save import save_figure, save_table
@@ -40,6 +43,7 @@ from adaloop.data.gqa import build_gqa_splits, load_gqa
 from adaloop.data.splits import load_manifest, make_splits
 from adaloop.data.textvqa import build_textvqa_splits, load_textvqa
 from adaloop.orchestration.audit import wrong_predictions
+from adaloop.orchestration.compare import comparison_cells, comparison_table, pick_winner, run_comparison
 from adaloop.orchestration.compress import METHODS, compress
 from adaloop.orchestration.copies import compare_copies, time_copies
 from adaloop.orchestration.cost_timing import time_prefill, time_throughput
@@ -82,6 +86,8 @@ __all__ = [
     "build_textvqa_splits",
     "check_pass_state",
     "compare_copies",
+    "comparison_cells",
+    "comparison_table",
     "compress",
     "config_hash",
     "cost_params",
@@ -117,8 +123,11 @@ __all__ = [
     "load_textvqa",
     "make_splits",
     "n_keep_for",
+    "paired_bootstrap_ci",
     "pass_features",
+    "pick_winner",
     "plot_accuracy_vs_r",
+    "plot_compression",
     "plot_cost_model",
     "plot_pass_state",
     "plot_thinking_off",
@@ -132,7 +141,9 @@ __all__ = [
     "record_first_logits",
     "record_pass_states",
     "resize_long_side",
+    "row_flops",
     "result_path",
+    "run_comparison",
     "run_evaluation",
     "run_full",
     "run_item_cells",
