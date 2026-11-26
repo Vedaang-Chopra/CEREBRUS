@@ -75,5 +75,5 @@ Vedaang decision: no post-training today; finish every inference baseline and th
 | 7 | S5b Pareto sweep + KV bytes; profiling | nb07 step 7, `RUN_PARETO` (built, ready to run) / nb06 profiling (not built) | F06 curves, where time goes |
 | 8 | nb08 1 item → 20 → full grid + re-run | nb08 / CLI, GPUs 0–7 | S7 grid.parquet, noise rate, F07, F08 |
 | 9 | ~~Full S8 cache~~ **paused** (see #1) | — | — |
-| 10 | Analysis from the grid: best_fixed, oracle, noise oracle, headroom (T2, F09) | code (to build), seconds | headroom claim |
+| 10 | Analysis from the grid: best_fixed, oracle, noise oracle, headroom (T2, F09) | nb08 steps 5-7 (built, synthetic-grid check only), seconds | headroom claim |
 Not today (planned later): S5 extra 10/75% curve is inside #7; POPE/hallucination test, evidence retention, thinking study (post-MVP / final runs).

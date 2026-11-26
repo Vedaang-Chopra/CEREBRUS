@@ -60,6 +60,17 @@ grid:
 # noise ceiling: items run a second time at every cell (rerun_id = 1)
 n_rerun: 100
 
+# Headroom analysis of the finished grid (nb08, DEC3 S14 grid part). Reads grid.parquet only, so not hashed.
+# A cap is cap_frac x cost_ref (mean FLOPs of k = 1, R = 3 on the items); a cap no cell fits is reported as nan.
+# headline_frac and min_pts are the prereg values (DEC3 §1: 0.5 x cost_ref, headroom >= 3 pts on >= 1 benchmark).
+headroom:
+  select_split: ctrl_train  # best fixed cell is chosen here
+  report_split: dev         # everything is reported here; test is refused until S12
+  cap_fracs: [0.25, 0.35, 0.5, 0.65, 0.8, 1.0, 1.25, 1.5]
+  headline_frac: 0.5
+  min_pts: 3.0
+  n_boot: 10000
+
 # S5 comparison (nb07): methods against each other at R passes; k = 1 is run once, with compressor none
 compare:
   methods: [random, uniform, text_mean, lowres, crisp_lite, rediprune, divprune, visionzip]

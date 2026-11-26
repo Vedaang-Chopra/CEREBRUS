@@ -29,6 +29,8 @@ from adaloop.core.plots.accuracy_vs_r import plot_accuracy_vs_r
 from adaloop.core.plots.colors import METHOD_COLORS, VARIANT_LINESTYLES
 from adaloop.core.plots.compression import plot_pareto
 from adaloop.core.plots.cost_model import plot_cost_model
+from adaloop.core.plots.grid_surface import plot_cell_pareto, plot_kr_accuracy
+from adaloop.core.plots.headroom import plot_headroom
 from adaloop.core.plots.pass_state import plot_pass_state
 from adaloop.core.plots.resolution import plot_resolution
 from adaloop.core.plots.save import save_figure, save_table
@@ -56,6 +58,7 @@ from adaloop.core.train.teacher_store import load_records, read_index
 from adaloop.data.gqa import build_gqa_splits, load_gqa
 from adaloop.data.splits import load_manifest, make_splits
 from adaloop.data.textvqa import build_textvqa_splits, load_textvqa
+from adaloop.orchestration.analysis import cell_table, headroom_table, load_grid, noise_rate
 from adaloop.orchestration.audit import wrong_predictions
 from adaloop.orchestration.compare import (
     comparison_cells,
@@ -185,6 +188,7 @@ __all__ = [
     "cost_params",
     "encode_vision",
     "cost_ref",
+    "cell_table",
     "count_layer_calls",
     "estimate_full_run",
     "estimate_grid_hours",
@@ -213,6 +217,7 @@ __all__ = [
     "load_config",
     "load_features",
     "load_gqa",
+    "load_grid",
     "load_image",
     "load_manifest",
     "load_model",
@@ -220,13 +225,18 @@ __all__ = [
     "load_records",
     "load_textvqa",
     "make_splits",
+    "headroom_table",
     "merge_grid",
+    "noise_rate",
     "n_keep_for",
     "paired_bootstrap_ci",
     "pass_features",
     "pick_winner",
     "plot_accuracy_vs_r",
+    "plot_cell_pareto",
     "plot_cost_model",
+    "plot_headroom",
+    "plot_kr_accuracy",
     "plot_pareto",
     "plot_pass_state",
     "plot_resolution",

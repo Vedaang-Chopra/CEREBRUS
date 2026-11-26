@@ -19,9 +19,9 @@ Notebooks show the figure inline and save it. Small-sample runs save drafts; ful
 | F04 | Cost model: FLOPs per (k, R) heatmap; analytic vs measured time ratio | Cost | `06_full_baseline` (S6) | flops + timing | appendix |
 | F05 | Accuracy vs R at full tokens, per benchmark (the loop-depth sweep) | Measurement | `06_full_baseline` | full baseline | main |
 | F06 | Compression Pareto (S5b): accuracy vs GFLOPs, vs kept tokens, vs KV cache bytes (rows: GQA, TextVQA, both); one line per method (random, uniform, text_mean, lowres, crisp_lite, rediprune, divprune, visionzip at k ∈ {10, 25, 50, 75}% and full; `cls_iqr` = TRIM IQR rule on CLS attention at m ∈ {0, 0.5, 1, 1.5, 3}), R=3, Pareto front ringed (`plot_pareto`) | Measurement | `07_compression` (step 7) | `execution_results/mvp/nb07/pareto*` + S5 25 / 50 / 100% rows | main |
-| F07 | k × R accuracy surface (heatmap) per benchmark | Measurement | S7 grid notebook | `grid.parquet` | main |
-| F08 | Accuracy vs FLOPs for the 15 cells, with the Pareto front | Measurement | S7 grid notebook | `grid.parquet` | main |
-| F09 | Headroom: oracle per cost cap vs best fixed vs noise oracle | Measurement | S14 analysis notebook | grid + reruns | main |
+| F07 | k × R accuracy surface (heatmap) per benchmark | Measurement | `08_grid` (step 5) | `grid.parquet` | main |
+| F08 | Accuracy vs FLOPs for the 15 cells, with the Pareto front | Measurement | `08_grid` (step 5) | `grid.parquet` | main |
+| F09 | Headroom: oracle per cost cap vs best fixed vs noise oracle | Measurement | `08_grid` (step 7) | grid + reruns | main |
 | F09b | Resolution: accuracy vs visual tokens for 512 / 768 / 1024 px, full and DivPrune at matched tokens | Measurement | `04_thinking_off` (step 5) | `execution_results/mvp/nb04/resolution*` + S5 512 px rows | main |
 | F10 | **Iso-cost curves**: controller, heuristic, 4 baselines, oracle (accuracy vs mean FLOPs), headline cost marked | Results (headline) | S14 analysis notebook | `policy_eval.parquet` | main |
 | F11 | Base vs LoRA: surface difference (LoRA − base) and controller curve on each | Post-training | S10/S14 notebooks | base + lora grids | main |
@@ -34,7 +34,7 @@ Notebooks show the figure inline and save it. Small-sample runs save drafts; ful
 | ID | Table | Made in |
 |---|---|---|
 | T1 | Headline at 0.5 × cost_ref: accuracy (mean ± std over seeds), Δ vs best fixed, 95% CI, p-value, prereg verdict | S14 |
-| T2 | Headroom per benchmark (oracle, best fixed, noise oracle, headroom) | S14 |
+| T2 | Headroom per benchmark (oracle, best fixed, noise oracle, headroom) | `08_grid` (step 7) |
 | T3 | Baselines at matched cost | S14 |
 | T4 | Ablations A1–A6 | S15 |
 | T5 | Per-question-type accuracy (GQA) | S15 |
