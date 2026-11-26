@@ -68,12 +68,13 @@ def cost_grid(vlm: LoadedVLM, item: Item, cfg: dict, n_out: int) -> list[dict]:
     return rows
 
 
-def time_grid(vlm: LoadedVLM, items: Sequence[Item], cfg: dict) -> tuple[list[dict], float]:
-    """Run every cell on `items` as the grid does (features on, `eval_batch_size`); return (rows, seconds per item).
+def time_grid(vlm: LoadedVLM, items: Sequence[Item], cfg: dict, batch_size: int | None = None) -> tuple[list[dict], float]:
+    """Run every cell on `items` as the grid does (features on) on one copy; return (rows, seconds per item).
 
-    One warmup batch is run first and not counted. The seconds cover all k x R cells of one item on one model copy.
+    `batch_size` defaults to `eval_batch_size` (throughput, for the budget); 1 gives rows with per-item timing
+    (`latency_table`). One warmup batch is run first and not counted. The seconds cover all k x R cells of one item.
     """
-    size = cfg["eval_batch_size"]
+    size = batch_size or cfg["eval_batch_size"]
     run_items_cells(vlm, items[:size], cfg)  # warmup
     rows = []
     start = time.perf_counter()
@@ -81,7 +82,7 @@ def time_grid(vlm: LoadedVLM, items: Sequence[Item], cfg: dict) -> tuple[list[di
         for item_rows, _ in run_items_cells(vlm, items[first : first + size], cfg):
             rows += item_rows
         done = min(first + size, len(items))
-        print(f"[{done}/{len(items)}] {(time.perf_counter() - start) / done:.1f} s/item (all cells)")
+        print(f"[{done}/{len(items)}] batch {size} | {(time.perf_counter() - start) / done:.1f} s/item (all cells)")
     return rows, (time.perf_counter() - start) / len(items)
 
 

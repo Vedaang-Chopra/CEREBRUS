@@ -1,4 +1,4 @@
-"""F06: accuracy against FLOPs per compression method, one panel per benchmark."""
+"""F06: accuracy against FLOPs (and latency) per compression method, one panel per benchmark."""
 import matplotlib.pyplot as plt
 import pandas as pd
 from matplotlib.figure import Figure
@@ -27,7 +27,8 @@ def plot_compression(table: pd.DataFrame) -> Figure:
     """F06 figure.
 
     `table` columns: method, k, benchmark ("all" lines are ignored), accuracy (%), gflops_total. The full model
-    (method "none") is a black star and a horizontal line.
+    (method "none") is a black star and a horizontal line. With a `latency_s` column that has values, a second row of
+    panels shows accuracy against latency (batch 1, one copy).
     """
     require_columns(table, ["method", "k", "benchmark", "accuracy", "gflops_total"], "table",
                     "run the comparison in nb07 first")
@@ -37,25 +38,29 @@ def plot_compression(table: pd.DataFrame) -> Figure:
     if unknown:
         raise ValueError(f"no style for methods {unknown}")
     benches = sorted(rows["benchmark"].unique())
-    fig = plt.figure(figsize=(2 * ONE_COLUMN_WIDTH_IN, 2.6), layout="constrained")
-    axes = fig.subplots(1, len(benches), squeeze=False)[0]
+    costs = [("gflops_total", "GFLOPs per answer")]
+    if "latency_s" in rows and rows["latency_s"].notna().any():
+        costs.append(("latency_s", "latency per answer (s)"))
+    fig = plt.figure(figsize=(2 * ONE_COLUMN_WIDTH_IN, 0.5 + 2.1 * len(costs)), layout="constrained")
+    axes = fig.subplots(len(costs), len(benches), squeeze=False)
     handles = {}
-    for ax, bench in zip(axes, benches):
-        panel = rows[rows["benchmark"] == bench]
-        for styles, extra in ((CONTROL_STYLES, {"linestyle": "--", "markerfacecolor": "white"}),
-                              (METHOD_STYLES, {"linestyle": "-"})):
-            for method, style in styles.items():
-                line = panel[panel["method"] == method].sort_values("k")
-                if not line.empty:
-                    handles[method], = ax.plot(line["gflops_total"], line["accuracy"], markersize=4, label=method,
-                                               **style, **extra)
-        full = panel[panel["method"] == "none"]
-        if not full.empty:
-            handles["full tokens"], = ax.plot(full["gflops_total"], full["accuracy"], color="black", marker="*",
-                                              markersize=8, linestyle="none", label="full tokens")
-            ax.axhline(full["accuracy"].iloc[0], color="black", linewidth=0.5, linestyle=":")
-        ax.set_title(BENCH_LABELS.get(bench, bench))
-        ax.set_xlabel("GFLOPs per answer")
-    axes[0].set_ylabel("accuracy (%)")
+    for (column, label), row_axes in zip(costs, axes):
+        for ax, bench in zip(row_axes, benches):
+            panel = rows[rows["benchmark"] == bench].dropna(subset=[column])
+            for styles, extra in ((CONTROL_STYLES, {"linestyle": "--", "markerfacecolor": "white"}),
+                                  (METHOD_STYLES, {"linestyle": "-"})):
+                for method, style in styles.items():
+                    line = panel[panel["method"] == method].sort_values("k")
+                    if not line.empty:
+                        handles[method], = ax.plot(line[column], line["accuracy"], markersize=4, label=method,
+                                                   **style, **extra)
+            full = panel[panel["method"] == "none"]
+            if not full.empty:
+                handles["full tokens"], = ax.plot(full[column], full["accuracy"], color="black", marker="*",
+                                                  markersize=8, linestyle="none", label="full tokens")
+                ax.axhline(full["accuracy"].iloc[0], color="black", linewidth=0.5, linestyle=":")
+            ax.set_title(BENCH_LABELS.get(bench, bench))
+            ax.set_xlabel(label)
+        row_axes[0].set_ylabel("accuracy (%)")
     fig.legend(handles.values(), handles.keys(), loc="outside upper center", ncols=5)
     return fig

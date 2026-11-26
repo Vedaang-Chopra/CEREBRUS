@@ -45,7 +45,13 @@ from adaloop.data.gqa import build_gqa_splits, load_gqa
 from adaloop.data.splits import load_manifest, make_splits
 from adaloop.data.textvqa import build_textvqa_splits, load_textvqa
 from adaloop.orchestration.audit import wrong_predictions
-from adaloop.orchestration.compare import comparison_cells, comparison_table, pick_winner, run_comparison
+from adaloop.orchestration.compare import (
+    comparison_cells,
+    comparison_table,
+    latency_table,
+    pick_winner,
+    run_comparison,
+)
 from adaloop.orchestration.cells import check_batched
 from adaloop.orchestration.compress import METHODS, compress, encode_vision
 from adaloop.orchestration.copies import compare_copies, time_copies
@@ -141,6 +147,7 @@ __all__ = [
     "item_inputs",
     "item_prompt",
     "last_logits",
+    "latency_table",
     "load_config",
     "load_features",
     "load_gqa",

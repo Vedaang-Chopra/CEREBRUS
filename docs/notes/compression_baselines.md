@@ -104,6 +104,9 @@ holds one (method, k, R), left padded, with the kept token count free to differ 
 `n_copies` are not hashed: finished rows are reused whatever wrote them. Row meaning: `vit_s` is the item's one vision
 run, `flops_vit` is counted per row as before. VisionZip's CLS attention is now computed after the vision pass, so it
 is in `compression_s` (earlier rows had it in `vit_s`; the sum is unchanged). Batched rows have no time to first token
-or per-item latency: the comparison averages `latency_s` over batch-1 rows only, and the grid's `t_prefill_ms` /
-`t_decode_ms` are empty for batched rows. Batched features differ from batch 1 in floating-point bits.
+or per-item latency, so timing comes from a separate pass: `latency_items` items per benchmark, batch 1, one copy,
+medians per cell (`latency_table`). S5: nb07 runs it into `<compare folder>_latency/`; its `latency_s`, `compression_s`,
+`t_vit_ms`, `t_prefill_ms`, `t_decode_ms` fill the table and F06. Grid: nb06 step 4 (`RUN_GRID_TIME`) times the same way
+(features on) into `grid_timing/grid_timing.csv`; `grid.parquet`'s `t_prefill_ms` / `t_decode_ms` stay empty for batched
+rows. `t_prefill_ms` includes the vision tower for `none` and `lowres` only. Batched features differ from batch 1 in floating-point bits.
 Checks: nb07 step 6 (same generated ids), nb08 (same outputs, features within tolerance).

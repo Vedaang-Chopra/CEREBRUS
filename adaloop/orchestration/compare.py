@@ -1,4 +1,7 @@
-"""Compression comparison (S5): every method x k at one loop count; accuracy, FLOPs and latency per cell."""
+"""Compression comparison (S5): every method x k at one loop count; accuracy, FLOPs and latency per cell.
+
+Accuracy comes from the batched run; latency from a second, small run at batch 1 on one copy.
+"""
 import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -106,28 +109,63 @@ def row_latency(row: dict) -> float:
     return (row.get("vit_s") or 0.0) + row["compression_s"] + row["generate_s"]
 
 
-def comparison_table(rows: Sequence[dict]) -> list[dict]:
-    """One line per (method, k, benchmark), and per (method, k) over both benchmarks (benchmark "all")."""
+def latency_table(rows: Sequence[dict], keys: Sequence[str]) -> list[dict]:
+    """Median times per group of `keys`, from batch-1 rows only (a batched row's time is not a latency).
+
+    `t_vit_ms` is NaN where the vision tower runs inside generate (none, lowres); it is then part of `t_prefill_ms`.
+    """
     groups: dict[tuple, list[dict]] = {}
     for row in rows:
-        for benchmark in (row["benchmark"], "all"):
-            groups.setdefault((row["selector"], row["k"], benchmark), []).append(row)
+        if row["batch_size"] != 1:
+            raise ValueError("latency rows must come from a batch-1 run")
+        groups.setdefault(tuple(row[key] for key in keys), []).append(row)
+
+    def median(values: list) -> float:
+        values = [v for v in values if v is not None]
+        return float(np.median(values)) if values else float("nan")
+
+    def ms(value: float | None) -> float | None:
+        return None if value is None else 1000.0 * value
+
+    return [
+        {**dict(zip(keys, key)), "latency_n": len(group),
+         "latency_s": median([row_latency(r) for r in group]),
+         "compression_s": median([r["compression_s"] for r in group]),
+         "t_vit_ms": median([ms(r["vit_s"]) for r in group]),
+         "t_prefill_ms": median([ms(r["ttft_s"]) for r in group]),
+         "t_decode_ms": median([ms(r["generate_s"] - r["ttft_s"]) if r["ttft_s"] is not None else None for r in group])}
+        for key, group in groups.items()
+    ]
+
+
+TIMING_COLUMNS = ("latency_n", "latency_s", "compression_s", "t_vit_ms", "t_prefill_ms", "t_decode_ms")
+
+
+def comparison_table(rows: Sequence[dict], latency_rows: Sequence[dict] = ()) -> list[dict]:
+    """One line per (method, k, benchmark), and per (method, k) over both benchmarks (benchmark "all").
+
+    Accuracy, tokens and FLOPs come from `rows`. The timing columns (`TIMING_COLUMNS`) come only from `latency_rows`,
+    the batch-1 one-copy pass; they are NaN (latency_n 0) for lines that pass did not run.
+    """
+    def by_benchmark(source: Sequence[dict]) -> list[dict]:
+        return [{**row, "line": benchmark} for row in source for benchmark in (row["benchmark"], "all")]
+
+    groups: dict[tuple, list[dict]] = {}
+    for row in by_benchmark(rows):
+        groups.setdefault((row["selector"], row["k"], row["line"]), []).append(row)
+    timed = {(line["selector"], line["k"], line["line"]): line
+             for line in latency_table(by_benchmark(latency_rows), ("selector", "k", "line"))}
+    untimed = {name: 0 if name == "latency_n" else float("nan") for name in TIMING_COLUMNS}
 
     def mean(group: list[dict], key: str) -> float:
         return float(np.mean([r[key] for r in group]))
-
-    def latency(group: list[dict]) -> float:
-        # a batched row's time is the batch's divided by its size, not a latency
-        single = [r["latency_s"] for r in group if r["batch_size"] == 1]
-        return float(np.mean(single)) if single else float("nan")
 
     return [
         {"method": method, "k": k, "benchmark": benchmark, "n": len(group),
          "accuracy": 100.0 * mean(group, "correct"), "n_vis": mean(group, "n_vis"),
          "n_vis_full": mean(group, "n_vis_full"), "gflops_total": mean(group, "flops_total") / 1e9,
          "gflops_vit": mean(group, "flops_vit") / 1e9, "gflops_compression": mean(group, "flops_compression") / 1e9,
-         "latency_s": latency(group), "latency_n": sum(r["batch_size"] == 1 for r in group),
-         "compression_s": mean(group, "compression_s"),
+         **{name: timed.get((method, k, benchmark), untimed)[name] for name in TIMING_COLUMNS},
          "parse_rate": 100.0 * mean(group, "parse_ok"),
          "fallback_rate": 100.0 * float(np.mean([r.get("fallback") is not None for r in group]))}
         for (method, k, benchmark), group in groups.items()

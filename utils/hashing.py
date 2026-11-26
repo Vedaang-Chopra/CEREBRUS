@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 
 # placement, sample size and how items are batched: they must not change a run's hash (or break resume)
-HASH_EXCLUDE = {"gpu_groups", "min_free_gib", "n_copies", "sample_items", "eval_batch_size"}
+HASH_EXCLUDE = {"gpu_groups", "min_free_gib", "n_copies", "sample_items", "eval_batch_size", "latency_items"}
 
 
 def config_hash(cfg: dict) -> str:
