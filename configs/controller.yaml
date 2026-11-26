@@ -1,0 +1,43 @@
+# S11 (trajectory tree) and S12 (controller). Read next to mvp.yaml (not part of the grid's config hash).
+# The `controller:` block a spec sketch puts in mvp.yaml is not used: mvp.yaml stays unchanged so its hash holds.
+variant: base
+grid_name: grid           # grid_dir(mvp.yaml, root, grid_name) -> <out_dir>/grid_b8
+out_dir: controller       # outputs go to <out_dir of mvp.yaml>/controller/
+
+# trees (S11)
+k0: [0.25, 0.5]           # keep fraction of the first run; chosen per cost cap on dev
+look: {mode: restart, k: 1.0}  # at most one look: restart with this keep fraction
+
+# controller inputs. h_last plus these pass features; kept_frac, spent_frac and the pass number are always on.
+use_h_last: true          # false: ablation with scalar features only
+features: [delta_norm, kl_prev, entropy, top1_prob, vis_attn_mass]
+# add to flops_total what the features cost: early readout (entropy, kl_prev, top1_prob) and state sums
+# (delta_norm, vis_attn_mass). A method pays only for what it reads.
+charge_features: true
+
+splits: {train: ctrl_train, dev: dev, eval: [dev]}  # add test to `eval` only once configs/prereg.yaml exists
+
+# controller (S12)
+objective: expected_reward  # expected_reward (build spec §5.3) | supervised (argmax-Q action)
+entropy_bonus: 0.001        # expected_reward only (build spec §4.3)
+proj_dim: 256
+hidden: 512
+dropout: 0.1
+lr: 0.001
+weight_decay: 0.01
+batch_trees: 32           # whole trees (25 nodes each) per step
+epochs: 50
+patience: 10              # stop after this many epochs without a better dev reward
+seeds: [0, 1, 2]
+lambdas: [0.0, 0.05, 0.1, 0.2, 0.4, 0.8]  # reward = correct - lambda * cost / cost_ref
+
+# cost caps (x cost_ref = mean FLOPs of k = 1, R = 3) for the dev choice of (k0, lambda); headline 0.5
+cap_fracs: [0.25, 0.35, 0.5, 0.65, 0.8, 1.0, 1.25, 1.5]
+
+# heuristic: per k0 and lambda, the threshold set with the best dev reward. *_quantiles are quantiles of the dev
+# node values of kl_prev (eps), entropy (eta) and vis_attn_mass (zeta); tau1 is a raw top1_prob (above 1: never).
+heuristic:
+  eps_quantiles: [0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0]
+  eta_quantiles: [0.0, 0.25, 0.5, 0.75, 0.9, 1.0]
+  zeta_quantiles: [0.0, 0.25, 0.5, 0.75]
+  tau1: [0.3, 0.5, 0.7, 0.9, 0.97, 1.01]

@@ -1,5 +1,17 @@
 """Public entry points. Notebooks and scripts import only this module."""
 from adaloop.core.controller.features import pass_features
+from adaloop.core.controller.heuristic import heuristic_actions
+from adaloop.core.controller.inputs import fit_normalizer, node_scalars, policy_inputs, tree_data
+from adaloop.core.controller.objectives import (
+    backward_values,
+    expected_reward_loss,
+    leaf_rewards,
+    supervised_loss,
+    supervised_targets,
+)
+from adaloop.core.controller.policy import Policy
+from adaloop.core.controller.rows import leaf_costs, policy_rows, select_on_dev
+from adaloop.core.controller.tree import ACTIONS, action_mask, item_tree, path_name, walk
 from adaloop.core.cost.flops import (
     REF_R,
     cost_params,
@@ -14,6 +26,7 @@ from adaloop.core.cost.flops import (
     kv_cache_bytes,
     row_flops,
 )
+from adaloop.core.cost.meta import cost_params_from_config
 from adaloop.core.eval.bootstrap import paired_bootstrap_ci
 from adaloop.core.eval.extract import extract_answer
 from adaloop.core.eval.pareto import pareto_front
@@ -75,6 +88,7 @@ from adaloop.orchestration.batch_diagnostic import diagnose_batch
 from adaloop.orchestration.batching import batchable_items, item_chunks
 from adaloop.orchestration.cells import check_batched
 from adaloop.orchestration.compress import METHODS, compress, encode_vision
+from adaloop.orchestration.controller import greedy_exits, run_controller, run_heuristic, run_policies, train_policy
 from adaloop.orchestration.copies import compare_copies, time_copies
 from adaloop.orchestration.cost_timing import (
     cost_grid,
@@ -139,6 +153,13 @@ from adaloop.orchestration.teacher_cache import (
 from adaloop.orchestration.token_scan import run_token_scan, token_scan_table
 from adaloop.orchestration.torch_trace import trace_item
 from adaloop.orchestration.train_lora import lora_run_dir, lora_run_estimate, require_compressor, train_lora
+from adaloop.orchestration.tree import (
+    build_tree,
+    check_test_allowed,
+    controller_dir,
+    load_controller_inputs,
+    run_tree,
+)
 from adaloop.schemas.cost import CostParams
 from adaloop.schemas.items import Item
 from adaloop.schemas.vlm import GenerationResult, LoadedVLM
@@ -149,6 +170,36 @@ from utils.images import load_image, resize_long_side
 from utils.io import load_config
 
 __all__ = [
+    "ACTIONS",
+    "Policy",
+    "action_mask",
+    "backward_values",
+    "build_tree",
+    "check_test_allowed",
+    "controller_dir",
+    "cost_params_from_config",
+    "expected_reward_loss",
+    "fit_normalizer",
+    "greedy_exits",
+    "heuristic_actions",
+    "item_tree",
+    "leaf_costs",
+    "leaf_rewards",
+    "load_controller_inputs",
+    "node_scalars",
+    "path_name",
+    "policy_inputs",
+    "policy_rows",
+    "run_controller",
+    "run_heuristic",
+    "run_policies",
+    "run_tree",
+    "select_on_dev",
+    "supervised_loss",
+    "supervised_targets",
+    "train_policy",
+    "tree_data",
+    "walk",
     "build_post_data",
     "dhash",
     "load_post_data",
