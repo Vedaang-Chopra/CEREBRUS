@@ -1,6 +1,6 @@
 # adaloop
 
-Public entry points: `adaloop/api.py`. Notebooks and `scripts/mvp.py` import only that.
+Public entry points: `adaloop/api.py`. Notebooks, `scripts/mvp.py` and `scripts/build_post_data.py` import only that.
 
 | Step | Functions | File |
 |---|---|---|
@@ -22,6 +22,7 @@ Public entry points: `adaloop/api.py`. Notebooks and `scripts/mvp.py` import onl
 | Pruning | `extract_visual_tokens`, selectors, `n_keep_for`, `prune_inputs` | `core/tokens/` |
 | Compression (S4) | `compress(vlm, inputs, item, k, cfg)` → (model inputs, info), method = `cfg["compressor"]` (`METHODS`); `evaluate_item` calls it with `cfg["k"]` (default 1.0). Latency = `vit_s` + `compression_s` + `generate_s` (`vit_s` is None for `none`/`lowres`, where the vision tower runs inside `generate`). `run_evaluation` batches compressed inputs too | `orchestration/compress.py`, `core/tokens/methods/`, `core/tokens/vision.py`, `core/cost/compression.py` |
 | Data | `build_gqa_splits`, `load_gqa`, `build_textvqa_splits`, `load_textvqa` → `Item`; `make_splits`, `load_manifest` | `data/gqa.py`, `data/textvqa.py`, `data/splits.py` |
+| Post-training candidates | `build_post_data(cfg, root, out_dir=None, config_name=None, rows=None)` (per bucket and source: random parquet files and row groups, filters 1-4 and 6, Parquet shards, resumable; `config_name` = smoke into `<out>/smoke`), `post_data_dir`, `load_post_data` (images only if asked), `post_data_eval_hashes` (images of dev / test / ctrl_train only), `near_eval`, `phash`, `dhash`; config `configs/post_training_data.yaml`; CLI `scripts/build_post_data.py`; nb11 | `orchestration/post_data.py`, `orchestration/post_read.py`, `data/post/`, `schemas/post_data.py` |
 | Scoring | `extract_answer` (`answer_format`), `read_answer` (a generation under a config), `score`, `score_gqa` (official, primary), `score_textvqa`, `score_lmms`, `score_gqa_lmms`, `summarize_rows` (`docs/notes/evaluation.md`) | `core/eval/` |
 | Evaluation | `item_prompt` (question + `prompts.question_suffix`), `item_inputs` (system prompt, effort, prefill), `evaluate_item`, `run_evaluation` (resumable JSONL; `batch_size` > 1 batches generation; `vlms` runs one thread per copy), `read_results` | `orchestration/inputs.py`, `orchestration/evaluate.py` |
 | Model copies | `time_copies` (s/item, 1 copy vs all), `compare_copies` (same outputs per item) | `orchestration/copies.py` |

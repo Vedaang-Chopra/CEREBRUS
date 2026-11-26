@@ -1,0 +1,82 @@
+# Post-training CANDIDATE store (data only). Spec: docs/notes/post_training_data.md. Built by scripts/build_post_data.py.
+repo: HuggingFaceM4/FineVision  # a local folder with <config>/*.parquet also works (tests)
+benchmarks_config: configs/mvp.yaml  # eval datasets and split manifests for the overlap check
+eval_splits: [dev, test, ctrl_train]  # test: images only are read
+out_dir: execution_results/post_training_data  # relative to the repo root or absolute; --out overrides
+seed: 42
+candidate_factor: 3  # candidates per bucket = factor x final target (the teacher filter comes later)
+shard_rows: 1000
+smoke_rows: 50
+
+ratings:
+  keys: [relevance, image_correspondence, formatting]
+  min: 4
+  level: turn  # turn: the chosen turn's ratings; row: the <key>_min columns (drops almost all multi-turn rows)
+
+answers:
+  short_max_tokens: 8  # whitespace words; each CJK character counts as one
+  free_max_tokens: 64  # same count; whole sentences only
+  # a trailing question line with one of these (and no "?") is a style suffix and is removed
+  style_words: [brief, brevity, succinct, short, terse, quick, compact, concise, single word]
+
+image:
+  min_short_side: 224
+  max_aspect: 2.5
+  max_long_side: 1536  # larger images are dropped, not resized
+  max_height: {docvqa: 1536, infographic_vqa: 1536}
+  jpeg_quality: 95  # only for sources that are not already RGB JPEG
+
+dedupe:  # an image is dropped if it is within EITHER distance of any eval image
+  dhash_max: 6
+  phash_max: 10
+
+max_gb: 8  # per source: stop reading after this many GB (source `max_gb` overrides)
+read_retries: 3
+
+downloads:  # PixMo image URLs
+  workers: 8
+  batch: 32
+  timeout_s: 15
+  user_agent: "Mozilla/5.0 (compatible; dataset-builder/1.0)"
+  check_after: 100  # attempts before the source can be given up
+  max_fail_rate: 0.6  # HTTP errors, timeouts and sha256 mismatches
+  min_ok_per_s: 0.5
+
+val_per_bucket: {general_vqa: 104, charts: 104, docs_tables: 83, ocr: 83, diagrams: 42, counting: 42, freeform: 42}
+
+# `target` is the final mix size. Sources run in this order: small supplies first, so a shortfall moves to the later
+# ones. `cap` is the final-mix cap (candidates capped at factor x cap). `fallback` sources only fill what is missing.
+buckets:
+  general_vqa:
+    target: 2500
+    sources: [{config: vsr}, {config: aokvqa}, {config: vqav2}]
+  charts:
+    target: 2500
+    sources: [{config: dvqa, cap: 500}, {config: plotqa, cap: 500}, {config: chartqa}, {config: CoSyn_400k_chart}]
+  docs_tables:
+    target: 2000
+    sources:
+      - {config: docvqa, max_gb: 1.5}  # scans are mostly taller than 1536 px
+      - {config: CoSyn_400k_nutrition}
+      - {config: CoSyn_400k_table}
+      - {config: CoSyn_400k_document}
+  ocr:
+    target: 2000
+    sources: [{config: cocotext, max_gb: 3}, {config: est_vqa}, {config: ocrvqa}]  # cocotext: ~6% of rows pass the ratings
+  diagrams:
+    target: 1000
+    sources: [{config: scienceqa}, {config: ai2d_merged}, {config: iconqa}]
+  counting:
+    target: 1000
+    count_only: true  # "how many" questions with a number answer
+    sources:
+      - config: pixmo_count
+        url_repo: allenai/pixmo-count
+        question_template: "How many {label} are in the image?"
+      - {config: clevr}
+  freeform:
+    target: 1000
+    free: true
+    sources:
+      - {config: pixmo_ama, url_repo: allenai/pixmo-ask-model-anything}
+      - {config: LLaVA_Instruct_150K, fallback: true}

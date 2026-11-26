@@ -52,8 +52,9 @@ Kept current by the agent after every step (see `docs/IMPLEMENTATION.md` §0). L
 | `utils/` | L5 | `setup_notebook`, `select_gpu_group`, `load_config`, `load_image`, `resize_long_side`, `config_hash`, `git_hash`, timing helpers | A | created; `setup_notebook(config)` only checks `CUDA_VISIBLE_DEVICES` |
 | `scripts/mvp.py` | CLI | `smoke`, `splits`, `eval`, `full --shard i/n`, `grid --shard i/n`, `teacher --shard i/n`, `train --variant A\|B [--smoke]` | A | created; `full` uses `select_gpu_group(cfg, group=i)`, `smoke`/`eval` pick a free group; selection runs before `adaloop.api` is imported |
 | `utils/hashing.py` | L5 | `config_hash` (drops `HASH_EXCLUDE`: placement, batching and check-only blocks such as `profile`), `git_hash` | A | placement is not hashed |
+| `adaloop/orchestration/post_data.py` (with `post_read.py`, `adaloop/data/post/`: `text`, `images`, `eval_hashes`, `sources`, `store`, `run`; `schemas/post_data.py`) | L3 | `build_post_data`, `post_data_dir`, `post_data_eval_hashes`, `load_post_data`, `near_eval`, `phash`, `dhash`; CLI `scripts/build_post_data.py` | A | post-training candidate store (data only, config `post_training_data.yaml`); checked on local parquet fixtures and a few Hub rows, full build not yet run |
 
-Notebooks (they are the tests, see `AGENTS.md`): `01_huggingfaceload` (load, loops), `02_pruning` (visual tokens, selectors), `03_data_and_scoring` (S1 splits, items, scoring, evaluation runner), `04_thinking_off` (S2 answer prefill, `res_px`), `05_positions_and_loops` (S3 positions, S3b loop control and pass state), `06_full_baseline` (batch check, full run shards, summary, S6 cost model), `07_compression` (S4 methods, S4b features, S5 comparison), `08_grid` (S7 grid), `09_teacher_cache` (S8).
+Notebooks (they are the tests, see `AGENTS.md`): `01_huggingfaceload` (load, loops), `02_pruning` (visual tokens, selectors), `03_data_and_scoring` (S1 splits, items, scoring, evaluation runner), `04_thinking_off` (S2 answer prefill, `res_px`), `05_positions_and_loops` (S3 positions, S3b loop control and pass state), `06_full_baseline` (batch check, full run shards, summary, S6 cost model), `07_compression` (S4 methods, S4b features, S5 comparison), `08_grid` (S7 grid), `09_teacher_cache` (S8), `12_post_training_data` (candidate store checks).
 Modeling-code findings: `docs/notes/modeling_code.md` (pruning stays packed).
 Split manifests: `configs/splits/mvp_<benchmark>.json` (frozen, hashed). Run outputs: `execution_results/mvp/`.
 
@@ -62,10 +63,10 @@ Runs happen on Inara in the `learning_env` kernel (repo at `/coc/scratch/vchopra
 ```mermaid
 graph LR
   NB[notebooks/*.ipynb] --> API[adaloop/api.py]
-  CLI[scripts/mvp.py] --> API
+  CLI[scripts/mvp.py, build_post_data.py] --> API
   API --> ORCH[orchestration: inputs, compress, evaluate, full_run, pass_state, cost_timing, audit]
   ORCH --> CORE[core: model + hooks, tokens, eval, cost]
-  ORCH --> DATA[data: gqa, textvqa, splits]
+  ORCH --> DATA[data: gqa, textvqa, splits, post]
   CORE --> SCHEMAS[schemas]
   DATA --> SCHEMAS
   API --> UTILS[utils]

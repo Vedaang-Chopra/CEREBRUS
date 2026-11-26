@@ -58,6 +58,8 @@ from adaloop.core.train.schedule import pairing_table, teacher_depth, variant_co
 from adaloop.core.train.teacher import answer_log_probs, split_top
 from adaloop.core.train.teacher_store import load_records, read_index
 from adaloop.data.gqa import build_gqa_splits, load_gqa
+from adaloop.data.post.images import dhash, near_eval, phash
+from adaloop.data.post.store import load_post_data
 from adaloop.data.splits import load_manifest, make_splits
 from adaloop.data.textvqa import build_textvqa_splits, load_textvqa
 from adaloop.orchestration.analysis import batch_regime_table, cell_table, headroom_table, load_grid, noise_rate
@@ -114,6 +116,7 @@ from adaloop.orchestration.pareto import (
     run_pareto,
 )
 from adaloop.orchestration.pass_state import check_pass_state
+from adaloop.orchestration.post_data import build_post_data, post_data_dir, post_data_eval_hashes
 from adaloop.orchestration.profile import profile_cells, profile_item, profile_items, profile_table
 from adaloop.orchestration.resolution import (
     resolution_cells,
@@ -146,6 +149,13 @@ from utils.images import load_image, resize_long_side
 from utils.io import load_config
 
 __all__ = [
+    "build_post_data",
+    "dhash",
+    "load_post_data",
+    "near_eval",
+    "phash",
+    "post_data_dir",
+    "post_data_eval_hashes",
     "count_hooks",
     "plot_token_scan",
     "profile_cells",
