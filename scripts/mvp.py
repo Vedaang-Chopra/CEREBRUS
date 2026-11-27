@@ -8,6 +8,7 @@
   python scripts/mvp.py grid --limit 20         # nb08's sample: 20 dev items into grid_sample_b8, with an ETA
   python scripts/mvp.py grid --per-split 32     # quick pass into the real grid folder; the full run resumes on it
   python scripts/mvp.py grid-check              # nb08 Step-2b: batch 1 against batch 8 on dev items
+  python scripts/check_run.py execution_results/mvp/grid_b8 --partial   # check a grid folder (CPU only)
   ADALOOP_SERVER=pace python scripts/mvp.py grid   # placement overlay configs/servers/pace.yaml (one H200)
   python scripts/mvp.py pareto --limit 32       # nb07 step 7 (S5b); without --limit the full sweep, resuming
   python scripts/mvp.py upfront                 # S13: upfront features of the grid items (no decoder pass), one copy
@@ -143,12 +144,16 @@ def cmd_grid(api: ModuleType, cfg: dict, args: argparse.Namespace) -> None:
 
     ### Step-1:- Main run and noise re-run
     start = time.perf_counter()
-    main_n, main_s = api.run_grid([vlm], items, cfg, out_dir, shard=args.shard, only=only)
-    again_n, again_s = 0, 0.0
-    if again:
-        again_n, again_s = api.run_grid([vlm], items, cfg, out_dir, shard=args.shard, rerun_id=1, only=again)
-    else:
-        print("noise re-run skipped: none of these items is in the full re-run set")
+    # meta.json names what the folder should end up with: a quick pass fills the real grid folder, so the full lists
+    target, target_again = (only, again) if args.limit is not None else (items, full_again)
+    launch = {"command": "grid", "shard": list(args.shard), "limit": args.limit, "per_split": args.per_split}
+    with api.record_launch(out_dir, cfg, ROOT, target, target_again, launch):
+        main_n, main_s = api.run_grid([vlm], items, cfg, out_dir, shard=args.shard, only=only)
+        again_n, again_s = 0, 0.0
+        if again:
+            again_n, again_s = api.run_grid([vlm], items, cfg, out_dir, shard=args.shard, rerun_id=1, only=again)
+        else:
+            print("noise re-run skipped: none of these items is in the full re-run set")
     wall = time.perf_counter() - start
     generated, seconds = main_n + again_n, main_s + again_s
     per_answer = seconds / generated if generated else None
@@ -200,7 +205,9 @@ def cmd_grid_check(api: ModuleType, cfg: dict, args: argparse.Namespace) -> None
     start = time.perf_counter()
     for batch in (1, size):
         print(f"[STAGE] {len(check_items)} dev items at batch {batch}")
-        n, s = api.run_grid([vlm], items, check_cfg, check_dir / f"b{batch}", batch_size=batch, only=check_items)
+        launch = {"command": "grid-check", "batch_size": batch}
+        with api.record_launch(check_dir / f"b{batch}", check_cfg, ROOT, check_items, [], launch):
+            n, s = api.run_grid([vlm], items, check_cfg, check_dir / f"b{batch}", batch_size=batch, only=check_items)
         generated, seconds = generated + n, seconds + s
         regimes[batch] = api.merge_grid(check_dir / f"b{batch}", check_cfg)
     print(f"this launch: {generated} answers generated | wall {time.perf_counter() - start:.1f} s, "

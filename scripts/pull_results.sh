@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 # Pull result run dirs from a server into local execution_results/mvp/.
-# Usage: scripts/pull_results.sh <inara|pace> [run dirs...]   (default: grid_b8)
+# Usage: scripts/pull_results.sh <inara|pace> [run dirs...]   (default: grid_b8; pace: grid_b8_padded)
+# A run dir comes whole: rows, parquet, features*/, meta.json, README.md, manifest.sha256.
 # --update: only newer files are copied; no --delete, so local files are never removed.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 HOST=${1:?usage: scripts/pull_results.sh <inara|pace> [run dirs...]}
 shift
-[ $# -gt 0 ] || set -- grid_b8
+if [ $# -eq 0 ]; then
+  if [ "$HOST" = pace ]; then set -- grid_b8_padded; else set -- grid_b8; fi
+fi
 
 case "$HOST" in
   pace)

@@ -179,6 +179,8 @@ from adaloop.orchestration.resolution import (
     resolution_token_counts,
     run_resolution,
 )
+from adaloop.orchestration.run_check import check_run
+from adaloop.orchestration.run_meta import record_launch
 from adaloop.orchestration.synthetic_run import write_synthetic_grid
 from adaloop.orchestration.teacher_cache import (
     build_teacher_cache,
@@ -214,6 +216,7 @@ from utils.servers import is_gpu_host, server_name
 __all__ = [
     "ACTIONS",
     "Chooser",
+    "check_run",
     "chooser_loss",
     "interpolation_weights",
     "holm_adjust",
@@ -222,6 +225,7 @@ __all__ = [
     "early_exit_rows",
     "no_h_rows",
     "random_rows",
+    "record_launch",
     "save_baseline_rows",
     "tokens_only_rows",
     "upfront_15way_rows",
