@@ -3,7 +3,10 @@
 gpu_groups: [[0]]
 full_gpu_groups: [[0]]
 n_copies: 1
-min_free_gib: 90
+# two processes (one model copy each) share the H200: each may use this fraction of it, and the second one must
+# still find min_free_gib free
+min_free_gib: 62
+gpu_memory_fraction: 0.48
 # used by the model loader instead of `max_memory` (which is hashed)
 placement_max_memory: {0: 130GiB}
 # batches of 8 consecutive items, left-padded to the longest. The grid then writes to grid_b8_padded/ (`grid_dir`)

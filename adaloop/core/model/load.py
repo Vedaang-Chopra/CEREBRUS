@@ -101,6 +101,9 @@ def _load(cfg: dict, max_memory: dict) -> LoadedVLM:
     """Load processor and model from the Hub and check the model sits only on the `max_memory` devices."""
     model_id = cfg["model_id"]
     processor = AutoProcessor.from_pretrained(model_id)
+    if cfg.get("gpu_memory_fraction"):  # two processes on one GPU: each keeps to its share
+        for gpu in max_memory:
+            torch.cuda.set_per_process_memory_fraction(cfg["gpu_memory_fraction"], gpu)
     model, loading_info = AutoModelForMultimodalLM.from_pretrained(
         model_id,
         device_map=cfg["device_map"],
@@ -112,14 +115,16 @@ def _load(cfg: dict, max_memory: dict) -> LoadedVLM:
     model.eval()
     model.requires_grad_(False)
     # Check from Jiaqi-Gao/adaloop-vlm:adaloop/models/load.py @ e870bff: offloading would distort timings.
-    offloaded = {name: dev for name, dev in model.hf_device_map.items() if str(dev) in ("cpu", "disk", "meta")}
+    # A model placed on one device has no `hf_device_map`: read where its weights are instead.
+    device_map = getattr(model, "hf_device_map", None) or {"": str(device) for device in {p.device for p in model.parameters()}}
+    offloaded = {name: dev for name, dev in device_map.items() if str(dev) in ("cpu", "disk", "meta")}
     if offloaded:
         raise RuntimeError(f"model not fully on GPU; offloaded: {offloaded}")
-    outside = {name: dev for name, dev in model.hf_device_map.items()
+    outside = {name: dev for name, dev in device_map.items()
                if int(str(dev).removeprefix("cuda:")) not in max_memory}
     if outside:
         raise RuntimeError(f"model placed outside its GPUs {sorted(max_memory)}: {outside}")
     loaded = LoadedVLM(model=model, processor=processor, loading_info=loading_info)
-    print(f"loaded {model_id} on visible GPUs {loaded.devices} | device map {model.hf_device_map} | "
+    print(f"loaded {model_id} on visible GPUs {loaded.devices} | device map {device_map} | "
           f"{model.get_memory_footprint() / 1024**3:.2f} GiB")
     return loaded

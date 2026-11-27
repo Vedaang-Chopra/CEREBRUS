@@ -64,7 +64,7 @@ def run_items_cells(vlm: LoadedVLM, items: Sequence[Item], cfg: dict) -> list[tu
                     **pass_features([state[i] for state in states], masses[-1][i].item(), logits[0][i], prev_logits),
                     **costs[i], "n_tokens": len(masks[i]), "n_vis": int(masks[i].sum())}
                 row = result_row(item, cfg, R, gen, batch_size=n_items, info=prepared[i][1])
-                out[i][0].append({**row, "features": True})
+                out[i][0].append({**row, "token_ids": gen.token_ids.tolist(), "features": True})
             previous = (R, list(logits[0]))
     return out
 
