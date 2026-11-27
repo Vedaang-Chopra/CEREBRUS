@@ -132,7 +132,16 @@ from adaloop.orchestration.full_run import (
     shard_items,
     summarize_full,
 )
-from adaloop.orchestration.grid import grid_dir, grid_items, merge_grid, rerun_items, run_grid
+from adaloop.orchestration.grid import (
+    count_done,
+    grid_config,
+    grid_dir,
+    grid_items,
+    grid_remaining,
+    merge_grid,
+    rerun_items,
+    run_grid,
+)
 from adaloop.orchestration.headline import (
     by_cap_table,
     comparison_vs_controller,
@@ -200,6 +209,7 @@ from utils.gpus import select_gpu_group
 from utils.hashing import config_hash, git_hash
 from utils.images import load_image, resize_long_side
 from utils.io import load_config
+from utils.servers import is_gpu_host, server_name
 
 __all__ = [
     "ACTIONS",
@@ -359,8 +369,13 @@ __all__ = [
     "generate_batch",
     "git_hash",
     "batch_regime_table",
+    "count_done",
+    "grid_config",
     "grid_dir",
     "grid_items",
+    "grid_remaining",
+    "is_gpu_host",
+    "server_name",
     "item_inputs",
     "item_prompt",
     "kv_cache_bytes",

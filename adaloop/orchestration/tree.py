@@ -31,10 +31,11 @@ def controller_dir(cfg: dict, ctrl: dict, root: str | Path) -> Path:
 def load_controller_inputs(cfg: dict, ctrl: dict, root: str | Path) -> tuple[pd.DataFrame, dict]:
     """(grid rows of the variant, main run; features[benchmark, item_id][k, p]) from the grid folder."""
     folder = grid_dir(cfg, root, ctrl["grid_name"])
-    grid = pd.read_parquet(folder / "grid.parquet")
+    file = ctrl.get("grid_file", "grid.parquet")  # grid_partial.parquet: smoke test on a quick pass (nb11)
+    grid = pd.read_parquet(folder / file)
     grid = grid[(grid["model_variant"] == ctrl["variant"]) & (grid["rerun_id"] == 0)]
     if grid.empty:
-        raise ValueError(f"no main-run rows of variant {ctrl['variant']!r} in {folder / 'grid.parquet'}")
+        raise ValueError(f"no main-run rows of variant {ctrl['variant']!r} in {folder / file}")
     check_test_allowed(grid["split"])
     features = {}
     first = grid.drop_duplicates(ITEM)

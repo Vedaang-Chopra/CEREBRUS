@@ -124,10 +124,10 @@ compressor: <none | random | uniform | text_mean | lowres | crisp_lite | redipru
 benchmarks:
   gqa:     {source: <HF_ID verified in S1>, split: testdev_balanced}
   textvqa: {source: <HF_ID verified in S1>, split: validation}
-splits: {test: 500, ctrl_train: 300, dev: 100, lora_train: rest}   # per benchmark, image-disjoint
+splits: {test: 512, ctrl_train: 512, dev: 128, lora_train: rest}   # per benchmark, image-disjoint
 lora: {r: 16, alpha: 32, targets: <regex from state dict>, layers: "6-17", lr: 1e-4, eff_batch: 16, steps: <LORA_STEPS>, k_train: [0.25, 0.5], identity_frac: 0.1, seed: 0}
 controller: {hidden: 512, epochs: 50, lr: 1e-3, seeds: [0, 1, 2], lambdas: [0.0, 0.05, 0.1, 0.2, 0.4, 0.8]}
-n_rerun: 100                              # items re-run per cell for the noise ceiling
+n_rerun: 128                              # items re-run per cell for the noise ceiling
 out_dir: execution_results/mvp
 ```
 

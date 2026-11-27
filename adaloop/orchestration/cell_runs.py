@@ -1,7 +1,7 @@
-"""Cells answered at batch 1, one JSONL per (benchmark, cell), resumable, S5 rows of the same config hash reused.
+"""Cells answered at batch 1 (or in generation batches, for accuracy only), one JSONL per (benchmark, cell), resumable, S5 rows of the same config hash reused.
 
-A cell is {"cell": name, "keys": the config keys it sets}. Used by the resolution check and the Pareto sweep; batch 1
-throughout, so the same runner serves the accuracy run (several copies) and the latency pass (one copy).
+A cell is {"cell": name, "keys": the config keys it sets}. Used by the resolution check and the Pareto sweep. The same
+runner serves the accuracy run (several copies; `batch_size` > 1 batches generation) and the batch-1 latency pass.
 """
 import json
 from collections.abc import Mapping, Sequence
@@ -11,7 +11,7 @@ import numpy as np
 import torch
 
 from adaloop.core.cost.flops import cost_params, row_flops
-from adaloop.orchestration.batching import input_key
+from adaloop.orchestration.batching import input_key, item_chunks
 from adaloop.orchestration.cells import generate_cell, map_copies
 from adaloop.orchestration.compare import comparison_table, row_latency
 from adaloop.orchestration.compress import compress
@@ -22,15 +22,21 @@ from adaloop.schemas.vlm import LoadedVLM
 from utils.hashing import config_hash, git_hash
 
 
-def _answer(vlm: LoadedVLM, item: Item, cell_cfg: dict, R: int) -> dict:
-    """One row: compress (exact count for a matched cell), generate at batch 1, score."""
-    n_keep = None
-    if "match_res_px" in cell_cfg:  # the item's own full count at the smaller size
-        n_keep = input_key(vlm, item, {**cell_cfg, "res_px": cell_cfg["match_res_px"]})[0]
-    inputs, info = compress(vlm, item_inputs(vlm, item, cell_cfg), item, cell_cfg.get("k", 1.0), cell_cfg,
-                            n_keep=n_keep)
-    gen = generate_cell(vlm, [inputs], cell_cfg, R)[0]
-    return result_row(item, cell_cfg, R, gen, batch_size=1, info=info)
+def _answers(vlm: LoadedVLM, items: Sequence[Item], cell_cfg: dict, R: int) -> list[dict]:
+    """Rows of one cell for one generation batch: compress each item (exact count for a matched cell), generate, score.
+
+    One item takes the batch-1 path, which times it.
+    """
+    prepared = []
+    for item in items:
+        n_keep = None
+        if "match_res_px" in cell_cfg:  # the item's own full count at the smaller size
+            n_keep = input_key(vlm, item, {**cell_cfg, "res_px": cell_cfg["match_res_px"]})[0]
+        prepared.append(compress(vlm, item_inputs(vlm, item, cell_cfg), item, cell_cfg.get("k", 1.0), cell_cfg,
+                                 n_keep=n_keep))
+    gens = generate_cell(vlm, [inputs for inputs, _ in prepared], cell_cfg, R)
+    return [result_row(item, cell_cfg, R, gen, batch_size=len(items), info=info)
+            for item, gen, (_, info) in zip(items, gens, prepared)]
 
 
 def _cell_files(benchmark: str, cell: dict, cfg: dict, R: int, out_dir: Path, reuse_dir: str | Path | None) -> dict:
@@ -66,12 +72,16 @@ def cell_status(items: Mapping[str, Sequence[Item]], cells: Sequence[dict], cfg:
 
 
 def run_batch1_cells(vlms: Sequence[LoadedVLM], items: Mapping[str, Sequence[Item]], cells: Sequence[dict],
-                     cfg: dict, R: int, out_dir: str | Path, reuse_dir: str | Path | None = None) -> list[dict]:
-    """Every cell on every benchmark's items at batch 1 (resumable); return the rows with cell, FLOPs and latency.
+                     cfg: dict, R: int, out_dir: str | Path, reuse_dir: str | Path | None = None,
+                     batch_size: int = 1) -> list[dict]:
+    """Every cell on every benchmark's items (resumable); return the rows with cell, FLOPs and latency.
 
     `reuse_dir` holds `run_comparison` files: rows of a cell with the same config hash are taken from there and never
     run again (`source` "reused"); whatever is missing there and in `out_dir` is run. Files are not named by the item
     count, so a sample run's rows count in the full run.
+
+    `batch_size` > 1 batches generation (accuracy only): the batches are the `item_chunks` of all the benchmark's items,
+    one cell per batch, and only the items still missing that cell are in it.
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -93,22 +103,29 @@ def run_batch1_cells(vlms: Sequence[LoadedVLM], items: Mapping[str, Sequence[Ite
         print(f"[{benchmark}] {len(bench_items)} items x {len(todo)} cells | {n_missing} answers to run | "
               f"{len(vlms)} copies")
 
-        def work(vlm: LoadedVLM, j: int, item: Item) -> list[tuple[dict, dict]]:
+        def work(vlm: LoadedVLM, j: int, chunk: list[Item]) -> list[tuple[dict, dict]]:
             out = []
             for cell in todo:
-                if item.item_id not in cell["done"]:
+                lacking = [item for item in chunk if item.item_id not in cell["done"]]
+                if lacking:
                     meta = {"copy": j, "n_copies": len(vlms), "config_hash": config_hash(cell["cfg"]),
                             "git_hash": commit, "gpu_type": gpu_type, "seed": cfg["splits"]["seed"]}
-                    out.append((cell, {**_answer(vlm, item, cell["cfg"], R), **meta}))
+                    out += [(cell, {**row, **meta}) for row in _answers(vlm, lacking, cell["cfg"], R)]
             return out
 
-        for n, (_, results) in enumerate(map_copies(vlms, pending, work), 1):
+        if batch_size == 1:
+            jobs = [[item] for item in pending]
+        else:  # cut from all items, so a sample and the full run share their batches
+            ids = {item.item_id for item in pending}
+            jobs = [chunk for chunk in item_chunks(vlms[0], bench_items, cfg, batch_size)
+                    if any(item.item_id in ids for item in chunk)]
+        for n, (_, results) in enumerate(map_copies(vlms, jobs, work), 1):
             for cell, row in results:  # only this thread writes
                 with cell["path"].open("a") as handle:
                     handle.write(json.dumps(row) + "\n")
                 cell["done"][row["item_id"]] = {**row, "source": "run"}
-            if n % 10 == 0 or n == len(pending):
-                print(f"[{benchmark}] {n}/{len(pending)} items done")
+            if n % 10 == 0 or n == len(jobs):
+                print(f"[{benchmark}] {n}/{len(jobs)} {'items' if batch_size == 1 else 'batches'} done")
 
         for cell in todo:
             for item in bench_items:

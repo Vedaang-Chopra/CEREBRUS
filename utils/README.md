@@ -7,7 +7,8 @@ Stateless shared helpers. Must not import `adaloop`.
 - `gpus.claim_gpu_group(cfg, lock_dir)`: a free group that is also `flock`ed until the process exits (parallel `scripts/mvp.py train` runs)
 - `io.load_config` (a top-level `extends: <file>` loads the parent from the same folder; child keys win, dict-valued keys merge one level)
 - `images.load_image`, `images.resize_long_side`
-- `hashing.config_hash`, `hashing.git_hash` (provenance on every result row)
+- `hashing.config_hash`, `hashing.git_hash` (provenance on every result row; a copy without `.git` reads `REVISION` at the repo root)
+- `servers.apply_server_overlay` (called by `load_config`: `ADALOOP_SERVER=<name>` applies the unhashed placement and batching keys of `configs/servers/<name>.yaml` to run configs; set it in the shell or Jupyter environment, not in `env.env`, which is read after the GPU choice), `servers.server_name`, `servers.is_gpu_host`
 - `timing.cuda_sync`, `timing.reset_peak_memory`, `timing.peak_memory_gb` (each takes the GPUs to act on, default all), `timing.FirstTokenTimer` (TTFT streamer), `timing.DeviceClock` (per-device marks: CUDA events, wall clock on CPU)
 - `gpus.select_for_notebook(config)` -> `(gpu_ids, n_copies)`: the notebook header call (before `adaloop.api` is imported)
 - `gpus.full_gpu_overrides(config)` -> `{gpu_groups: full_gpu_groups, n_copies}`: nb07 `ALL_GPUS`; pass it to `select_for_notebook` and `setup_notebook`

@@ -21,7 +21,7 @@ eval_batch_size: 1
 # (padding is a suspected cause of batch != batch 1). Not hashed. null: consecutive items, left-padded.
 batch_grouping: equal_length
 # items per benchmark of the batch-1, one-copy timing pass (S5 in nb07, grid timing in nb06). Not hashed.
-latency_items: 10
+latency_items: 16
 res_px: 768  # long side; decided Nov 26 (docs/decisions.md). The 512 px results are the S5 record
 # system prompt and question suffix; the file's content replaces this value on load, so it is part of config_hash
 prompts: prompts.yaml
@@ -64,13 +64,15 @@ grid:
 # other run and every latency number stays batch 1. Rows go to <out_dir>/grid_b<size> (`grid_dir`), so they never mix
 # with batch-1 rows. Batches are cut from the full item list (`batch_grouping`), so resume, shards, copies and the re-run
 # sample do not change them. Not hashed. `check`: nb08 batch 1 against batch `size` on the first n_items dev items per
-# benchmark.
+# benchmark. `max_new_tokens`: the answer cap of the grid only (`grid_config` puts it in the top-level key, so the grid
+# hash covers it); every other run keeps `max_new_tokens` above.
 grid_batch:
   size: 8
-  check: {n_items: 100, ks: [0.25, 1.0], R: 3, n_boot: 10000}
+  max_new_tokens: 64
+  check: {n_items: 128, ks: [0.25, 1.0], R: 3, n_boot: 10000}
 
 # noise ceiling: items run a second time at every cell (rerun_id = 1)
-n_rerun: 100
+n_rerun: 128
 
 # Headroom analysis of the finished grid (nb08, DEC3 S14 grid part). Reads grid.parquet only, so not hashed.
 # A cap is cap_frac x cost_ref (mean FLOPs of k = 1, R = 3 on the items); a cap no cell fits is reported as nan.
@@ -95,7 +97,7 @@ compare:
 # sets res_px and k (or match_res_px) in its own hashed config.
 resolution:
   R: 3
-  n_items: 100  # dev items per benchmark
+  n_items: 128  # dev items per benchmark
   res_px: [512, 768, 1024]
   match_res_px: 512
   matched_res_px: [768, 1024]
@@ -110,7 +112,9 @@ resolution:
 # would move every hash).
 pareto:
   R: 3
-  n_items: 100  # dev items per benchmark
+  # answer cap of the headless sweep only (`scripts/mvp.py pareto`); nb07 keeps `max_new_tokens` above and its hash
+  max_new_tokens: 64
+  n_items: 128  # dev items per benchmark
   methods: [random, uniform, text_mean, lowres, crisp_lite, rediprune, divprune, visionzip]
   ks: [0.1, 0.25, 0.5, 0.75, 1.0]
   ms: [0.0, 0.5, 1.0, 1.5, 3.0]  # 1.5 is TRIM's value
@@ -126,7 +130,7 @@ pareto:
 # Inference profiling (nb06 step 7): timing only, no accuracy. Not hashed; rows go to <out_dir>/profile/.
 profile:
   R: 3
-  n_items: 20  # dev items per benchmark, batch 1, one model copy
+  n_items: 32  # dev items per benchmark, batch 1, one model copy
   methods: [random, uniform, text_mean, lowres, crisp_lite, rediprune, divprune, visionzip]  # plus none at k = 1
   ks: [0.1, 0.25, 0.5, 1.0]
   # token-count scan: `none` (all tokens) against `random` at these kept visual tokens (0: text-only prompt)
@@ -159,5 +163,5 @@ benchmarks:
 # lora_train size null = every remaining question.
 splits:
   seed: 42
-  sizes: {test: 500, ctrl_train: 300, dev: 100, lora_train: null}
+  sizes: {test: 512, ctrl_train: 512, dev: 128, lora_train: null}
   image_fracs: {test: 0.25, ctrl_train: 0.15, dev: 0.10, lora_train: 0.50}

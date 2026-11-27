@@ -34,13 +34,13 @@ def pareto_cells(cfg: dict) -> list[dict]:
 
 
 def run_pareto(vlms: Sequence[LoadedVLM], items: Mapping[str, Sequence[Item]], cfg: dict, out_dir: str | Path,
-               reuse_dir: str | Path | None = None) -> list[dict]:
-    """Every cell on every benchmark's items at batch 1 (resumable); return the rows with FLOPs and latency.
+               reuse_dir: str | Path | None = None, batch_size: int = 1) -> list[dict]:
+    """Every cell on every benchmark's items (resumable; `batch_size` > 1 batches generation, accuracy only); return the rows with FLOPs and latency.
 
     `reuse_dir` is an S5 comparison folder: rows there with a cell's config hash are read, not run. Every answer found
     neither there nor in `out_dir` is run.
     """
-    return run_batch1_cells(vlms, items, pareto_cells(cfg), cfg, cfg["pareto"]["R"], out_dir, reuse_dir)
+    return run_batch1_cells(vlms, items, pareto_cells(cfg), cfg, cfg["pareto"]["R"], out_dir, reuse_dir, batch_size)
 
 
 def pareto_status(items: Mapping[str, Sequence[Item]], cfg: dict, out_dir: str | Path,

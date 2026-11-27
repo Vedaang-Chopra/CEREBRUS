@@ -42,7 +42,7 @@ def load_models(cfg: dict, n_copies: int, force_reload: bool = False) -> list[Lo
             "select_gpu_group(config, 'all') before importing adaloop.api."
         )
     gpus = os.environ.get("CUDA_VISIBLE_DEVICES", "all")
-    family = (cfg["model_id"], str(cfg["device_map"]), str(cfg["max_memory"]), str(groups), gpus)
+    family = (cfg["model_id"], str(cfg["device_map"]), str(_budgets(cfg)), str(groups), gpus)
     if force_reload or any(key[:-1] != family for key in LOADED):
         unload_model()
     copies = []
@@ -74,14 +74,19 @@ def _all_groups_visible(groups: list[list[int]]) -> bool:
     return bool(groups) and matching_group([all_gpus(groups)]) is not None
 
 
+def _budgets(cfg: dict) -> dict:
+    """The per-GPU memory budgets: a server's `placement_max_memory` (unhashed) if set, else `max_memory`."""
+    return cfg.get("placement_max_memory", cfg["max_memory"])
+
+
 def _copy_max_memory(cfg: dict, j: int) -> dict:
     """`max_memory` of copy j, keyed by visible-device index.
 
-    cfg["max_memory"] is keyed by position inside a gpu group. With one group visible it is used as is.
+    The budgets (`_budgets`) are keyed by position inside a gpu group. With one group visible it is used as is.
     With all groups visible, copy j gets those budgets on the visible indices of group j.
     """
     groups = cfg.get("gpu_groups", [])
-    budgets = cfg["max_memory"]
+    budgets = _budgets(cfg)
     if not _all_groups_visible(groups):
         return budgets
     visible = [int(gpu) for gpu in os.environ["CUDA_VISIBLE_DEVICES"].split(",")]

@@ -1,0 +1,11 @@
+# ADALOOP_SERVER=pace: one H200 (143 GB), the whole model (about 56 GB in bfloat16) on one GPU. Placement and batching
+# only: every key here must be in HASH_EXCLUDE (utils/hashing.py), so run hashes and resume match Inara.
+gpu_groups: [[0]]
+full_gpu_groups: [[0]]
+n_copies: 1
+min_free_gib: 90
+# used by the model loader instead of `max_memory` (which is hashed)
+placement_max_memory: {0: 130GiB}
+# batches of 8 consecutive items, left-padded to the longest. The grid then writes to grid_b8_padded/ (`grid_dir`)
+eval_batch_size: 8
+batch_grouping: null

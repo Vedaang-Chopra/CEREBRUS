@@ -8,19 +8,28 @@ from pathlib import Path
 from datasets import load_dataset
 
 from adaloop.data.rows import row_image
-from adaloop.data.splits import build_manifest, load_manifest
+from adaloop.data.splits import build_manifest, check_sizes, grow_manifest, load_manifest
 from adaloop.schemas.items import Item, LazyItem
 
 BENCHMARK = "gqa"
 
 
-def build_gqa_splits(cfg: dict, root: str | Path = ".") -> dict:
-    """Create the image-disjoint GQA manifest if missing; return the manifest."""
+def build_gqa_splits(cfg: dict, root: str | Path = ".", grow: bool = False) -> dict:
+    """Create the image-disjoint GQA manifest if missing; return the manifest.
+
+    An existing manifest must have the configured sizes; `grow` extends it to them, keeping its ids.
+    """
     bcfg = cfg["benchmarks"][BENCHMARK]
     path = Path(root) / bcfg["manifest"]
-    if path.exists():
-        return load_manifest(path)
+    if path.exists() and not grow:
+        manifest = load_manifest(path)
+        check_sizes(manifest, cfg["splits"]["sizes"], path)
+        return manifest
+    if grow and not path.exists():
+        raise ValueError(f"no split manifest {path} to grow")
     questions = load_dataset(bcfg["source"], bcfg["questions_config"], split=bcfg["hf_split"])
+    if grow:
+        return grow_manifest(path, questions["id"], questions["imageId"], cfg["splits"])
     meta = {"dataset": bcfg["source"], "config": bcfg["questions_config"]}
     return build_manifest(path, questions["id"], questions["imageId"], cfg["splits"], meta)
 

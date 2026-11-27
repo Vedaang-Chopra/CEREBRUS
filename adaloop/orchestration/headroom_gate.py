@@ -65,7 +65,8 @@ def rerun_noise(rows: pd.DataFrame, variant: str, benchmark: str, frac: float) -
     return None if gain is None else 100.0 * gain
 
 
-def headroom_gate(cfg: dict, root: str | Path, variant: str = "base", name: str = "grid") -> pd.DataFrame:
+def headroom_gate(cfg: dict, root: str | Path, variant: str = "base", name: str = "grid",
+                  file: str = "grid.parquet") -> pd.DataFrame:
     """Per benchmark at `headroom.headline_frac`: headroom = oracle - best_fixed - max(re-run noise, batch noise).
 
     Dev numbers (`cfg["headroom"]`). `best_fixed` is the hull mix built per benchmark with the headline's data rules:
@@ -76,7 +77,7 @@ def headroom_gate(cfg: dict, root: str | Path, variant: str = "base", name: str 
     """
     settings = cfg["headroom"]
     frac, split = settings["headline_frac"], settings["report_split"]
-    grid = pd.read_parquet(grid_dir(cfg, root, name) / "grid.parquet")  # main and re-run rows
+    grid = pd.read_parquet(grid_dir(cfg, root, name) / file)  # main and re-run rows
     rows = grid[grid["split"] != "test"]  # this gate is a dev measurement
     table = headroom_table(rows, cfg, variant)
     table = table[np.isclose(table["cap_frac"], frac)]
