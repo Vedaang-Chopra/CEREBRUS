@@ -4,6 +4,7 @@ from adaloop.core.controller.chooser import Chooser, chooser_loss
 from adaloop.core.controller.curves import interpolation_weights
 from adaloop.core.controller.diagnostics import path_stats
 from adaloop.core.controller.features import pass_features
+from adaloop.core.controller.fit_split import carve_val
 from adaloop.core.controller.heuristic import heuristic_actions
 from adaloop.core.controller.inputs import fit_normalizer, node_scalars, policy_inputs, tree_data
 from adaloop.core.controller.objectives import (
@@ -155,6 +156,7 @@ from adaloop.orchestration.headline import (
 )
 from adaloop.orchestration.headroom_gate import headroom_gate
 from adaloop.orchestration.inputs import item_inputs, item_prompt
+from adaloop.orchestration.item_images import build_item_images, load_item_images
 from adaloop.orchestration.lora_checks import (
     lora_eval_probe,
     lora_grad_norms,
@@ -274,6 +276,9 @@ __all__ = [
     "policy_inputs",
     "policy_rows",
     "run_controller",
+    "build_item_images",
+    "carve_val",
+    "load_item_images",
     "collapse_table",
     "path_stats",
     "run_heuristic",

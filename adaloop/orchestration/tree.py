@@ -5,10 +5,12 @@ from pathlib import Path
 
 import pandas as pd
 
+from adaloop.core.controller.fit_split import carve_val
 from adaloop.core.controller.tree import charged, item_tree
 from adaloop.core.cost.meta import cost_params_from_config
 from adaloop.orchestration.features import load_features
 from adaloop.orchestration.grid import grid_dir
+from adaloop.orchestration.item_images import load_item_images
 from adaloop.schemas.cost import CostParams
 from adaloop.schemas.runs import TreeLeaf
 from utils.paths import find_repo_root
@@ -29,7 +31,11 @@ def controller_dir(cfg: dict, ctrl: dict, root: str | Path) -> Path:
 
 
 def load_controller_inputs(cfg: dict, ctrl: dict, root: str | Path) -> tuple[pd.DataFrame, dict]:
-    """(grid rows of the variant, main run; features[benchmark, item_id][k, p]) from the grid folder."""
+    """(grid rows of the variant, main run; features[benchmark, item_id][k, p]) from the grid folder.
+
+    With `splits.val` set, the rows get a `fit_split` column: `split` with the held-out train images renamed to val.
+    `split` itself stays, so fixed-setting baselines still read the whole train split.
+    """
     folder = grid_dir(cfg, root, ctrl["grid_name"])
     file = ctrl.get("grid_file", "grid.parquet")  # grid_partial.parquet: smoke test on a quick pass (nb11)
     grid = pd.read_parquet(folder / file)
@@ -37,6 +43,10 @@ def load_controller_inputs(cfg: dict, ctrl: dict, root: str | Path) -> tuple[pd.
     if grid.empty:
         raise ValueError(f"no main-run rows of variant {ctrl['variant']!r} in {folder / file}")
     check_test_allowed(grid["split"])
+    splits, held = ctrl["splits"], ctrl.get("ctrl_val")
+    if "val" in splits:
+        grid = grid.assign(fit_split=carve_val(grid, load_item_images(cfg, ctrl, root), splits["train"],
+                                               splits["val"], held["image_frac"], held["seed"]))
     features = {}
     first = grid.drop_duplicates(ITEM)
     for benchmark, item_id, digest in zip(first["benchmark"], first["item_id"], first["config_hash"]):
@@ -51,7 +61,7 @@ def build_tree(grid: pd.DataFrame, features: dict, params: CostParams, ctrl: dic
     """tree.parquet rows: every leaf of every item at every k0 (default `ctrl["k0"]`; k0 = look.k: no look).
 
     `grid` holds one row per (item, k, R) of one model variant. flops_total charges the feature readouts / state sums
-    that `ctrl["features"]` need (none if `charge_features` is false).
+    that `ctrl["features"]` need (none if `charge_features` is false). A row's split is `fit_split` where the grid has it.
     """
     check_test_allowed(grid["split"])
     if ctrl["look"]["mode"] != "restart":
@@ -73,7 +83,7 @@ def build_tree(grid: pd.DataFrame, features: dict, params: CostParams, ctrl: dic
             for leaf in item_tree(cells, features[benchmark, item_id], params, k0, look_k, R_max):
                 total = (leaf["flops_cell"] + leaf["flops_discarded"] + pays_readout * leaf["flops_readout"]
                          + pays_state * leaf["flops_state"])
-                out.append(asdict(TreeLeaf(item_id=item_id, benchmark=benchmark, split=first["split"],
+                out.append(asdict(TreeLeaf(item_id=item_id, benchmark=benchmark, split=first.get("fit_split", first["split"]),
                                            model_variant=first["model_variant"], k0=k0, flops_total=total, **leaf)))
     return pd.DataFrame(out)
 

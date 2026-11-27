@@ -1,4 +1,8 @@
-"""S12: train the controller and tune the heuristic per k0 (train on ctrl_train, select on dev), write policy_eval."""
+"""S12: train the controller and tune the heuristic per k0, write policy_eval.
+
+Controller: weights on ctrl_train, epoch on ctrl_val. Heuristic: thresholds on ctrl_train + ctrl_val. dev picks
+nothing here; it only picks (k0, lambda) per cost cap afterwards.
+"""
 import time
 from pathlib import Path
 
@@ -47,10 +51,10 @@ def greedy_exits(policy: Policy, data: TreeData, norm: dict, ctrl: dict) -> tupl
     return walk(logits.masked_fill(~mask, float("-inf")).argmax(dim=-1).numpy())
 
 
-def train_policy(train: TreeData, dev: TreeData, lam: float, seed: int, ctrl: dict) -> tuple[Policy, dict, dict]:
-    """One controller for one (k0, lam, seed): (policy at its best dev epoch, normalizer, info).
+def train_policy(train: TreeData, val: TreeData, lam: float, seed: int, ctrl: dict) -> tuple[Policy, dict, dict]:
+    """One controller for one (k0, lam, seed): (policy at its best val epoch, normalizer, info).
 
-    Mini-batches of whole trees; the epoch is chosen by the mean reward of the greedy policy on dev.
+    Mini-batches of whole trees; the epoch is chosen by the mean reward of the greedy policy on `val`.
     """
     if ctrl["objective"] not in OBJECTIVES:
         raise ValueError(f"objective must be one of {OBJECTIVES}, got {ctrl['objective']!r}")
@@ -60,7 +64,7 @@ def train_policy(train: TreeData, dev: TreeData, lam: float, seed: int, ctrl: di
     h, scalars, h_index = _tensors(train, norm, ctrl)
     mask = torch.from_numpy(action_mask(*train.correct.shape[1:]))
     rewards = tree_rewards(train, lam, charged_costs(ctrl))  # (N, B, R)
-    dev_rewards = tree_rewards(dev, lam, charged_costs(ctrl)).numpy()
+    val_rewards = tree_rewards(val, lam, charged_costs(ctrl)).numpy()
     policy = Policy(h.shape[-1], scalars.shape[-1], ctrl)
     optimizer = torch.optim.AdamW(policy.parameters(), lr=ctrl["lr"], weight_decay=ctrl["weight_decay"])
     best = {"reward": -np.inf, "epoch": 0, "state": None}
@@ -75,8 +79,8 @@ def train_policy(train: TreeData, dev: TreeData, lam: float, seed: int, ctrl: di
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-        b, q = greedy_exits(policy, dev, norm, ctrl)
-        reward = float(dev_rewards[np.arange(len(b)), b, q].mean())
+        b, q = greedy_exits(policy, val, norm, ctrl)
+        reward = float(val_rewards[np.arange(len(b)), b, q].mean())
         if reward > best["reward"] + 1e-9:
             best = {"reward": reward, "epoch": epoch,
                     "state": {name: value.clone() for name, value in policy.state_dict().items()}}
@@ -84,12 +88,12 @@ def train_policy(train: TreeData, dev: TreeData, lam: float, seed: int, ctrl: di
             break
     policy.load_state_dict(best["state"])
     policy.eval()
-    return policy, norm, {"best_epoch": best["epoch"], "dev_reward": best["reward"], "epochs_run": epoch}
+    return policy, norm, {"best_epoch": best["epoch"], "val_reward": best["reward"], "epochs_run": epoch}
 
 
 def _splits(tree: pd.DataFrame, features: dict, ctrl: dict, k0: float) -> dict[str, TreeData]:
-    """TreeData of the train, dev and evaluation splits at k0."""
-    names = [ctrl["splits"]["train"], ctrl["splits"]["dev"], *ctrl["splits"]["eval"]]
+    """TreeData of the train, val and evaluation splits at k0."""
+    names = [ctrl["splits"]["train"], ctrl["splits"]["val"], *ctrl["splits"]["eval"]]
     check_test_allowed(names)
     return {name: tree_data(tree, features, k0, ctrl["look"]["k"], name) for name in dict.fromkeys(names)}
 
@@ -103,13 +107,13 @@ def run_controller(tree: pd.DataFrame, features: dict, ctrl: dict, weights_dir: 
     rows = []
     for k0 in dict.fromkeys(tree["k0"]):
         data = _splits(tree, features, ctrl, k0)
-        train, dev = data[ctrl["splits"]["train"]], data[ctrl["splits"]["dev"]]
+        train, val = data[ctrl["splits"]["train"]], data[ctrl["splits"]["val"]]
         for lam in ctrl["lambdas"]:
             for seed in ctrl["seeds"]:
                 start = time.perf_counter()
-                policy, norm, info = train_policy(train, dev, lam, seed, ctrl)
+                policy, norm, info = train_policy(train, val, lam, seed, ctrl)
                 print(f"{method} k0={k0} lam={lam} seed={seed}: epoch {info['best_epoch']}/{info['epochs_run']} | "
-                      f"dev reward {info['dev_reward']:.4f} | {time.perf_counter() - start:.1f}s")
+                      f"val reward {info['val_reward']:.4f} | {time.perf_counter() - start:.1f}s")
                 if weights_dir is not None:
                     Path(weights_dir).mkdir(parents=True, exist_ok=True)
                     torch.save({"state": policy.state_dict(), "norm": {k: torch.from_numpy(v) for k, v in norm.items()},
@@ -122,26 +126,29 @@ def run_controller(tree: pd.DataFrame, features: dict, ctrl: dict, weights_dir: 
 
 
 def run_heuristic(tree: pd.DataFrame, features: dict, ctrl: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """(policy_eval rows, chosen thresholds) of the heuristic: per k0 and lambda, the thresholds with the best
-    mean reward on dev. It reads readout features and attention mass, so it pays for both."""
+    """(policy_eval rows, chosen thresholds) of the heuristic: per k0 and lambda, the thresholds with the best mean
+    reward on the train and val items together (the search is its training; it has no epochs). It reads readout
+    features and attention mass, so it pays for both."""
     readout, state = charged(HEURISTIC_FEATURES)
     pays = (readout and ctrl["charge_features"], state and ctrl["charge_features"])
+    splits = ctrl["splits"]
+    check_test_allowed(splits["eval"])
     rows, chosen = [], []
     for k0 in dict.fromkeys(tree["k0"]):
         data = _splits(tree, features, ctrl, k0)
-        dev = data[ctrl["splits"]["dev"]]
-        grid = threshold_grid(dev, ctrl["heuristic"])
-        item = np.arange(len(dev.keys))
-        exits = [walk(heuristic_actions(dev, **thresholds)) for thresholds in grid]
+        fit = tree_data(tree, features, k0, ctrl["look"]["k"], [splits["train"], splits["val"]])
+        grid = threshold_grid(fit, ctrl["heuristic"])
+        item = np.arange(len(fit.keys))
+        exits = [walk(heuristic_actions(fit, **thresholds)) for thresholds in grid]
         for lam in ctrl["lambdas"]:
-            reward = tree_rewards(dev, lam, pays).numpy()
+            reward = tree_rewards(fit, lam, pays).numpy()
             means = [reward[item, b, q].mean() for b, q in exits]
             best = grid[int(np.argmax(means))]
-            chosen.append({"k0": k0, "lam": lam, **best, "dev_reward": float(max(means))})
-            for split in ctrl["splits"]["eval"]:
+            chosen.append({"k0": k0, "lam": lam, **best, "train_reward": float(max(means))})
+            for split in splits["eval"]:
                 picks = walk(heuristic_actions(data[split], **best))
                 rows.append(policy_rows(data[split], picks, "heuristic", lam, 0, *pays))
-        print(f"heuristic k0={k0}: {len(grid)} threshold sets tried on dev")
+        print(f"heuristic k0={k0}: {len(grid)} threshold sets tried on {len(fit.keys)} train items")
     return pd.concat(rows, ignore_index=True), pd.DataFrame(chosen)
 
 

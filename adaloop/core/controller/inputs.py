@@ -1,4 +1,6 @@
 """Tree tables -> arrays (`TreeData`), and arrays -> the policy's node feature vectors."""
+from collections.abc import Sequence
+
 import numpy as np
 import pandas as pd
 
@@ -11,9 +13,9 @@ KEYS = ["benchmark", "item_id"]
 LEAF_ARRAYS = ("correct", "flops_cell", "flops_discarded", "flops_readout", "flops_state", "kept_frac", "spent_frac")
 
 
-def tree_data(tree: pd.DataFrame, features: dict, k0: float, look_k: float, split: str) -> TreeData:
-    """Arrays of the trees of `split` at `k0`. `features[benchmark, item_id][k, p]` are the saved pass features."""
-    rows = tree[(tree["k0"] == k0) & (tree["split"] == split)]
+def tree_data(tree: pd.DataFrame, features: dict, k0: float, look_k: float, split: str | Sequence[str]) -> TreeData:
+    """Arrays of the trees of `split` (one name or several) at `k0`. `features[benchmark, item_id][k, p]` are the saved pass features."""
+    rows = tree[(tree["k0"] == k0) & tree["split"].isin([split] if isinstance(split, str) else split)]
     if rows.empty:
         raise ValueError(f"no tree rows for k0={k0}, split {split!r}")
     R_max = int(rows["exit_pass"].max())

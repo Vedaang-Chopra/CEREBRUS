@@ -15,7 +15,12 @@ features: [delta_norm, kl_prev, entropy, top1_prob, vis_attn_mass]
 # (delta_norm, vis_attn_mass). A method pays only for what it reads.
 charge_features: true
 
-splits: {train: ctrl_train, dev: dev, eval: [dev]}  # add test to `eval` only once configs/prereg.yaml exists
+# train: weights (heuristic: thresholds). val: early stopping and architecture choice, held out of `train` below.
+# dev: only the per-cap choice of (k0, lambda); its numbers are preliminary until test.
+splits: {train: ctrl_train, val: ctrl_val, dev: dev, eval: [dev]}  # add test to `eval` only once configs/prereg.yaml exists
+# `val` = the items of `image_frac` of the `train` images (per benchmark, seeded), so no image is on both sides.
+# item_images: {benchmark: {item_id: image_id}} (`build_item_images`); a grid folder's item_images.json wins over it.
+ctrl_val: {image_frac: 0.2, seed: 0, item_images: configs/splits/mvp_item_images.json}
 
 # controller (S12)
 objective: expected_reward  # expected_reward (build spec §5.3) | supervised (argmax-Q action)
@@ -27,7 +32,7 @@ lr: 0.001
 weight_decay: 0.01
 batch_trees: 32           # whole trees (25 nodes each) per step
 epochs: 50
-patience: 10              # stop after this many epochs without a better dev reward
+patience: 10              # stop after this many epochs without a better ctrl_val reward
 seeds: [0, 1, 2]
 lambdas: [0.0, 0.05, 0.1, 0.2, 0.4, 0.8, 1.6, 3.2]  # reward = correct - lambda * cost / cost_ref
 
@@ -37,8 +42,8 @@ collapse_share: 0.95
 # cost caps (x cost_ref = mean FLOPs of k = 1, R = 3) for the dev choice of (k0, lambda); headline 0.5
 cap_fracs: [0.25, 0.35, 0.5, 0.65, 0.8, 1.0, 1.25, 1.5]
 
-# heuristic: per k0 and lambda, the threshold set with the best dev reward. *_quantiles are quantiles of the dev
-# node values of kl_prev (eps), entropy (eta) and vis_attn_mass (zeta); tau1 is a raw top1_prob (above 1: never).
+# heuristic: per k0 and lambda, the threshold set with the best reward on all of ctrl_train. *_quantiles are quantiles
+# of the ctrl_train node values of kl_prev (eps), entropy (eta) and vis_attn_mass (zeta); tau1 is a raw top1_prob (above 1: never).
 heuristic:
   eps_quantiles: [0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0]
   eta_quantiles: [0.0, 0.25, 0.5, 0.75, 0.9, 1.0]

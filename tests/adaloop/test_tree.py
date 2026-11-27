@@ -11,6 +11,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from adaloop.core.controller.diagnostics import path_actions, path_stats
+from adaloop.core.controller.fit_split import carve_val
 from adaloop.core.controller.inputs import tree_data
 from adaloop.core.controller.rows import policy_rows
 from adaloop.core.controller.synthetic import HIDDEN, synthetic_grid
@@ -107,6 +108,23 @@ def test_path_stats() -> None:
     print("✓ PASS diagnostics: action counts from paths, a fixed seed is counted")
 
 
+def test_carve_val() -> None:
+    rows = pd.DataFrame([{"benchmark": b, "item_id": f"{split}{i}", "split": split, "R": R}
+                         for b in ("gqa", "textvqa") for split in ("ctrl_train", "dev")
+                         for i in range(20) for R in (1, 2)])
+    images = {b: {f"{split}{i}": f"{split}-img{i // 2}" for split in ("ctrl_train", "dev") for i in range(20)}
+              for b in ("gqa", "textvqa")}
+    fit = carve_val(rows, images, "ctrl_train", "ctrl_val", 0.2, 0)
+    assert fit.equals(carve_val(rows, images, "ctrl_train", "ctrl_val", 0.2, 0))
+    assert (fit[rows["split"] == "dev"] == "dev").all()
+    image = [images[b][i] for b, i in zip(rows["benchmark"], rows["item_id"])]
+    table = rows.assign(fit=fit, image=image)[rows["split"] == "ctrl_train"]
+    assert (table.groupby(["benchmark", "image"])["fit"].nunique() == 1).all()  # whole images
+    held = table[table["fit"] == "ctrl_val"].groupby("benchmark")["image"].nunique()
+    assert held.tolist() == [2, 2]  # 20% of 10 images per benchmark
+    print("✓ PASS fit split: seeded, image-disjoint, 20% of the train images per benchmark")
+
+
 def test_test_split_sealed() -> None:
     if (Path(__file__).resolve().parents[2] / "configs" / "prereg.yaml").is_file():
         return
@@ -125,4 +143,5 @@ if __name__ == "__main__":
     test_cost_arithmetic()
     test_walk_and_arrays()
     test_path_stats()
+    test_carve_val()
     test_test_split_sealed()

@@ -27,7 +27,7 @@ def heuristic_actions(data: TreeData, eps: float, eta: float, zeta: float, tau1:
 
 
 def threshold_grid(data: TreeData, grid_cfg: dict) -> list[dict]:
-    """Every (eps, eta, zeta, tau1) to try. eps, eta, zeta are quantiles of the (dev) node values, tau1 is raw."""
+    """Every (eps, eta, zeta, tau1) to try. eps, eta, zeta are quantiles of the node values of `data`, tau1 is raw."""
     def quantiles(name: str, qs: list[float]) -> list[float]:
         values = data.raw[name][np.isfinite(data.raw[name])]
         return sorted(set(np.quantile(values, qs).tolist()))

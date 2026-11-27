@@ -1,4 +1,4 @@
-"""S13 upfront baselines: train a chooser over fixed (k, R) cells on ctrl_train, pick its epoch on dev."""
+"""S13 upfront baselines: train a chooser over fixed (k, R) cells on ctrl_train, pick its epoch on ctrl_val."""
 import numpy as np
 import pandas as pd
 import torch
@@ -21,10 +21,10 @@ def _upfront_arrays(keys: pd.DataFrame, upfront: dict) -> tuple[np.ndarray, np.n
     return visual, question, flops
 
 
-def train_chooser(train: tuple, dev: tuple, seed: int, ctrl: dict) -> tuple[Chooser, np.ndarray]:
-    """One chooser; `train` and `dev` are (visual, question, rewards (N, C)) tensors.
+def train_chooser(train: tuple, val: tuple, seed: int, ctrl: dict) -> tuple[Chooser, np.ndarray]:
+    """One chooser; `train` and `val` are (visual, question, rewards (N, C)) tensors.
 
-    Returns (model at the epoch with the best mean greedy reward on dev, that epoch).
+    Returns (model at the epoch with the best mean greedy reward on `val`, that epoch).
     """
     torch.manual_seed(seed)
     order = torch.Generator().manual_seed(seed)
@@ -41,8 +41,8 @@ def train_chooser(train: tuple, dev: tuple, seed: int, ctrl: dict) -> tuple[Choo
             optimizer.step()
         model.eval()
         with torch.no_grad():
-            picks = model(dev[0], dev[1]).argmax(dim=-1)
-        reward = float(dev[2][torch.arange(len(picks)), picks].mean())
+            picks = model(val[0], val[1]).argmax(dim=-1)
+        reward = float(val[2][torch.arange(len(picks)), picks].mean())
         if reward > best["reward"] + 1e-9:
             best = {"reward": reward, "epoch": epoch,
                     "state": {name: value.clone() for name, value in model.state_dict().items()}}
@@ -54,9 +54,14 @@ def train_chooser(train: tuple, dev: tuple, seed: int, ctrl: dict) -> tuple[Choo
 
 
 def chooser_rows(grid: pd.DataFrame, upfront: dict, cells: list[tuple], ctrl: dict, method: str) -> pd.DataFrame:
-    """policy_eval rows of an upfront chooser over `cells` [(k, R)]: every lambda x seed on the `eval` splits."""
+    """policy_eval rows of an upfront chooser over `cells` [(k, R)]: every lambda x seed on the `eval` splits.
+
+    A `fit_split` column of the grid (see `load_controller_inputs`) replaces `split`, so train and val do not overlap.
+    """
     splits = ctrl["splits"]
-    names = list(dict.fromkeys([splits["train"], splits["dev"], *splits["eval"]]))
+    if "fit_split" in grid:
+        grid = grid.assign(split=grid["fit_split"])
+    names = list(dict.fromkeys([splits["train"], splits["val"], *splits["eval"]]))
     check_test_allowed(names)
     data = {}
     for split in names:
@@ -79,8 +84,8 @@ def chooser_rows(grid: pd.DataFrame, upfront: dict, cells: list[tuple], ctrl: di
     for lam in ctrl["lambdas"]:
         for seed in ctrl["seeds"]:
             model, epoch = train_chooser((*inputs(splits["train"]), rewards(splits["train"], lam)),
-                                         (*inputs(splits["dev"]), rewards(splits["dev"], lam)), seed, ctrl)
-            print(f"{method} lam={lam} seed={seed}: best dev epoch {epoch}")
+                                         (*inputs(splits["val"]), rewards(splits["val"], lam)), seed, ctrl)
+            print(f"{method} lam={lam} seed={seed}: best val epoch {epoch}")
             for split in splits["eval"]:
                 keys, values, costs, cost_ref, _, _, pooling = data[split]
                 with torch.no_grad():

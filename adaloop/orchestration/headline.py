@@ -2,7 +2,7 @@
 
 All accuracies are the macro-average of the benchmarks and all costs are mean analytic FLOPs / mean cost_ref (equal
 item counts per benchmark are required, so both are plain item means). Choices are made on `splits.dev`; the report
-split is the last of `splits.eval`. Numbers on the split they were chosen on are labelled as optimistic.
+split is the last of `splits.eval`. Numbers on the split they were chosen on are labelled preliminary.
 """
 from pathlib import Path
 
@@ -26,7 +26,7 @@ def report_split(ctrl: dict) -> str:
 
 def split_label(ctrl: dict, split: str) -> str:
     """How a number of `split` must be read."""
-    return f"{split} (tuned on {split}: optimistic)" if split == ctrl["splits"]["dev"] else split
+    return f"{split} (preliminary: k0, lambda chosen on {split})" if split == ctrl["splits"]["dev"] else split
 
 
 def _checked(rows: pd.DataFrame) -> pd.DataFrame:
