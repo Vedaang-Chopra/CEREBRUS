@@ -10,7 +10,8 @@ from adaloop.schemas.cost import CostParams
 
 EXIT, LOOP, LOOK = 0, 1, 2
 ACTIONS = ("EXIT", "LOOP", "LOOK")
-READOUT_FEATURES = ("entropy", "kl_prev", "top1_prob")  # need coda + lm_head at that pass
+# need coda + lm_head at that pass (pred_changed also the previous pass's readout, which that pass's decision paid)
+READOUT_FEATURES = ("entropy", "kl_prev", "top1_prob", "top2_margin", "pred_changed")
 STATE_FEATURES = ("delta_norm", "vis_attn_mass")  # cheap sums over states / attention weights
 
 

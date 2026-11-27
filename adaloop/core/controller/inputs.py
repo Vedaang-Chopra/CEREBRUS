@@ -4,17 +4,19 @@ from collections.abc import Sequence
 import numpy as np
 import pandas as pd
 
+from adaloop.core.controller.features import top_features
 from adaloop.core.controller.tree import path_name
 from adaloop.schemas.runs import TreeData
 
-FEATURES = ("delta_norm", "kl_prev", "entropy", "top1_prob", "vis_attn_mass")
-NO_PREV = ("delta_norm", "kl_prev")  # NaN at pass 1: there is no earlier pass
+FEATURES = ("delta_norm", "kl_prev", "entropy", "top1_prob", "vis_attn_mass", "top2_margin", "pred_changed")
+NO_PREV = ("delta_norm", "kl_prev", "pred_changed")  # NaN at pass 1: there is no earlier pass
 KEYS = ["benchmark", "item_id"]
 LEAF_ARRAYS = ("correct", "flops_cell", "flops_discarded", "flops_readout", "flops_state", "kept_frac", "spent_frac")
 
 
 def tree_data(tree: pd.DataFrame, features: dict, k0: float, look_k: float, split: str | Sequence[str]) -> TreeData:
-    """Arrays of the trees of `split` (one name or several) at `k0`. `features[benchmark, item_id][k, p]` are the saved pass features."""
+    """Arrays of the trees of `split` (one name or several) at `k0`. `features[benchmark, item_id][k, p]` are the saved pass features
+    (`top_features` adds the two derived from the top log-probs)."""
     rows = tree[(tree["k0"] == k0) & tree["split"].isin([split] if isinstance(split, str) else split)]
     if rows.empty:
         raise ValueError(f"no tree rows for k0={k0}, split {split!r}")
@@ -31,7 +33,7 @@ def tree_data(tree: pd.DataFrame, features: dict, k0: float, look_k: float, spli
     ks = [k0] if n_branches == 1 else [k0, look_k]  # the branches' keep fractions
     h_index = np.array([[(b > 0) * R_max + q for q in range(R_max)] for b in range(n_branches)])
     states = [(k, p) for k in ks for p in range(1, R_max + 1)]  # the U distinct pass states, in h_index order
-    items = [features[key] for key in wide.index]
+    items = [top_features(features[key]) for key in wide.index]
     h = np.stack([np.stack([item[s]["h_last"].float().numpy() for s in states]) for item in items])  # (N, U, d)
     raw = {}
     for name in FEATURES:

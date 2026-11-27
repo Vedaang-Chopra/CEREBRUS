@@ -10,8 +10,10 @@ look: {mode: restart, k: 1.0}  # at most one look: restart with this keep fracti
 
 # controller inputs. h_last plus these pass features; kept_frac, spent_frac and the pass number are always on.
 use_h_last: true          # false: ablation with scalar features only
-features: [delta_norm, kl_prev, entropy, top1_prob, vis_attn_mass]
-# add to flops_total what the features cost: early readout (entropy, kl_prev, top1_prob) and state sums
+# top2_margin and pred_changed come from the saved top-32 log-probs; like entropy, kl_prev and top1_prob they need
+# the early readout
+features: [delta_norm, kl_prev, entropy, top1_prob, vis_attn_mass, top2_margin, pred_changed]
+# add to flops_total what the features cost: early readout (entropy, kl_prev, top1_prob, top2_margin, pred_changed) and state sums
 # (delta_norm, vis_attn_mass). A method pays only for what it reads.
 charge_features: true
 

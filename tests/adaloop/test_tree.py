@@ -7,10 +7,12 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from adaloop.core.controller.diagnostics import path_actions, path_stats
+from adaloop.core.controller.features import top_features
 from adaloop.core.controller.fit_split import carve_val
 from adaloop.core.controller.inputs import tree_data
 from adaloop.core.controller.rows import policy_rows
@@ -98,6 +100,19 @@ def test_walk_and_arrays() -> None:
     print("✓ PASS tree: paths walk to the right leaves; no-look trees at k0 = 1")
 
 
+def test_top_features() -> None:
+    cell = lambda ids, probs: {"top_ids": torch.tensor(ids, dtype=torch.int32), "top_logp": torch.tensor(probs).log()}
+    out = top_features({(1.0, 1): cell([7, 8], [0.5, 0.2]), (1.0, 2): cell([7, 9], [0.6, 0.1]),
+                        (1.0, 3): cell([9, 7], [0.4, 0.4]), (0.5, 2): cell([1, 2], [0.9, 0.1])})
+    assert np.allclose([out[1.0, p]["top2_margin"] for p in (1, 2, 3)], [0.3, 0.5, 0.0])
+    assert np.isnan(out[1.0, 1]["pred_changed"]) and np.isnan(out[0.5, 2]["pred_changed"])  # no pass before it
+    assert (out[1.0, 2]["pred_changed"], out[1.0, 3]["pred_changed"]) == (0.0, 1.0)
+    grid, features = synthetic_grid(n_items=1)
+    only = build_tree(grid, features, PARAMS, {**CTRL, "features": ["top2_margin", "pred_changed"]})
+    assert (only["flops_total"] == only["flops_cell"] + only["flops_discarded"] + only["flops_readout"]).all()
+    print("✓ PASS features: top2 margin, changed first token, both charged as readout features")
+
+
 def test_path_stats() -> None:
     assert path_actions("X@1") == (1, 0, 0, 1) and path_actions("X@3") == (1, 2, 0, 3)
     assert path_actions("L@2,X@3") == (1, 3, 1, 3)  # LOOP, LOOK | LOOP, LOOP, EXIT
@@ -142,6 +157,7 @@ if __name__ == "__main__":
     test_leaves_match_grid()
     test_cost_arithmetic()
     test_walk_and_arrays()
+    test_top_features()
     test_path_stats()
     test_carve_val()
     test_test_split_sealed()

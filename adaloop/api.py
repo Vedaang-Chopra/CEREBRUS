@@ -3,7 +3,7 @@ from adaloop.core.controller.baselines import hull_mix, upper_hull
 from adaloop.core.controller.chooser import Chooser, chooser_loss
 from adaloop.core.controller.curves import interpolation_weights
 from adaloop.core.controller.diagnostics import path_stats
-from adaloop.core.controller.features import pass_features
+from adaloop.core.controller.features import pass_features, top_features
 from adaloop.core.controller.fit_split import carve_val
 from adaloop.core.controller.heuristic import heuristic_actions
 from adaloop.core.controller.inputs import fit_normalizer, node_scalars, policy_inputs, tree_data
@@ -282,6 +282,7 @@ __all__ = [
     "carve_val",
     "load_item_images",
     "chosen_arch",
+    "top_features",
     "run_capacity",
     "collapse_table",
     "path_stats",

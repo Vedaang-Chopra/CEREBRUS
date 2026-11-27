@@ -36,3 +36,20 @@ def pass_features(
         "kl_prev": kl,
         "top1_prob": p.max().item(),
     }
+
+
+def top_features(item: dict) -> dict:
+    """`item` {(k, p): saved pass features} with two features read from the saved top log-probs added to every pass.
+
+    `top2_margin`: p1 - p2 of the first answer token. `pred_changed`: 1.0 if the most likely first token differs from
+    that of pass p-1 on the same branch, else 0.0; NaN when that pass was not saved (pass 1), like `kl_prev`.
+    """
+    out = {}
+    for (k, p), cell in item.items():
+        if "top_logp" not in cell or "top_ids" not in cell:
+            raise ValueError(f"pass features of cell {(k, p)} lack top_logp / top_ids: the grid is older than them")
+        previous = item.get((k, p - 1))
+        changed = float("nan") if previous is None else float(cell["top_ids"][0] != previous["top_ids"][0])
+        margin = (cell["top_logp"][0].exp() - cell["top_logp"][1].exp()).item()  # largest first
+        out[k, p] = {**cell, "top2_margin": margin, "pred_changed": changed}
+    return out

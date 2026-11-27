@@ -18,6 +18,7 @@ def synthetic_grid(n_items: int = 6, splits: tuple[str, ...] = ("ctrl_train", "d
     """(grid rows, features[benchmark, item_id][k, p]), FLOPs from SYNTHETIC_PARAMS. `n_items` per benchmark and split."""
     rng = np.random.default_rng(seed)
     params = SYNTHETIC_PARAMS
+    top_rng = np.random.default_rng(seed + 100)  # its own stream: the other numbers do not depend on it
     rows, features = [], {}
     for split in splits:
         for benchmark in ("gqa", "textvqa"):
@@ -45,8 +46,21 @@ def synthetic_grid(n_items: int = 6, splits: tuple[str, ...] = ("ctrl_train", "d
                         feats[k, R] = {"h_last": h, "delta_norm": float("nan") if R == 1 else rng.random(),
                                        "kl_prev": float("nan") if R == 1 else rng.random() / R,
                                        "entropy": float(max(0.0, 1 - skill)), "top1_prob": float(rng.random()),
-                                       "vis_attn_mass": float(rng.random()), **extra}
+                                       "vis_attn_mass": float(rng.random()), **_top_tokens(top_rng, skill), **extra}
+                        feats[k, R]["top1_prob"] = float(feats[k, R]["top_logp"][0].exp())
     return pd.DataFrame(rows), features
+
+
+def _top_tokens(rng: np.random.Generator, skill: float) -> dict:
+    """`top_logp`, `top_ids`, `tail_mass` as `pass_features` saves them; a higher skill gives a sharper first token."""
+    probs = rng.dirichlet(np.ones(33))
+    probs[0] += max(0.0, skill) * 2
+    probs /= probs.sum()
+    top = np.sort(probs[:32])[::-1].copy()
+    ids = rng.permutation(1000)[:32]
+    ids[0] = 1000 if skill > 0.2 else int(rng.integers(1001, 1004))  # confident passes agree on the first token
+    return {"top_logp": torch.from_numpy(np.log(top)).float(), "top_ids": torch.from_numpy(ids).to(torch.int32),
+            "tail_mass": float(probs[32])}
 
 
 def synthetic_upfront(features: dict, d: int = HIDDEN, seed: int = 1) -> dict:
