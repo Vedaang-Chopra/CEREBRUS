@@ -316,6 +316,8 @@ def cmd_pareto(api: ModuleType, cfg: dict, args: argparse.Namespace) -> None:
                   "textvqa": api.load_textvqa(cfg, "dev", limit=n_full, root=ROOT)}
     n = args.limit or n_full
     items = {benchmark: bench_items[:n] for benchmark, bench_items in full_items.items()}
+    if args.only:  # one process per benchmark: the result files are per (benchmark, cell), so two may run at once
+        full_items, items = {args.only: full_items[args.only]}, {args.only: items[args.only]}
     base = ROOT / cfg["out_dir"]
     out_dir, latency_dir = base / "nb07" / "pareto", base / "nb07" / "pareto_latency"
     reuse, reuse_latency = base / cfg["pareto"]["reuse_dir"], base / cfg["pareto"]["reuse_latency_dir"]
@@ -349,7 +351,7 @@ def cmd_pareto(api: ModuleType, cfg: dict, args: argparse.Namespace) -> None:
     ### Step-2:- Latency pass (batch 1), then the table
     latency_rows = [] if args.skip_latency else api.run_pareto([vlm], latency_items, cfg, latency_dir, reuse_latency)
     table = api.pareto_table(rows, latency_rows, cfg)
-    csv = base / "nb07" / f"pareto_cli_n{n}.csv"
+    csv = base / "nb07" / f"pareto_cli_n{n}{'_' + args.only if args.only else ''}.csv"
     pd.DataFrame(table).to_csv(csv, index=False)
     for line in table:
         if line["benchmark"] == "all":
@@ -426,6 +428,7 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--grow", action="store_true", help="splits: extend the manifests to splits.sizes")
     parser.add_argument("--per-split", type=int, default=None, help="grid: quick pass, first N items per benchmark x split")
+    parser.add_argument("--only", choices=BENCHMARKS, help="pareto: one benchmark (two processes may share the GPU)")
     parser.add_argument("--skip-latency", action="store_true", help="pareto: no batch-1 latency pass")
     parser.add_argument("--shard", default="0/1", help="full, grid, probe, teacher: i/n, 0-based i, one GPU group per shard")
     parser.add_argument("--variant", help="train: a key of lora_variants (A, B)")

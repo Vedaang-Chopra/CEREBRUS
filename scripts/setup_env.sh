@@ -39,6 +39,9 @@ fi
 # Pins live in pyproject.toml (torch, transformers commit, peft)
 "$UV" pip install --python "$ENV_DIR/bin/python" -e .
 
+# Fast causal_conv1d kernel of the model (Inara has it); builds from source against the installed torch (needs nvcc)
+"$UV" pip install --python "$ENV_DIR/bin/python" --no-deps --no-build-isolation causal-conv1d==1.7.0
+
 # spaCy model wheel, read from environment.yml so the URL is not duplicated
 SPACY_URL=$(grep -o 'https://[^ ]*en_core_web_sm[^ ]*\.whl' environment.yml || true)
 if [ -z "$SPACY_URL" ]; then

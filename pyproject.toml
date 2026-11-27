@@ -11,6 +11,7 @@ requires-python = ">=3.13,<3.14"
 dependencies = [
   "torch==2.14.1",
   "torchvision==0.29.2",  # Inkling2ImageProcessor
+  # causal-conv1d==1.7.0 (fast kernel) is installed by scripts/setup_env.sh: it must build against the installed torch
   "transformers @ git+https://github.com/huggingface/transformers@2f1bc5e321b9a736200a590d6e7743ccdeb60772",
   "accelerate==1.15.0",
   "datasets==5.2.0",
