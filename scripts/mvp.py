@@ -10,6 +10,10 @@
   python scripts/mvp.py grid-check              # nb08 Step-2b: batch 1 against batch 8 on dev items
   python scripts/check_run.py execution_results/mvp/grid_b8 --partial   # check a grid folder (CPU only)
   ADALOOP_SERVER=pace python scripts/mvp.py grid   # placement overlay configs/servers/pace.yaml (one H200)
+  python scripts/mvp.py probe-splits            # headroom probe (configs/probe.yaml): manifests; no GPU
+  python scripts/mvp.py probe --limit 8         # sample: 8 items per dataset into probe_sample_b8
+  python scripts/mvp.py probe --shard 0/1       # the probe into probe_b8, resumable; prints the report when complete
+  python scripts/mvp.py probe-report            # the report again, from probe_b8/grid.parquet (CPU)
   python scripts/mvp.py pareto --limit 32       # nb07 step 7 (S5b); without --limit the full sweep, resuming
   python scripts/mvp.py upfront                 # S13: upfront features of the grid items (no decoder pass), one copy
   python scripts/mvp.py teacher --shard 0/4     # S8: configs/train_lora.yaml (GPUs 0-7), one process per shard
@@ -20,7 +24,7 @@
 `smoke`, `eval`, `upfront`, `grid-check` and `pareto` pick a free GPU group; `splits` needs no GPU.
 The group is selected before `adaloop.api` is imported (that import initializes CUDA).
 `train` claims its GPU pair with a lock, so two runs started together get different pairs.
-`full`, `grid`, `grid-check`, `pareto`, `upfront`, `teacher` and `train` are resumable: rerun the same command after an interruption.
+`full`, `grid`, `grid-check`, `probe`, `pareto`, `upfront`, `teacher` and `train` are resumable: rerun the same command after an interruption.
 """
 import argparse
 import json
@@ -224,6 +228,78 @@ def cmd_grid_check(api: ModuleType, cfg: dict, args: argparse.Namespace) -> None
     print(f"saved {csv}")
 
 
+def cmd_probe_splits(api: ModuleType, cfg: dict, args: argparse.Namespace) -> None:
+    """Create (or check) the manifests of the probe datasets, leaving out images close to a GQA / TextVQA image."""
+    extra = cfg["extra_benchmarks"]
+    dedupe = api.load_config(ROOT / extra["dedupe_config"])["dedupe"]
+    hashes = api.all_eval_hashes(cfg, ROOT / cfg["out_dir"] / extra["hash_cache"])
+    print(f"{len(hashes)} GQA + TextVQA images hashed | distances {dedupe}")
+    for name in extra["sets"]:
+        manifest = api.build_extra_splits(cfg, name, hashes, dedupe, ROOT)
+        print(name, {split: len(ids) for split, ids in manifest["splits"].items()},
+              f"| {len(manifest['dropped_near_eval'])} images left out | hash {manifest['hash']}")
+
+
+def print_probe_report(api: ModuleType, table, cfg: dict, out_dir: Path) -> None:
+    """Print the per-dataset probe report and save it next to the rows."""
+    report = api.probe_report(table, cfg)
+    report.to_csv(out_dir / "probe_report.csv", index=False)
+    print(report.set_index("benchmark").T.to_string(float_format=lambda v: f"{v:.1f}"))
+    print(f"saved {out_dir / 'probe_report.csv'}")
+
+
+def cmd_probe(api: ModuleType, cfg: dict, args: argparse.Namespace) -> None:
+    """Run the probe cells on the extra datasets under the grid's config, then merge; resumable.
+
+    --limit writes only the first N items of each dataset, into the sample folder.
+    """
+    if args.limit is not None and args.limit < 1:
+        raise SystemExit("--limit must be at least 1")
+    cfg = api.grid_config(cfg)  # the grid's answer cap, so also its config hash
+    extra = cfg["extra_benchmarks"]
+    ks, Rs = extra["ks"], extra["Rs"]
+    items = api.probe_items(cfg, ROOT)  # all of them define the batches, also under --limit
+    again = api.probe_rerun_items(items, cfg)
+    only, out_dir = items, api.grid_dir(cfg, ROOT, "probe")
+    if args.limit is not None:
+        only = [item for name in extra["sets"] for item in [i for i in items if i.benchmark == name][: args.limit]]
+        again = list({item.benchmark: item for item in only}.values())  # one re-run item per dataset
+        out_dir = api.grid_dir(cfg, ROOT, "probe_sample")
+    n_cells = len(ks) * len(Rs)
+    print(f"config {api.config_hash(cfg)} | {len(only)} items + {len(again)} re-run x {n_cells} cells "
+          f"= {(len(only) + len(again)) * n_cells} rows | {out_dir}")
+    vlm = api.load_model(cfg)
+
+    ### Step-1:- Main run and noise re-run
+    start = time.perf_counter()
+    launch = {"command": "probe", "shard": list(args.shard), "limit": args.limit}
+    with api.record_launch(out_dir, cfg, ROOT, only, again, launch, ks=ks, Rs=Rs):
+        main_n, main_s = api.run_grid([vlm], items, cfg, out_dir, shard=args.shard, only=only, ks=ks, Rs=Rs)
+        again_n, again_s = api.run_grid([vlm], items, cfg, out_dir, shard=args.shard, rerun_id=1, only=again,
+                                        ks=ks, Rs=Rs)
+    generated, seconds = main_n + again_n, main_s + again_s
+    print(f"this launch: {generated} answers generated | wall {time.perf_counter() - start:.1f} s"
+          + (f" | {seconds / generated:.3f} s per answer" if generated else ""))
+
+    ### Step-2:- Merge; the report once every row is there
+    if not any(out_dir.glob(f"grid_*_{api.config_hash(cfg)}.jsonl")):
+        print(f"no result files yet in {out_dir}")
+        return
+    params = api.cost_params(vlm.model)
+    table = api.merge_grid(out_dir, cfg, name="grid_partial.parquet", params=params)
+    expected = (len(only) + len(again)) * n_cells
+    print(f"{len(table)} of {expected} rows")
+    if len(table) == expected:
+        table = api.merge_grid(out_dir, cfg, params=params)
+        print_probe_report(api, table, cfg, out_dir)
+
+
+def cmd_probe_report(api: ModuleType, cfg: dict, args: argparse.Namespace) -> None:
+    """The probe report from the merged table of a finished run (no GPU)."""
+    out_dir = api.grid_dir(api.grid_config(cfg), ROOT, "probe")
+    print_probe_report(api, api.load_grid(out_dir / "grid.parquet"), cfg, out_dir)
+
+
 def cmd_pareto(api: ModuleType, cfg: dict, args: argparse.Namespace) -> None:
     """The S5b Pareto sweep of nb07 step 7 (--limit: first N dev items per benchmark), resumable.
 
@@ -320,7 +396,7 @@ def cmd_train(api: ModuleType, cfg: dict, args: argparse.Namespace) -> None:
 
 def select_gpus(cfg: dict, args: argparse.Namespace) -> None:
     """Pick the GPU group for the command; for `full`, also turn args.shard into (i, n)."""
-    if args.command in ("full", "grid", "teacher"):
+    if args.command in ("full", "grid", "probe", "teacher"):
         # `full` has its own, larger list: notebooks stay on `gpu_groups`
         groups = cfg["full_gpu_groups"] if args.command == "full" else cfg["gpu_groups"]
         args.shard = parse_shard(args.shard, groups)
@@ -342,7 +418,7 @@ def main() -> None:
     """Parse arguments and run one command."""
     parser = argparse.ArgumentParser()
     parser.add_argument("command", choices=["smoke", "splits", "eval", "full", "grid", "grid-check", "pareto", "upfront",
-                                            "teacher", "train"])
+                                            "teacher", "train", "probe-splits", "probe", "probe-report"])
     parser.add_argument("--config", default=None, help="default: per command (full, teacher, train have their own)")
     parser.add_argument("--benchmark", default="gqa", choices=BENCHMARKS)
     parser.add_argument("--split", default="dev")
@@ -351,13 +427,14 @@ def main() -> None:
     parser.add_argument("--grow", action="store_true", help="splits: extend the manifests to splits.sizes")
     parser.add_argument("--per-split", type=int, default=None, help="grid: quick pass, first N items per benchmark x split")
     parser.add_argument("--skip-latency", action="store_true", help="pareto: no batch-1 latency pass")
-    parser.add_argument("--shard", default="0/1", help="full, grid, teacher: i/n, 0-based i, one GPU group per shard")
+    parser.add_argument("--shard", default="0/1", help="full, grid, probe, teacher: i/n, 0-based i, one GPU group per shard")
     parser.add_argument("--variant", help="train: a key of lora_variants (A, B)")
     parser.add_argument("--smoke", action="store_true", help="train: the cfg['smoke'] items, steps and eff_batch")
     args = parser.parse_args()
     if args.config is None:
         defaults = {"full": "configs/full_baseline.yaml", "teacher": "configs/train_lora.yaml",
-                    "train": "configs/train_lora.yaml"}
+                    "train": "configs/train_lora.yaml", "probe-splits": "configs/probe.yaml",
+                    "probe": "configs/probe.yaml", "probe-report": "configs/probe.yaml"}
         args.config = defaults.get(args.command, "configs/mvp.yaml")
     cfg = load_config(ROOT / args.config)
     select_gpus(cfg, args)
@@ -365,7 +442,8 @@ def main() -> None:
     from adaloop import api  # only now: this import initializes CUDA
 
     {"smoke": cmd_smoke, "splits": cmd_splits, "eval": cmd_eval, "full": cmd_full, "grid": cmd_grid,
-     "grid-check": cmd_grid_check, "pareto": cmd_pareto, "upfront": cmd_upfront, "teacher": cmd_teacher, "train": cmd_train}[args.command](api, cfg, args)
+     "grid-check": cmd_grid_check, "pareto": cmd_pareto, "upfront": cmd_upfront, "teacher": cmd_teacher, "train": cmd_train,
+     "probe-splits": cmd_probe_splits, "probe": cmd_probe, "probe-report": cmd_probe_report}[args.command](api, cfg, args)
 
 
 if __name__ == "__main__":

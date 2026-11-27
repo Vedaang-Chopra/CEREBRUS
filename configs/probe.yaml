@@ -1,0 +1,51 @@
+# Headroom probe (`scripts/mvp.py probe-splits`, `probe`, `probe-report`): a few grid cells on extra datasets, to pick
+# the ones where more loop passes or full tokens pay off, as extra controller training data. GQA / TextVQA stay the
+# evaluation benchmarks. `extra_benchmarks` is not hashed: every other value is mvp.yaml's, so the rows carry the grid's
+# config hash. Rows go to <out_dir>/probe_b<grid batch size>.
+extends: mvp.yaml
+extra_benchmarks:
+  n_items: 128  # probe questions per dataset
+  n_rerun: 64   # of them run a second time at the same cells (noise)
+  ks: [0.25, 1.0]  # a subset of k_grid
+  Rs: [1, 3, 5]    # a subset of R_grid
+  depth_k: 1.0     # depth headroom: change across Rs at this k
+  look_R: 3        # look headroom: smallest k against depth_k at this R
+  dedupe_config: configs/post_training_data.yaml  # its `dedupe` distances
+  hash_cache: eval_image_hashes.json  # all GQA + TextVQA image hashes, under out_dir
+  # val / test files only; `image_frac` is the share of images the probe questions are drawn from, the rest is `pool`
+  sets:
+    clevr:  # CLEVR v1.0 val; community copy, one shard of 15 (about 1000 images)
+      repo: kevinnejad/clevr_val
+      files: [shard_00000.parquet]
+      image_frac: 0.2
+      manifest: configs/splits/probe_clevr.json
+    chartqa:
+      repo: lmms-lab-encoder/ChartQA
+      files: [data/test-00000-of-00001.parquet]
+      image_frac: 0.25
+      manifest: configs/splits/probe_chartqa.json
+    ai2d:
+      repo: lmms-lab-encoder/ai2d
+      files: [data/test-00000-of-00002.parquet, data/test-00001-of-00002.parquet]
+      image_frac: 0.25
+      manifest: configs/splits/probe_ai2d.json
+    mmstar:
+      repo: Lin-Chen/MMStar
+      files: [mmstar.parquet]
+      image_frac: 0.2
+      manifest: configs/splits/probe_mmstar.json
+    blink:  # single-image subtasks, val; Counting is left out: its questions and images come from TallyQA
+      repo: BLINK-Benchmark/BLINK
+      files:
+        - IQ_Test/val-00000-of-00001.parquet
+        - Object_Localization/val-00000-of-00001.parquet
+        - Relative_Depth/val-00000-of-00001.parquet
+        - Relative_Reflectance/val-00000-of-00001.parquet
+        - Spatial_Relation/val-00000-of-00001.parquet
+      image_frac: 0.35
+      manifest: configs/splits/probe_blink.json
+    realworldqa:
+      repo: lmms-lab-encoder/RealWorldQA
+      files: [data/test-00000-of-00002.parquet, data/test-00001-of-00002.parquet]
+      image_frac: 0.2
+      manifest: configs/splits/probe_realworldqa.json

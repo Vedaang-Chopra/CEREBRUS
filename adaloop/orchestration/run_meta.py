@@ -16,6 +16,7 @@ import transformers
 
 from adaloop.data.splits import load_manifest
 from adaloop.orchestration.evaluate import read_results
+from adaloop.orchestration.grid import cell_subset
 from adaloop.schemas.items import Item
 from utils.hashing import config_hash, git_hash
 from utils.servers import server_name
@@ -101,11 +102,13 @@ def _update(run_dir: Path, change: Callable[[dict | None], dict]) -> dict:
 
 @contextmanager
 def record_launch(run_dir: str | Path, cfg: dict, root: str | Path, items: Sequence[Item], again: Sequence[Item],
-                  launch: dict, variant: str = "base") -> Iterator[None]:
+                  launch: dict, variant: str = "base", ks: Sequence[float] | None = None,
+                  Rs: Sequence[int] | None = None) -> Iterator[None]:
     """Wrap one launch: write README.md and add a launch entry to meta.json; close it when the block ends.
 
     `items` and `again` are the main and re-run items the folder is meant to hold (added to what earlier launches
-    named); `launch` holds the command's own settings (shard, limit, ...).
+    named); `launch` holds the command's own settings (shard, limit, ...). `ks` / `Rs`: the cells the folder is meant to
+    hold, when `run_grid` runs a subset of the grid.
     """
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -113,15 +116,16 @@ def record_launch(run_dir: str | Path, cfg: dict, root: str | Path, items: Seque
     entry = {**launch, "commit": git_hash(), "server": server_name(), "gpu": torch.cuda.get_device_name(0),
              "torch": str(torch.__version__), "transformers": transformers.__version__, "start": _now(), "end": None,
              "ok": None}
-    manifests = {name: load_manifest(Path(root) / bench["manifest"])["hash"]
-                 for name, bench in cfg["benchmarks"].items()}
+    run_cfg = cell_subset(cfg, ks, Rs)
+    benchmarks = {**cfg["benchmarks"], **cfg.get("extra_benchmarks", {}).get("sets", {})}
+    manifests = {name: load_manifest(Path(root) / bench["manifest"])["hash"] for name, bench in benchmarks.items()}
 
     def begin(meta: dict | None) -> dict:
         if meta and meta["config_hash"] != digest:  # another config used this folder: keep its record aside
             (run_dir / f"meta_{meta['config_hash']}.json").write_text(json.dumps(meta, indent=1))
             meta = None
         meta = meta or {"config_hash": digest, "config": cfg, "variant": variant,
-                        "cells": [[k, R] for k in cfg["k_grid"] for R in cfg["R_grid"]],
+                        "cells": [[k, R] for k in run_cfg["k_grid"] for R in run_cfg["R_grid"]],
                         "items": [], "rerun_items": [], "launches": []}
         for key, new in (("items", items), ("rerun_items", again)):
             known = {(b, i): split for b, i, split in meta[key]}

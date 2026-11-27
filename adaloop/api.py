@@ -78,7 +78,9 @@ from adaloop.core.train.lora import (
 from adaloop.core.train.schedule import pairing_table, teacher_depth, variant_config, variant_name
 from adaloop.core.train.teacher import answer_log_probs, split_top
 from adaloop.core.train.teacher_store import load_records, read_index
+from adaloop.data.extra import build_extra_splits, load_extra
 from adaloop.data.gqa import build_gqa_splits, load_gqa
+from adaloop.data.post.eval_hashes import all_eval_hashes
 from adaloop.data.post.images import dhash, near_eval, phash
 from adaloop.data.post.store import load_post_data
 from adaloop.data.splits import load_manifest, make_splits
@@ -138,6 +140,7 @@ from adaloop.orchestration.full_run import (
     summarize_full,
 )
 from adaloop.orchestration.grid import (
+    cell_subset,
     count_done,
     grid_config,
     grid_dir,
@@ -177,6 +180,7 @@ from adaloop.orchestration.pareto import (
 from adaloop.orchestration.pass_state import check_pass_state
 from adaloop.orchestration.policies import run_policies
 from adaloop.orchestration.post_data import build_post_data, post_data_dir, post_data_eval_hashes
+from adaloop.orchestration.probe import probe_items, probe_report, probe_rerun_items
 from adaloop.orchestration.profile import profile_cells, profile_item, profile_items, profile_table
 from adaloop.orchestration.resolution import (
     resolution_cells,
@@ -487,4 +491,11 @@ __all__ = [
     "unload_model",
     "variant_name",
     "wrong_predictions",
+    "all_eval_hashes",
+    "build_extra_splits",
+    "cell_subset",
+    "load_extra",
+    "probe_items",
+    "probe_report",
+    "probe_rerun_items",
 ]

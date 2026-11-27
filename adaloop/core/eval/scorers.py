@@ -13,6 +13,7 @@ import statistics
 import string
 from collections.abc import Sequence
 
+from adaloop.core.eval.extra_scorers import score_chartqa, score_clevr, score_mc, score_realworldqa
 from adaloop.core.eval.vqa_normalize import process_vqa_answer
 
 
@@ -56,9 +57,12 @@ def score_textvqa(prediction: str | None, answers: Sequence[str]) -> float:
     return statistics.mean(accuracies) if accuracies else 0.0
 
 
-SCORERS = {"gqa": score_gqa, "textvqa": score_textvqa}
+# the extra datasets of the headroom probe (configs/probe.yaml) have one rule each
+EXTRA_SCORERS = {"clevr": score_clevr, "chartqa": score_chartqa, "ai2d": score_mc, "mmstar": score_mc,
+                 "blink": score_mc, "realworldqa": score_realworldqa}
+SCORERS = {"gqa": score_gqa, "textvqa": score_textvqa, **EXTRA_SCORERS}
 # the lmms-eval rule; TextVQA has one rule only, so both columns are equal there
-LMMS_SCORERS = {"gqa": score_gqa_lmms, "textvqa": score_textvqa}
+LMMS_SCORERS = {"gqa": score_gqa_lmms, "textvqa": score_textvqa, **EXTRA_SCORERS}
 
 
 def score(benchmark: str, prediction: str | None, answers: Sequence[str]) -> float:

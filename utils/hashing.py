@@ -15,9 +15,11 @@ from utils.paths import find_repo_root
 # its `max_new_tokens` is hashed through `grid_config`, which puts it in the top-level key
 # `placement_max_memory` is a server's replacement for `max_memory` (configs/servers/)
 # `gpu_memory_fraction` caps each process's share of a GPU used by two model copies
+# `extra_benchmarks` (configs/probe.yaml) names extra datasets and the cells run on them; what the model sees per item is
+# in the loader's question text, so probe rows keep the grid's hash
 HASH_EXCLUDE = {"gpu_groups", "full_gpu_groups", "min_free_gib", "n_copies", "sample_items", "eval_batch_size", "latency_items",
                 "batch_grouping", "resolution", "pareto", "headroom", "profile", "grid_batch",
-                "placement_max_memory", "gpu_memory_fraction"}
+                "placement_max_memory", "gpu_memory_fraction", "extra_benchmarks"}
 
 
 def config_hash(cfg: dict) -> str:

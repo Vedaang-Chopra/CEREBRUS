@@ -16,7 +16,8 @@ def _eval_image_ids(manifest: dict, splits: list[str]) -> list[str]:
     return sorted({image_id for split in splits for image_id in manifest["images"][split]})
 
 
-def _hash_benchmark(name: str, bench_cfg: dict, image_ids: list[str]) -> list[list[str]]:
+def _hash_benchmark(name: str, bench_cfg: dict, image_ids: list[str] | None) -> list[list[str]]:
+    """Hash rows of `image_ids` of one benchmark's image table (None: every image of the table)."""
     config_key, id_column = _IMAGE_TABLES[name]
     args = (bench_cfg["source"], bench_cfg[config_key]) if config_key else (bench_cfg["source"],)
     # select_columns: the questions and answers of the test split are never loaded into Python
@@ -25,7 +26,7 @@ def _hash_benchmark(name: str, bench_cfg: dict, image_ids: list[str]) -> list[li
     for index, image_id in enumerate(data[id_column]):
         row_of.setdefault(image_id, index)
     rows = []
-    for image_id in image_ids:
+    for image_id in sorted(row_of) if image_ids is None else image_ids:
         image = row_image(data, row_of[image_id])
         rows.append([f"{name}/{image_id}", f"{phash(image):016x}", f"{dhash(image):016x}"])
     print(f"eval hashes: {name} {len(rows)} images")
@@ -42,6 +43,20 @@ def eval_hashes(bench_cfg: dict, splits: list[str], root: str | Path, cache: str
         rows = []
         for name, manifest in manifests.items():
             rows += _hash_benchmark(name, bench_cfg["benchmarks"][name], _eval_image_ids(manifest, splits))
+        saved = {"key": key, "images": rows}
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(json.dumps(saved))
+    return [(int(p, 16), int(d, 16)) for _, p, d in saved["images"]]
+
+
+def all_eval_hashes(bench_cfg: dict, cache: str | Path) -> list[tuple[int, int]]:
+    """(pHash, dHash) of every image of the GQA and TextVQA eval datasets, whatever its split; cached in `cache`."""
+    key = {name: [bench_cfg["benchmarks"][name].get(field) for field in ("source", "images_config", "hf_split")]
+           for name in _IMAGE_TABLES}
+    cache = Path(cache)
+    saved = json.loads(cache.read_text()) if cache.exists() else {}
+    if saved.get("key") != key:
+        rows = [row for name in _IMAGE_TABLES for row in _hash_benchmark(name, bench_cfg["benchmarks"][name], None)]
         saved = {"key": key, "images": rows}
         cache.parent.mkdir(parents=True, exist_ok=True)
         cache.write_text(json.dumps(saved))
