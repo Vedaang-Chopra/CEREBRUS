@@ -6,9 +6,11 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from adaloop.core.controller.diagnostics import path_actions, path_stats
 from adaloop.core.controller.inputs import tree_data
 from adaloop.core.controller.rows import policy_rows
 from adaloop.core.controller.synthetic import HIDDEN, synthetic_grid
@@ -95,6 +97,16 @@ def test_walk_and_arrays() -> None:
     print("✓ PASS tree: paths walk to the right leaves; no-look trees at k0 = 1")
 
 
+def test_path_stats() -> None:
+    assert path_actions("X@1") == (1, 0, 0, 1) and path_actions("X@3") == (1, 2, 0, 3)
+    assert path_actions("L@2,X@3") == (1, 3, 1, 3)  # LOOP, LOOK | LOOP, LOOP, EXIT
+    rows = pd.DataFrame({"path": ["X@1", "X@1", "X@1", "L@1,X@2"], "seed": [0, 0, 1, 1], "flops_total": 1, "cost_ref": 2})
+    stats = path_stats(rows, 5, 0.95)
+    assert (stats["fixed_seeds"], stats["n_seeds"], stats["top_share"], stats["look_items"]) == (1, 2, 75.0, 25.0)
+    assert np.isclose(stats["EXIT"] + stats["LOOP"] + stats["LOOK"], 100) and stats["cost_frac"] == 0.5
+    print("✓ PASS diagnostics: action counts from paths, a fixed seed is counted")
+
+
 def test_test_split_sealed() -> None:
     if (Path(__file__).resolve().parents[2] / "configs" / "prereg.yaml").is_file():
         return
@@ -112,4 +124,5 @@ if __name__ == "__main__":
     test_leaves_match_grid()
     test_cost_arithmetic()
     test_walk_and_arrays()
+    test_path_stats()
     test_test_split_sealed()

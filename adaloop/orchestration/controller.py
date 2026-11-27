@@ -25,12 +25,14 @@ def _tensors(data: TreeData, norm: dict, ctrl: dict) -> tuple[torch.Tensor, torc
     return torch.from_numpy(h), torch.from_numpy(scalars), torch.from_numpy(data.h_index)
 
 
-def _pays(ctrl: dict) -> tuple[bool, bool]:
+def charged_costs(ctrl: dict) -> tuple[bool, bool]:
+    """(pays readouts, pays state sums) of a controller with the settings `ctrl`."""
     readout, state = charged(ctrl["features"])
     return readout and ctrl["charge_features"], state and ctrl["charge_features"]
 
 
-def _rewards(data: TreeData, lam: float, pays: tuple[bool, bool]) -> torch.Tensor:
+def tree_rewards(data: TreeData, lam: float, pays: tuple[bool, bool]) -> torch.Tensor:
+    """(N, B, R) reward of every leaf for a method with the charges `pays`."""
     cost = torch.from_numpy(leaf_costs(data, *pays) / data.cost_ref[:, None, None]).float()
     correct = torch.tensor(data.correct, dtype=torch.float32)  # a copy: pandas arrays are read-only
     return leaf_rewards(correct, cost, torch.ones(len(data.cost_ref)), lam)  # cost already divided by cost_ref
@@ -57,8 +59,8 @@ def train_policy(train: TreeData, dev: TreeData, lam: float, seed: int, ctrl: di
     norm = fit_normalizer(train, ctrl["features"])
     h, scalars, h_index = _tensors(train, norm, ctrl)
     mask = torch.from_numpy(action_mask(*train.correct.shape[1:]))
-    rewards = _rewards(train, lam, _pays(ctrl))  # (N, B, R)
-    dev_rewards = _rewards(dev, lam, _pays(ctrl)).numpy()
+    rewards = tree_rewards(train, lam, charged_costs(ctrl))  # (N, B, R)
+    dev_rewards = tree_rewards(dev, lam, charged_costs(ctrl)).numpy()
     policy = Policy(h.shape[-1], scalars.shape[-1], ctrl)
     optimizer = torch.optim.AdamW(policy.parameters(), lr=ctrl["lr"], weight_decay=ctrl["weight_decay"])
     best = {"reward": -np.inf, "epoch": 0, "state": None}
@@ -114,7 +116,7 @@ def run_controller(tree: pd.DataFrame, features: dict, ctrl: dict, weights_dir: 
                                 "ctrl": ctrl, **info}, Path(weights_dir) / f"{method}_k{k0}_lam{lam}_seed{seed}.pt")
                 for split in ctrl["splits"]["eval"]:
                     exits = greedy_exits(policy, data[split], norm, ctrl)
-                    rows.append(policy_rows(data[split], exits, method, lam, seed, *_pays(ctrl)))
+                    rows.append(policy_rows(data[split], exits, method, lam, seed, *charged_costs(ctrl)))
     torch.use_deterministic_algorithms(previous)
     return pd.concat(rows, ignore_index=True)
 
@@ -132,7 +134,7 @@ def run_heuristic(tree: pd.DataFrame, features: dict, ctrl: dict) -> tuple[pd.Da
         item = np.arange(len(dev.keys))
         exits = [walk(heuristic_actions(dev, **thresholds)) for thresholds in grid]
         for lam in ctrl["lambdas"]:
-            reward = _rewards(dev, lam, pays).numpy()
+            reward = tree_rewards(dev, lam, pays).numpy()
             means = [reward[item, b, q].mean() for b, q in exits]
             best = grid[int(np.argmax(means))]
             chosen.append({"k0": k0, "lam": lam, **best, "dev_reward": float(max(means))})

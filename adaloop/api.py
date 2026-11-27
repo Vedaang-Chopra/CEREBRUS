@@ -2,6 +2,7 @@
 from adaloop.core.controller.baselines import hull_mix, upper_hull
 from adaloop.core.controller.chooser import Chooser, chooser_loss
 from adaloop.core.controller.curves import interpolation_weights
+from adaloop.core.controller.diagnostics import path_stats
 from adaloop.core.controller.features import pass_features
 from adaloop.core.controller.heuristic import heuristic_actions
 from adaloop.core.controller.inputs import fit_normalizer, node_scalars, policy_inputs, tree_data
@@ -109,6 +110,7 @@ from adaloop.orchestration.cell_policies import (
 from adaloop.orchestration.cells import check_batched
 from adaloop.orchestration.compress import METHODS, compress, encode_vision
 from adaloop.orchestration.controller import greedy_exits, run_controller, run_heuristic, run_policies, train_policy
+from adaloop.orchestration.diagnostics import collapse_table
 from adaloop.orchestration.copies import compare_copies, time_copies
 from adaloop.orchestration.cost_timing import (
     cost_grid,
@@ -272,6 +274,8 @@ __all__ = [
     "policy_inputs",
     "policy_rows",
     "run_controller",
+    "collapse_table",
+    "path_stats",
     "run_heuristic",
     "run_policies",
     "run_tree",
