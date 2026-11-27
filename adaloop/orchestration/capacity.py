@@ -27,18 +27,30 @@ def run_capacity(tree: pd.DataFrame, features: dict, ctrl: dict,
     """(controller rows of the chosen variant, one report row per variant, the chosen variant's settings).
 
     `ctrl["capacity"]` lists variants: a name plus the settings it overrides. Each is trained at every k0 x lambda x
-    seed; the one with the best mean ctrl_val reward over all of them is the controller (ties: first listed). With
+    seed; the one with the best mean ctrl_val reward over all of them wins (ties: first listed). The winner is then
+    also trained with the other `node_weight_options` (expected_reward only), as "<name>_<option>", and the best mean
+    ctrl_val reward of all rows is the controller. With
     `out_dir`: weights/<variant>/, capacity_eval.parquet (rows of every variant), tables/T4_capacity.csv, arch.json.
     """
     parts, report, settings = {}, [], {}
-    for variant in ctrl["capacity"]:
-        name = variant["name"]
-        settings[name] = {key: value for key, value in variant.items() if key != "name"}
-        run = {**ctrl, **settings[name]}
+
+    def train(name: str, overrides: dict) -> None:
+        settings[name] = overrides
+        run = {**ctrl, **overrides}
         weights = None if out_dir is None else Path(out_dir) / "weights" / name
         log: list[dict] = []
         parts[name] = run_controller(tree, features, run, weights_dir=weights, method=name, log=log)
         report.append(_report(name, parts[name], log, tree, features, run))
+
+    ### Step-1:- Architectures
+    for variant in ctrl["capacity"]:
+        train(variant["name"], {key: value for key, value in variant.items() if key != "name"})
+    ### Step-2:- The other node weights, on the best architecture only
+    if ctrl["objective"] == "expected_reward":
+        first = max(report, key=lambda row: row["val_reward"])["variant"]
+        for option in ctrl["node_weight_options"]:
+            if option != ctrl["node_weight"]:
+                train(f"{first}_{option}", {**settings[first], "node_weight": option})
     table = pd.DataFrame(report)
     best = table.loc[table["val_reward"].idxmax(), "variant"]
     table.insert(1, "chosen", table["variant"] == best)

@@ -27,6 +27,11 @@ ctrl_val: {image_frac: 0.2, seed: 0, item_images: configs/splits/mvp_item_images
 # controller (S12)
 objective: expected_reward  # expected_reward (build spec §5.3) | supervised (argmax-Q action)
 entropy_bonus: 0.001        # expected_reward only (build spec §4.3)
+# expected_reward only: weight of a node in the loss. uniform (spec §5.3): every node 1. reach: probability of reaching
+# it under the current policy. After the architecture is chosen, it is also trained with the other options listed, and
+# ctrl_val decides (a tie keeps `node_weight`).
+node_weight: uniform
+node_weight_options: [uniform, reach]
 proj_dim: 256
 hidden: 512
 dropout: 0.1             # MLP only

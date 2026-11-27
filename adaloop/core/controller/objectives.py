@@ -17,6 +17,8 @@ from torch.nn import functional as F
 
 from adaloop.core.controller.tree import LOOK, LOOP
 
+NODE_WEIGHTS = ("uniform", "reach")
+
 
 def leaf_rewards(correct: torch.Tensor, cost: torch.Tensor, cost_ref: torch.Tensor, lam: float) -> torch.Tensor:
     """(N, B, R) rewards from (N, B, R) correct and cost and (N,) cost_ref."""
@@ -74,20 +76,41 @@ def supervised_loss(logits: torch.Tensor, r_exit: torch.Tensor, mask: torch.Tens
     return -log_probs.gather(-1, targets[..., None]).sum() / len(logits)
 
 
+def reach_probabilities(probs: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    """(N, B, R): probability of reaching each node from the root (branch 0, pass 1) under `probs` (N, B, R, 3)."""
+    n_branches, R_max = probs.shape[1], probs.shape[2]
+    nodes = [[None] * R_max for _ in range(n_branches)]
+    nodes[0][0] = torch.ones_like(probs[:, 0, 0, 0])
+    for b in range(n_branches):  # branch 0 first: it feeds the first node of every look branch
+        if b:
+            nodes[b][0] = nodes[0][b - 1] * probs[:, 0, b - 1, LOOK] * mask[0, b - 1, LOOK]
+        for q in range(R_max - 1):
+            nodes[b][q + 1] = nodes[b][q] * probs[:, b, q, LOOP] * mask[b, q, LOOP]
+    return torch.stack([torch.stack(row, dim=1) for row in nodes], dim=1)
+
+
 def expected_reward_loss(logits: torch.Tensor, r_exit: torch.Tensor, mask: torch.Tensor,
-                         entropy_bonus: float) -> torch.Tensor:
+                         entropy_bonus: float, node_weight: str = "uniform") -> torch.Tensor:
     """(b) loss = -J - alpha * H, with J = mean_items sum_nodes sum_a pi(a | f_node) Q(node, a) (build spec §5.3).
 
     Q is computed bottom-up under the CURRENT policy and held fixed (detached): each node is pushed toward the
     actions that are better given how the policy behaves below it, and every node gets that push, also rarely
     visited ones. The gradient does not flow through the children's values into a parent's term.
-    The sum runs over all tree nodes, so the full-token subtree counts once per look point.
     H: policy entropy summed the same way; alpha = `entropy_bonus`.
+
+    `node_weight`, the weight of a node's term in both sums:
+        "uniform" (default, build spec §5.3): 1. The sum runs over all tree nodes, never-reached ones included, and
+            the full-token subtree counts once per look point.
+        "reach" (not in the spec; an option to compare on ctrl_val): the probability of reaching the node under the
+            current policy, held fixed. With alpha = 0 the gradient is then exactly that of -mean_items V(root).
     """
     log_probs = masked_log_probs(logits, mask)
     probs = log_probs.exp()
     q, _ = backward_values(r_exit, mask, probs.detach())
     q = q.masked_fill(~mask, 0.0)  # forbidden: probability 0, keep the product finite
-    gain = (probs * q).sum()
-    entropy = -(probs * log_probs.masked_fill(~mask, 0.0)).sum()
+    if node_weight not in NODE_WEIGHTS:
+        raise ValueError(f"node_weight must be one of {NODE_WEIGHTS}, got {node_weight!r}")
+    weight = reach_probabilities(probs.detach(), mask)[..., None] if node_weight == "reach" else 1.0
+    gain = (weight * probs * q).sum()
+    entropy = -(weight * probs * log_probs.masked_fill(~mask, 0.0)).sum()
     return -(gain + entropy_bonus * entropy) / len(logits)

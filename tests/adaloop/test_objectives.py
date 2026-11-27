@@ -28,6 +28,7 @@ from adaloop.core.controller.objectives import (
     expected_reward_loss,
     leaf_rewards,
     masked_log_probs,
+    reach_probabilities,
     supervised_loss,
     supervised_targets,
 )
@@ -74,6 +75,32 @@ def test_expected_values_and_losses() -> None:
     print("✓ PASS objectives: policy values, expected-reward loss and gradient, supervised loss")
 
 
+def test_reach_gradient_is_the_root_value_gradient() -> None:
+    mask = torch.from_numpy(action_mask(3, 3))  # looks after pass 1 or 2
+    generator = torch.Generator().manual_seed(0)
+    r_exit = torch.rand(2, 3, 3, dtype=torch.float64, generator=generator)
+    logits = torch.randn(2, 3, 3, 3, dtype=torch.float64, generator=generator).requires_grad_()
+
+    def root_value(z: torch.Tensor) -> float:
+        return backward_values(r_exit, mask, masked_log_probs(z, mask).exp())[1][:, 0, 0].mean().item()
+
+    numeric = torch.zeros_like(logits)
+    with torch.no_grad():
+        for i in range(logits.numel()):
+            step = torch.zeros(logits.numel(), dtype=torch.float64)
+            step[i] = 1e-6
+            step = step.view_as(logits)
+            numeric.view(-1)[i] = (root_value(logits + step) - root_value(logits - step)) / 2e-6
+    gradient = {}
+    for weight in ("reach", "uniform"):
+        gradient[weight], = torch.autograd.grad(expected_reward_loss(logits, r_exit, mask, 0.0, weight), logits)
+    assert torch.allclose(gradient["reach"], -numeric, atol=1e-8)
+    assert not torch.allclose(gradient["uniform"], -numeric, atol=1e-3)
+    reach = reach_probabilities(masked_log_probs(logits, mask).exp(), mask)
+    assert (reach[:, 0, 0] == 1).all() and (reach <= 1).all()
+    print("✓ PASS objectives: reach weighting gives the exact gradient of the root value (finite differences)")
+
+
 def test_gradient_descent_finds_the_best_path() -> None:
     for loss in (lambda z: expected_reward_loss(z, R_EXIT, MASK, 0.0), lambda z: supervised_loss(z, R_EXIT, MASK)):
         logits = torch.zeros(1, 2, 2, 3, requires_grad=True)
@@ -91,4 +118,5 @@ if __name__ == "__main__":
     test_reward()
     test_optimal_values_and_targets()
     test_expected_values_and_losses()
+    test_reach_gradient_is_the_root_value_gradient()
     test_gradient_descent_finds_the_best_path()

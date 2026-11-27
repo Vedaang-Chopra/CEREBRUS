@@ -11,6 +11,7 @@ from adaloop.core.controller.objectives import (
     backward_values,
     expected_reward_loss,
     leaf_rewards,
+    reach_probabilities,
     supervised_loss,
     supervised_targets,
 )
@@ -283,6 +284,7 @@ __all__ = [
     "load_item_images",
     "chosen_arch",
     "top_features",
+    "reach_probabilities",
     "run_capacity",
     "collapse_table",
     "path_stats",

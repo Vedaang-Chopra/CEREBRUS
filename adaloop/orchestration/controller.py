@@ -74,7 +74,7 @@ def train_policy(train: TreeData, val: TreeData, lam: float, seed: int, ctrl: di
             if ctrl["objective"] == "supervised":
                 loss = supervised_loss(logits, rewards[batch], mask)
             else:
-                loss = expected_reward_loss(logits, rewards[batch], mask, ctrl["entropy_bonus"])
+                loss = expected_reward_loss(logits, rewards[batch], mask, ctrl["entropy_bonus"], ctrl["node_weight"])
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
