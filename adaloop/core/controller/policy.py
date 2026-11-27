@@ -4,7 +4,10 @@ from torch import nn
 
 
 class Policy(nn.Module):
-    """MLP [F] -> hidden -> hidden -> 3 with GELU and dropout; h_last is first projected to `proj_dim`."""
+    """MLP [F] -> hidden -> hidden -> 3 with GELU and dropout; h_last is first projected to `proj_dim`.
+
+    `hidden` 0: no MLP, one linear layer [F] -> 3 (no dropout).
+    """
 
     def __init__(self, d_state: int, n_scalars: int, cfg: dict):
         """cfg: `use_h_last` (False: scalar features only), `proj_dim`, `hidden`, `dropout`."""
@@ -12,6 +15,9 @@ class Policy(nn.Module):
         self.project = nn.Linear(d_state, cfg["proj_dim"]) if cfg["use_h_last"] else None
         width = n_scalars + (cfg["proj_dim"] if cfg["use_h_last"] else 0)
         hidden, dropout = cfg["hidden"], cfg["dropout"]
+        if not hidden:
+            self.mlp = nn.Linear(width, 3)
+            return
         self.mlp = nn.Sequential(
             nn.Linear(width, hidden), nn.GELU(), nn.Dropout(dropout),
             nn.Linear(hidden, hidden), nn.GELU(), nn.Dropout(dropout),

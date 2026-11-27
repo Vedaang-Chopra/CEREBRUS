@@ -27,7 +27,16 @@ objective: expected_reward  # expected_reward (build spec §5.3) | supervised (a
 entropy_bonus: 0.001        # expected_reward only (build spec §4.3)
 proj_dim: 256
 hidden: 512
-dropout: 0.1
+dropout: 0.1             # MLP only
+# capacity ablation: each variant (overrides of the settings above) is trained at every k0 x lambda x seed. The one with
+# the best mean ctrl_val reward is `controller`; all are reported (tables/T4_capacity.csv). hidden 0: linear head.
+capacity:
+  - {name: h256_mlp, use_h_last: true, proj_dim: 256, hidden: 512}
+  - {name: h32_mlp, use_h_last: true, proj_dim: 32, hidden: 512}
+  - {name: scalar_mlp, use_h_last: false, hidden: 512}
+  - {name: h256_linear, use_h_last: true, proj_dim: 256, hidden: 0}
+  - {name: h32_linear, use_h_last: true, proj_dim: 32, hidden: 0}
+  - {name: scalar_linear, use_h_last: false, hidden: 0}
 lr: 0.001
 weight_decay: 0.01
 batch_trees: 32           # whole trees (25 nodes each) per step

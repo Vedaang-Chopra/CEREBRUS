@@ -110,7 +110,8 @@ from adaloop.orchestration.cell_policies import (
 )
 from adaloop.orchestration.cells import check_batched
 from adaloop.orchestration.compress import METHODS, compress, encode_vision
-from adaloop.orchestration.controller import greedy_exits, run_controller, run_heuristic, run_policies, train_policy
+from adaloop.orchestration.capacity import chosen_arch, run_capacity
+from adaloop.orchestration.controller import greedy_exits, run_controller, run_heuristic, train_policy
 from adaloop.orchestration.diagnostics import collapse_table
 from adaloop.orchestration.copies import compare_copies, time_copies
 from adaloop.orchestration.cost_timing import (
@@ -173,6 +174,7 @@ from adaloop.orchestration.pareto import (
     run_pareto,
 )
 from adaloop.orchestration.pass_state import check_pass_state
+from adaloop.orchestration.policies import run_policies
 from adaloop.orchestration.post_data import build_post_data, post_data_dir, post_data_eval_hashes
 from adaloop.orchestration.profile import profile_cells, profile_item, profile_items, profile_table
 from adaloop.orchestration.resolution import (
@@ -279,6 +281,8 @@ __all__ = [
     "build_item_images",
     "carve_val",
     "load_item_images",
+    "chosen_arch",
+    "run_capacity",
     "collapse_table",
     "path_stats",
     "run_heuristic",

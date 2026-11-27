@@ -1,4 +1,4 @@
-"""S12: train the controller and tune the heuristic per k0, write policy_eval.
+"""S12: train the controller and tune the heuristic per k0 (policy_eval rows).
 
 Controller: weights on ctrl_train, epoch on ctrl_val. Heuristic: thresholds on ctrl_train + ctrl_val. dev picks
 nothing here; it only picks (k0, lambda) per cost cap afterwards.
@@ -14,10 +14,9 @@ from adaloop.core.controller.heuristic import HEURISTIC_FEATURES, heuristic_acti
 from adaloop.core.controller.inputs import fit_normalizer, policy_inputs, tree_data
 from adaloop.core.controller.objectives import expected_reward_loss, leaf_rewards, supervised_loss
 from adaloop.core.controller.policy import Policy
-from adaloop.core.controller.rows import leaf_costs, policy_rows, select_on_dev
+from adaloop.core.controller.rows import leaf_costs, policy_rows
 from adaloop.core.controller.tree import action_mask, charged, walk
-from adaloop.orchestration.tree import check_test_allowed, controller_dir, run_tree
-from adaloop.schemas.cost import CostParams
+from adaloop.orchestration.tree import check_test_allowed
 from adaloop.schemas.runs import TreeData
 
 OBJECTIVES = ("expected_reward", "supervised")
@@ -99,8 +98,11 @@ def _splits(tree: pd.DataFrame, features: dict, ctrl: dict, k0: float) -> dict[s
 
 
 def run_controller(tree: pd.DataFrame, features: dict, ctrl: dict, weights_dir: str | Path | None = None,
-                   method: str = "controller") -> pd.DataFrame:
-    """policy_eval rows of the learned controller: every k0 x lambda x seed on the `eval` splits."""
+                   method: str = "controller", log: list[dict] | None = None) -> pd.DataFrame:
+    """policy_eval rows of the learned controller: every k0 x lambda x seed on the `eval` splits.
+
+    `log` gets one record per run: k0, lam, seed, val_reward and best_epoch.
+    """
     # the gradient of h[:, h_index] accumulates in parallel on CPU unless deterministic algorithms are on
     previous = torch.are_deterministic_algorithms_enabled()
     torch.use_deterministic_algorithms(True)
@@ -114,6 +116,8 @@ def run_controller(tree: pd.DataFrame, features: dict, ctrl: dict, weights_dir: 
                 policy, norm, info = train_policy(train, val, lam, seed, ctrl)
                 print(f"{method} k0={k0} lam={lam} seed={seed}: epoch {info['best_epoch']}/{info['epochs_run']} | "
                       f"val reward {info['val_reward']:.4f} | {time.perf_counter() - start:.1f}s")
+                if log is not None:
+                    log.append({"k0": k0, "lam": lam, "seed": seed, **info})
                 if weights_dir is not None:
                     Path(weights_dir).mkdir(parents=True, exist_ok=True)
                     torch.save({"state": policy.state_dict(), "norm": {k: torch.from_numpy(v) for k, v in norm.items()},
@@ -150,20 +154,3 @@ def run_heuristic(tree: pd.DataFrame, features: dict, ctrl: dict) -> tuple[pd.Da
                 rows.append(policy_rows(data[split], picks, "heuristic", lam, 0, *pays))
         print(f"heuristic k0={k0}: {len(grid)} threshold sets tried on {len(fit.keys)} train items")
     return pd.concat(rows, ignore_index=True), pd.DataFrame(chosen)
-
-
-def run_policies(cfg: dict, ctrl: dict, root: str | Path, params: CostParams | None = None) -> pd.DataFrame:
-    """S11 + S12: tree.parquet, controller and heuristic, policy_eval.parquet, dev selection per cost cap."""
-    if ctrl["splits"]["dev"] not in ctrl["splits"]["eval"]:
-        raise ValueError("`splits.eval` must hold the dev split: (k0, lambda) per cost cap is chosen from its rows")
-    check_test_allowed(ctrl["splits"]["eval"])
-    tree, features = run_tree(cfg, ctrl, root, params)
-    out = controller_dir(cfg, ctrl, root)
-    learned = run_controller(tree, features, ctrl, weights_dir=out / "weights")
-    ruled, thresholds = run_heuristic(tree, features, ctrl)
-    rows = pd.concat([learned, ruled], ignore_index=True)
-    rows.to_parquet(out / "policy_eval.parquet", index=False)
-    thresholds.to_csv(out / "heuristic_thresholds.csv", index=False)
-    select_on_dev(rows, ctrl["cap_fracs"], ctrl["splits"]["dev"]).to_csv(out / "select_dev.csv", index=False)
-    print(f"{len(rows)} policy rows -> {out / 'policy_eval.parquet'}")
-    return rows
