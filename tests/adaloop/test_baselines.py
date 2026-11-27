@@ -23,7 +23,7 @@ from adaloop.orchestration.cell_policies import (
     oracle_rows,
 )
 from adaloop.orchestration.grid import grid_dir
-from adaloop.orchestration.headroom_gate import headroom_gate
+from adaloop.orchestration.headroom_gate import headroom_by_lambda, headroom_gate
 
 CTRL = {"splits": {"train": "ctrl_train", "dev": "dev", "eval": ["dev"]}, "cap_fracs": [0.5, 1.0]}
 
@@ -106,8 +106,16 @@ def test_headroom_gate_by_hand() -> None:
         folder.mkdir(parents=True)
         pd.DataFrame(rows).to_parquet(folder / "grid.parquet", index=False)
         gate = headroom_gate(cfg, tmp).iloc[0]  # no Step-2b rows here: re-run noise only
+        # a controller point at cost 2 with 75% accuracy: the same hull (50) and oracle (75) as the gate
+        policy = pd.DataFrame({"method": "controller", "split": "dev", "k0": 0.25, "lam": 0.0, "correct": [1, 1, 1, 0],
+                               "flops_total": 2 * 10**9, "cost_ref": 4 * 10**9})
+        flags = pd.DataFrame({"who": ["controller"], "k0": [0.25], "lam": [0.0], "collapsed": [False]})
+        ctrl = {**CTRL, "variant": "base", "grid_name": "grid"}
+        point = headroom_by_lambda(policy, flags, cfg, ctrl, tmp).iloc[0]
     got = [gate[name] for name in ("oracle", "best_fixed", "best_fixed_cell", "noise_used", "headroom", "headroom_cell")]
     assert np.allclose(got, [75, 50, 25, 0, 25, 50]), got
+    names = ("cost_frac", "controller", "best_fixed", "oracle", "noise", "headroom", "gain")
+    assert np.allclose([point[name] for name in names], [0.5, 75, 50, 75, 0, 25, 25]), point
     assert gate["noise_source"] == "re-run" and not gate["met"] and gate["met_cell"]
     print("✓ PASS headroom gate: hand example over the hull mix and over the single cell")
 

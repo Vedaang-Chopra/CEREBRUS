@@ -28,16 +28,17 @@ def load_batch_rows(cfg: dict, root: str | Path, variant: str, name: str = "grid
                  for rows in map(pd.read_parquet, paths))
 
 
-def batch_noise(b1: pd.DataFrame, bn: pd.DataFrame, benchmark: str, frac: float) -> dict:
+def batch_noise(b1: pd.DataFrame, bn: pd.DataFrame, benchmark: str | None, frac: float) -> dict:
     """Noise oracle between batch 1 and the grid batch, on the items and cells Step-2b ran, per item in points.
 
     `at_cap`: under mean FLOPs <= frac x cost_ref (None if these few cells cannot fit it); `uncapped`: free choice.
     Limit: Step-2b has two cells (k = 25% and 100% at R = 3) on dev items, so the oracle has far fewer lucky picks
     than over the 15 cells of the grid; this number can understate the batch noise of the grid oracle.
+    `benchmark` None: the items of all benchmarks together.
     """
     on = ["benchmark", "item_id", "k", "R"]
-    pair = b1[b1["benchmark"] == benchmark].merge(bn[on + ["correct"]], on=on, suffixes=("", "_bn"),
-                                                  validate="one_to_one")
+    first = b1 if benchmark is None else b1[b1["benchmark"] == benchmark]
+    pair = first.merge(bn[on + ["correct"]], on=on, suffixes=("", "_bn"), validate="one_to_one")
     if pair.empty or (1.0, REF_R) not in grid_cells(pair):
         raise ValueError(f"{benchmark}: Step-2b rows of the two batch sizes do not match, or lack k=1 R={REF_R}")
     cells = grid_cells(pair)
@@ -50,13 +51,18 @@ def batch_noise(b1: pd.DataFrame, bn: pd.DataFrame, benchmark: str, frac: float)
     return out
 
 
-def rerun_noise(rows: pd.DataFrame, variant: str, benchmark: str, frac: float) -> np.ndarray | None:
-    """Per re-run item the noise-oracle gain in points, over all cells (as `headroom_table` computes it)."""
-    part = rows[(rows["model_variant"] == variant) & (rows["benchmark"] == benchmark)]
+def rerun_noise(rows: pd.DataFrame, variant: str, benchmark: str | None, frac: float) -> np.ndarray | None:
+    """Per re-run item the noise-oracle gain in points, over all cells (as `headroom_table` computes it).
+
+    `benchmark` None: the re-run items of all benchmarks together.
+    """
+    part = rows[rows["model_variant"] == variant]
+    if benchmark is not None:
+        part = part[part["benchmark"] == benchmark]
     again = part[part["rerun_id"] == 1]
     if again.empty:
         return None
-    first = part[part["rerun_id"] == 0].merge(again[["item_id"]].drop_duplicates(), on="item_id")
+    first = part[part["rerun_id"] == 0].merge(again[["benchmark", "item_id"]].drop_duplicates(), on=["benchmark", "item_id"])
     cells = grid_cells(first)
     # re-run items come from several splits: they are pooled under one name for the arrays
     (_, values, costs, cost_ref), (_, values_again, costs_again, _) = (
@@ -123,3 +129,44 @@ def headroom_gate(cfg: dict, root: str | Path, variant: str = "base", name: str 
         record["split"] = f"{split} (optimistic: not the test split)"
         out.append(record)
     return pd.DataFrame(out)
+
+
+def headroom_by_lambda(policy: pd.DataFrame, collapse: pd.DataFrame, cfg: dict, ctrl: dict,
+                       root: str | Path) -> pd.DataFrame:
+    """For every controller point (k0, lambda) on dev, what there was to gain at the cost it spent (points).
+
+    best_fixed: the hull mix of fixed cells (hull from the train split) at the point's mean cost; above the dearest
+    cell it stays there. oracle: per-item best cell with mean cost <= the point's (a look path costs more than the cell
+    that answers it, so this also bounds the tree). noise: the larger of the re-run and batch noise oracle at that
+    cost, as in `headroom_gate`. headroom = oracle - best_fixed - noise; gain = controller - best_fixed. Items of the
+    benchmarks are pooled, like the headline (equal counts). `policy`: policy_eval rows; `collapse`: `collapse_table`.
+    """
+    split, variant = ctrl["splits"]["dev"], ctrl["variant"]
+    grid = pd.read_parquet(grid_dir(cfg, root, ctrl["grid_name"]) / ctrl.get("grid_file", "grid.parquet"))
+    rows = grid[grid["split"] != "test"]
+    main = rows[(rows["model_variant"] == variant) & (rows["rerun_id"] == 0)]
+    cells = grid_cells(main)
+    _, select_values, _, _ = cell_arrays(main, ctrl["splits"]["train"], cells)
+    _, values, costs, cost_ref = cell_arrays(main, split, cells)
+    batch = load_batch_rows(cfg, root, variant, ctrl["grid_name"])
+    flags = collapse[collapse["who"] == "controller"].set_index(["k0", "lam"])["collapsed"]
+    part = policy[(policy["method"] == "controller") & (policy["split"] == split)]
+    out = []
+    for (k0, lam), point in part.groupby(["k0", "lam"]):
+        frac = point["flops_total"].mean() / point["cost_ref"].mean()
+        cap = frac * cost_ref.mean()
+        weights = hull_mix(select_values, costs, min(cap, costs.mean(axis=0).max()))
+        picks = oracle_choices(values, costs, cap)
+        noises = [rerun_noise(rows, variant, None, frac)]
+        if batch is not None:
+            found = batch_noise(*batch, None, frac)
+            noises.append(found["at_cap"] if found["at_cap"] is not None else found["uncapped"])
+        noise = max((gain.mean() for gain in noises if gain is not None), default=np.nan)
+        best = np.nan if weights is None else 100.0 * (values @ weights).mean()
+        oracle = np.nan if picks is None else 100.0 * values[np.arange(len(values)), picks].mean()
+        accuracy = 100.0 * point["correct"].mean()
+        out.append({"k0": k0, "lam": lam, "cost_frac": frac, "controller": accuracy, "best_fixed": best,
+                    "oracle": oracle, "noise": noise, "headroom": oracle - best - noise, "gain": accuracy - best,
+                    "collapsed": bool(flags.loc[(k0, lam)])})
+    return pd.DataFrame(out)
+

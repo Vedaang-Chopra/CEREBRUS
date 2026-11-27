@@ -156,7 +156,7 @@ from adaloop.orchestration.headline import (
     run_headline,
     split_label,
 )
-from adaloop.orchestration.headroom_gate import headroom_gate
+from adaloop.orchestration.headroom_gate import headroom_by_lambda, headroom_gate
 from adaloop.orchestration.inputs import item_inputs, item_prompt
 from adaloop.orchestration.item_images import build_item_images, load_item_images
 from adaloop.orchestration.lora_checks import (
@@ -251,6 +251,7 @@ __all__ = [
     "run_headline",
     "split_label",
     "headroom_gate",
+    "headroom_by_lambda",
     "write_synthetic_grid",
     "load_upfront",
     "run_upfront",
